@@ -1,19 +1,22 @@
-# 🎈 Blank app template
 
-A simple Streamlit app template for you to modify!
+# Document Assistant
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://blank-app-template.streamlit.app/)
+A Streamlit application for processing and analyzing documents using LLM.
 
-### How to run it on your own machine
+## Features
+- Document processing and conversion to JSON format
+- Document search and analysis
+- LLM-powered document understanding
+- Support for PDF, DOCX, and TXT files
 
-1. Install the requirements
-
-   ```
-   $ pip install -r requirements.txt
-   ```
-
-2. Run the app
-
-   ```
-   $ streamlit run streamlit_app.py
-   ```
+## Setup
+1. Clone the repository
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+3. Set up your API key in `config.py`
+4. Run the application:
+```bash
+streamlit run main.py
+```
