@@ -1,4 +1,3 @@
-
 import streamlit as st
 import json
 import os
@@ -104,13 +103,21 @@ class DocumentProcessor:
             "max_tokens": 2000
         }
         
-        try:
-            response = requests.post(API_URL, json=data, headers=headers)
-            response.raise_for_status()
-            return response.json()['choices'][0]['message']['content']
-        except Exception as e:
-            st.error(f"Ошибка API: {str(e)}")
-            return ""
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = requests.post(API_URL, json=data, headers=headers)
+                response.raise_for_status()
+                return response.json()['choices'][0]['message']['content']
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429:  # Too Many Requests
+                    if attempt < MAX_RETRIES - 1:
+                        time.sleep(RETRY_DELAY * (attempt + 1))  # Exponential backoff
+                        continue
+                st.error(f"Ошибка API: {str(e)}")
+                return ""
+            except Exception as e:
+                st.error(f"Ошибка API: {str(e)}")
+                return ""
 
     def parse_llm_response(self, response, is_first_chunk=False):
         parsed = {
@@ -231,9 +238,11 @@ def main():
         save_path = st.text_input("Путь для сохранения базы знаний", "knowledge_base.json")
         if st.button("Сохранить базу"):
             try:
+                # Убедимся, что директория существует
+                os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 with open(save_path, 'w', encoding='utf-8') as f:
                     json.dump(st.session_state.knowledge_base, f, ensure_ascii=False, indent=2)
-                st.success("База знаний сохранена")
+                st.success(f"База знаний сохранена в {os.path.abspath(save_path)}")
             except Exception as e:
                 st.error(f"Ошибка сохранения: {str(e)}")
 
@@ -299,6 +308,11 @@ def build_llm_context(query, chunks):
             f"Содержание: {chunk.get('chunk_text', '')[:1000]}"
         ])
         
+    return '\n'.join(context_parts)[:CONTEXT_SUM]
+
+if __name__ == "__main__":
+    main()
+
     return '\n'.join(context_parts)[:CONTEXT_SUM]
 
 if __name__ == "__main__":
