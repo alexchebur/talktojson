@@ -17,6 +17,8 @@ CHUNK_SIZE = 12000
 CONTEXT_SUM = 4000
 MAX_ANSWER_LENGTH = 4000
 TEMPERATURE = 0.4
+MAX_RETRIES = 3
+RETRY_DELAY = 1
 
 # Base prompts
 DEFAULT_PROMPT = """Извлеки данные из юридического/публицистического документа. Формат ответа строго соблюдай:
