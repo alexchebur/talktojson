@@ -14,7 +14,7 @@ from config import API_KEY, API_URL
 
 # Constants
 LLM = "anthropic/claude-3-haiku"
-CHUNK_SIZE = 12000
+CHUNK_SIZE = 20000
 CONTEXT_SUM = 4000
 MAX_ANSWER_LENGTH = 4000
 TEMPERATURE = 0.4
@@ -105,7 +105,7 @@ class DocumentProcessor:
         }
 
         max_retries = 3
-        base_delay = 2  # базовая задержка в секундах
+        base_delay = 1 # базовая задержка в секундах
 
         # Принудительная задержка в 1 секунду между запросами
         time.sleep(1)
