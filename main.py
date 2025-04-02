@@ -250,7 +250,7 @@ def main():
             st.session_state.search_engine.build_index(st.session_state.knowledge_base)
             st.success("База знаний загружена")
             
-        save_path = st.text_input("Путь для сохранения базы знаний", "knowledge_base.json")
+        st.session_state.save_path = st.text_input("Путь для сохранения базы знаний", "knowledge_base.json")
         if st.button("Сохранить базу"):
             try:
                 # Убедимся, что директория существует
@@ -276,16 +276,32 @@ def main():
             prompt = st.text_area("Промпт для обработки", DEFAULT_PROMPT, height=300)
             
         if st.button("Обработать документы") and uploaded_files:
+            total_files = len(uploaded_files)
             progress_bar = st.progress(0)
+            status_text = st.empty()
+            
             for i, file in enumerate(uploaded_files):
+                status_text.text(f"Обработка файла {i+1}/{total_files}: {file.name}")
                 text = st.session_state.processor.read_file(file)
                 if text:
                     doc_data = st.session_state.processor.process_document(text, prompt)
                     if 'documents' not in st.session_state.knowledge_base:
                         st.session_state.knowledge_base['documents'] = []
                     st.session_state.knowledge_base['documents'].append(doc_data)
-                progress_bar.progress((i + 1) / len(uploaded_files))
-            st.success("Обработка завершена")
+                    
+                    # Сохраняем после каждого обработанного файла
+                    save_path = st.session_state.get('save_path', 'knowledge_base.json')
+                    try:
+                        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                        with open(save_path, 'w', encoding='utf-8') as f:
+                            json.dump(st.session_state.knowledge_base, f, ensure_ascii=False, indent=2)
+                    except Exception as e:
+                        st.error(f"Ошибка сохранения: {str(e)}")
+                        
+                progress_bar.progress((i + 1) / total_files)
+                
+            status_text.text("Обработка завершена!")
+            st.success(f"Обработано файлов: {total_files}")
             
     with tab2:
         st.header("Поиск информации")
