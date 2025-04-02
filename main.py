@@ -1,3 +1,4 @@
+
 import streamlit as st
 import json
 import os
@@ -8,6 +9,7 @@ from PyPDF2 import PdfReader
 import docx
 import requests
 import numpy as np
+import time
 from rank_bm25 import BM25Okapi
 from config import API_KEY, API_URL
 
@@ -17,8 +19,6 @@ CHUNK_SIZE = 12000
 CONTEXT_SUM = 4000
 MAX_ANSWER_LENGTH = 4000
 TEMPERATURE = 0.4
-MAX_RETRIES = 3
-RETRY_DELAY = 1
 
 # Base prompts
 DEFAULT_PROMPT = """Извлеки данные из юридического/публицистического документа. Формат ответа строго соблюдай:
@@ -107,18 +107,21 @@ class DocumentProcessor:
         
         for attempt in range(MAX_RETRIES):
             try:
-                response = requests.post(API_URL, json=data, headers=headers)
+                response = requests.post(API_URL, json=data, headers=headers, timeout=30)
                 response.raise_for_status()
-                return response.json()['choices'][0]['message']['content']
+                response_data = response.json()
+                if 'choices' in response_data and len(response_data['choices']) > 0:
+                    return response_data['choices'][0]['message']['content']
+                raise ValueError("Неверный формат ответа от API")
             except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 429:  # Too Many Requests
-                    if attempt < MAX_RETRIES - 1:
-                        time.sleep(RETRY_DELAY * (attempt + 1))  # Exponential backoff
-                        continue
+                if e.response.status_code == 429 and attempt < MAX_RETRIES - 1:
+                    wait_time = RETRY_DELAY * (2 ** attempt)  # Экспоненциальная задержка
+                    time.sleep(wait_time)
+                    continue
                 st.error(f"Ошибка API: {str(e)}")
-                return ""
             except Exception as e:
                 st.error(f"Ошибка API: {str(e)}")
+            if attempt == MAX_RETRIES - 1:
                 return ""
 
     def parse_llm_response(self, response, is_first_chunk=False):
