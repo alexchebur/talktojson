@@ -1,4 +1,3 @@
-
 import streamlit as st
 import json
 import os
@@ -32,7 +31,7 @@ chunk_keywords: [3 ключевых слова, 3 ключевых фразы]""
 class DocumentProcessor:
     def __init__(self):
         self.knowledge_base = {}
-        
+
     def read_file(self, file):
         try:
             if file.name.endswith('.pdf'):
@@ -63,7 +62,7 @@ class DocumentProcessor:
             )
             chunk_data = self.parse_llm_response(response, i == 0)
             chunk_data['chunk_text'] = chunk
-            
+
             if i == 0:
                 doc_data.update({
                     "doc_name": chunk_data.get('doc_name', 'Неизвестно'),
@@ -104,33 +103,36 @@ class DocumentProcessor:
             "temperature": 0.3,
             "max_tokens": 2000
         }
-        
+
         max_retries = 3
         base_delay = 2  # базовая задержка в секундах
-        
+
+        # Принудительная задержка в 1 секунду между запросами
+        time.sleep(1)
+
         for attempt in range(max_retries):
             try:
                 if attempt > 0:
                     # Экспоненциальная задержка с добавлением случайности
                     delay = base_delay * (2 ** attempt) + np.random.uniform(0, 1)
                     time.sleep(delay)
-                
+
                 response = requests.post(API_URL, json=data, headers=headers, timeout=30)
                 response.raise_for_status()
                 response_data = response.json()
-                
+
                 if 'choices' in response_data and len(response_data['choices']) > 0:
                     return response_data['choices'][0]['message']['content']
-                    
+
                 raise ValueError("Неверный формат ответа от API")
-                
+
             except requests.exceptions.HTTPError as e:
                 if e.response.status_code == 429 and attempt < max_retries - 1:
                     continue
-                st.error(f"Ошибка API: {str(e)}")
+                st.error(f"Ошибка API: {str(e)}\nСтатус: {e.response.status_code}\nОтвет: {e.response.text}")
             except Exception as e:
                 st.error(f"Ошибка API: {str(e)}")
-                
+
             if attempt == max_retries - 1:
                 return ""
 
@@ -141,7 +143,7 @@ class DocumentProcessor:
             'qa_pairs': [],
             'chunk_keywords': []
         }
-        
+
         if is_first_chunk:
             parsed.update({
                 'doc_name': 'Неизвестно',
@@ -185,11 +187,11 @@ class SearchEngine:
         self.preprocessor = TextPreprocessor()
         self.bm25 = None
         self.chunks_info = []
-        
+
     def build_index(self, knowledge_base):
         corpus = []
         self.chunks_info = []
-        
+
         for doc in knowledge_base.get('documents', []):
             for chunk in doc.get('chunks', []):
                 text_parts = [
@@ -199,25 +201,25 @@ class SearchEngine:
                 ]
                 text_for_index = ' '.join(text_parts)
                 corpus.append(text_for_index)
-                
+
                 self.chunks_info.append({
                     'doc_name': doc.get('doc_name', ''),
                     'chunk_summary': chunk.get('chunk_summary', ''),
                     'chunk_text': chunk.get('chunk_text', ''),
                     'chunk_keywords': chunk.get('chunk_keywords', [])
                 })
-                
+
         tokenized_corpus = [self.preprocessor.preprocess(doc) for doc in corpus]
         self.bm25 = BM25Okapi(tokenized_corpus)
 
     def search(self, query, top_n=5):
         if not self.bm25:
             return []
-            
+
         tokens = self.preprocessor.preprocess(query)
         scores = self.bm25.get_scores(tokens)
         best_indices = np.argsort(scores)[-top_n:][::-1]
-        
+
         results = []
         for idx in best_indices:
             if scores[idx] > 0.1:
@@ -228,7 +230,7 @@ class SearchEngine:
 class TextPreprocessor:
     def __init__(self):
         self.regex = re.compile(r'[^\w\s]')
-        
+
     def preprocess(self, text):
         text = self.regex.sub(' ', text.lower())
         return text.split()
@@ -240,7 +242,7 @@ def main():
     if 'processor' not in st.session_state:
         st.session_state.processor = DocumentProcessor()
         st.session_state.search_engine = SearchEngine()
-        
+
     # Сайдбар для управления базой знаний
     with st.sidebar:
         st.header("Управление базой знаний")
@@ -249,7 +251,7 @@ def main():
             st.session_state.knowledge_base = json.load(kb_file)
             st.session_state.search_engine.build_index(st.session_state.knowledge_base)
             st.success("База знаний загружена")
-            
+
         st.session_state.save_path = st.text_input("Путь для сохранения базы знаний", "knowledge_base.json")
         if st.button("Сохранить базу"):
             try:
@@ -263,7 +265,7 @@ def main():
 
     # Основной интерфейс
     tab1, tab2 = st.tabs(["Обработка документов", "Поиск информации"])
-    
+
     with tab1:
         st.header("Обработка документов")
         uploaded_files = st.file_uploader(
@@ -271,15 +273,15 @@ def main():
             type=['txt', 'pdf', 'docx'],
             accept_multiple_files=True
         )
-        
+
         with st.expander("Настройка промпта"):
             prompt = st.text_area("Промпт для обработки", DEFAULT_PROMPT, height=300)
-            
+
         if st.button("Обработать документы") and uploaded_files:
             total_files = len(uploaded_files)
             progress_bar = st.progress(0)
             status_text = st.empty()
-            
+
             for i, file in enumerate(uploaded_files):
                 status_text.text(f"Обработка файла {i+1}/{total_files}: {file.name}")
                 text = st.session_state.processor.read_file(file)
@@ -288,7 +290,7 @@ def main():
                     if 'documents' not in st.session_state.knowledge_base:
                         st.session_state.knowledge_base['documents'] = []
                     st.session_state.knowledge_base['documents'].append(doc_data)
-                    
+
                     # Сохраняем после каждого обработанного файла
                     save_path = st.session_state.get('save_path', 'knowledge_base.json')
                     try:
@@ -297,23 +299,23 @@ def main():
                             json.dump(st.session_state.knowledge_base, f, ensure_ascii=False, indent=2)
                     except Exception as e:
                         st.error(f"Ошибка сохранения: {str(e)}")
-                        
+
                 progress_bar.progress((i + 1) / total_files)
-                
+
             status_text.text("Обработка завершена!")
             st.success(f"Обработано файлов: {total_files}")
-            
+
     with tab2:
         st.header("Поиск информации")
         query = st.text_input("Введите запрос")
-        
+
         with st.expander("Настройка промпта для LLM"):
             llm_prompt = st.text_area(
                 "Промпт для LLM",
                 "Ты - AI ассистент, анализирующий документы. Ссылайся на номер статей и пунктов.",
                 height=100
             )
-            
+
         if st.button("Искать") and query:
             results = st.session_state.search_engine.search(query)
             if results:
@@ -331,19 +333,17 @@ def build_llm_context(query, chunks):
         f"Запрос пользователя: {query}",
         "Релевантные фрагменты из документов:"
     ]
-    
+
     for chunk in chunks:
         context_parts.extend([
             f"\nДокумент: {chunk.get('doc_name', '')}",
             f"Ключевые слова: {', '.join(chunk.get('chunk_keywords', []))}",
             f"Содержание: {chunk.get('chunk_text', '')[:1000]}"
         ])
-        
+
     return '\n'.join(context_parts)[:CONTEXT_SUM]
 
 if __name__ == "__main__":
     main()
-
-
     
     
