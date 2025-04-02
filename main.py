@@ -247,6 +247,9 @@ def main():
     if 'processor' not in st.session_state:
         st.session_state.processor = DocumentProcessor()
         st.session_state.search_engine = SearchEngine()
+        
+    if 'knowledge_base' not in st.session_state:
+        st.session_state.knowledge_base = {'documents': []}
 
     # Сайдбар для управления базой знаний
     with st.sidebar:
