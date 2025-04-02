@@ -105,23 +105,33 @@ class DocumentProcessor:
             "max_tokens": 2000
         }
         
-        for attempt in range(MAX_RETRIES):
+        max_retries = 3
+        base_delay = 2  # базовая задержка в секундах
+        
+        for attempt in range(max_retries):
             try:
+                if attempt > 0:
+                    # Экспоненциальная задержка с добавлением случайности
+                    delay = base_delay * (2 ** attempt) + np.random.uniform(0, 1)
+                    time.sleep(delay)
+                
                 response = requests.post(API_URL, json=data, headers=headers, timeout=30)
                 response.raise_for_status()
                 response_data = response.json()
+                
                 if 'choices' in response_data and len(response_data['choices']) > 0:
                     return response_data['choices'][0]['message']['content']
+                    
                 raise ValueError("Неверный формат ответа от API")
+                
             except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 429 and attempt < MAX_RETRIES - 1:
-                    wait_time = RETRY_DELAY * (2 ** attempt)  # Экспоненциальная задержка
-                    time.sleep(wait_time)
+                if e.response.status_code == 429 and attempt < max_retries - 1:
                     continue
                 st.error(f"Ошибка API: {str(e)}")
             except Exception as e:
                 st.error(f"Ошибка API: {str(e)}")
-            if attempt == MAX_RETRIES - 1:
+                
+            if attempt == max_retries - 1:
                 return ""
 
     def parse_llm_response(self, response, is_first_chunk=False):
@@ -317,6 +327,7 @@ def build_llm_context(query, chunks):
 
 if __name__ == "__main__":
     main()
+
 
     
     
