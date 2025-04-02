@@ -265,9 +265,9 @@ def main():
             try:
                 # Убедимся, что директория существует
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                with open(save_path, 'w', encoding='utf-8') as f:
+                with open(st.session_state.save_path, 'w', encoding='utf-8') as f:
                     json.dump(st.session_state.knowledge_base, f, ensure_ascii=False, indent=2)
-                st.success(f"База знаний сохранена в {os.path.abspath(save_path)}")
+                st.success(f"База знаний сохранена в {os.path.abspath(st.session_state.save_path)}")
             except Exception as e:
                 st.error(f"Ошибка сохранения: {str(e)}")
 
