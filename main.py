@@ -313,7 +313,5 @@ def build_llm_context(query, chunks):
 if __name__ == "__main__":
     main()
 
-    return '\n'.join(context_parts)[:CONTEXT_SUM]
-
-if __name__ == "__main__":
-    main()
+    
+    
