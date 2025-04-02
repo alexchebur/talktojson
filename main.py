@@ -105,7 +105,7 @@ class DocumentProcessor:
         }
 
         max_retries = 3
-        base_delay = 1 # базовая задержка в секундах
+        base_delay = 2  # базовая задержка в секундах
 
         # Принудительная задержка в 1 секунду между запросами
         time.sleep(1)
@@ -266,7 +266,16 @@ def main():
                 # Убедимся, что директория существует
                 os.makedirs(os.path.dirname(save_path), exist_ok=True)
                 with open(st.session_state.save_path, 'w', encoding='utf-8') as f:
-                    json.dump(st.session_state.knowledge_base, f, ensure_ascii=False, indent=2)
+                    json_str = json.dumps(st.session_state.knowledge_base, ensure_ascii=False, indent=2)
+                    f.write(json_str)
+                    
+                # Добавляем кнопку для скачивания
+                st.download_button(
+                    label="Скачать базу знаний",
+                    data=json_str,
+                    file_name="knowledge_base.json",
+                    mime="application/json"
+                )
                 st.success(f"База знаний сохранена в {os.path.abspath(st.session_state.save_path)}")
             except Exception as e:
                 st.error(f"Ошибка сохранения: {str(e)}")
