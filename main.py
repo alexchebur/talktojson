@@ -117,7 +117,12 @@ class DocumentProcessor:
                     delay = base_delay * (2 ** attempt) + np.random.uniform(0, 1)
                     time.sleep(delay)
 
-                response = requests.post(API_URL, json=data, headers=headers, timeout=30)
+                # Увеличиваем timeout и добавляем retries для requests
+                session = requests.Session()
+                adapter = requests.adapters.HTTPAdapter(max_retries=3)
+                session.mount('https://', adapter)
+                
+                response = session.post(API_URL, json=data, headers=headers, timeout=60)
                 response.raise_for_status()
                 response_data = response.json()
 
@@ -345,5 +350,3 @@ def build_llm_context(query, chunks):
 
 if __name__ == "__main__":
     main()
-    
-    
