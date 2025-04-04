@@ -254,6 +254,26 @@ def main():
     if 'knowledge_base' not in st.session_state:
         st.session_state.knowledge_base = {'documents': []}
 
+    # Функция для сохранения файла
+    def save_knowledge_base(save_path):
+        try:
+            # Если путь не указан, используем имя по умолчанию в текущей директории
+            if not save_path.strip():
+                save_path = "knowledge_base.json"
+            
+            # Нормализуем путь (заменяем слеши, убираем лишние символы)
+            save_path = os.path.normpath(save_path.strip())
+            
+            # Создаем директорию, если ее нет
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            
+            # Сохраняем файл
+            with open(save_path, 'w', encoding='utf-8') as f:
+                json.dump(st.session_state.knowledge_base, f, ensure_ascii=False, indent=2)
+            return True, f"База знаний сохранена в {os.path.abspath(save_path)}"
+        except Exception as e:
+            return False, f"Ошибка сохранения: {str(e)}"
+
     # Сайдбар для управления базой знаний
     with st.sidebar:
         st.header("Управление базой знаний")
@@ -263,13 +283,15 @@ def main():
             st.session_state.search_engine.build_index(st.session_state.knowledge_base)
             st.success("База знаний загружена")
 
-        st.session_state.save_path = st.text_input("Путь для сохранения базы знаний", "knowledge_base.json")
+        # Устанавливаем путь по умолчанию в текущую директорию
+        default_path = os.path.join(os.getcwd(), "knowledge_base.json")
+        st.session_state.save_path = st.text_input("Путь для сохранения базы знаний", default_path)
         
         # Проверяем наличие данных в базе знаний
         if st.session_state.knowledge_base and st.session_state.knowledge_base.get('documents'):
             json_str = json.dumps(st.session_state.knowledge_base, ensure_ascii=False, indent=2)
             
-            # Кнопка скачивания появляется только при наличии данных
+            # Кнопка скачивания
             st.download_button(
                 label="Скачать базу знаний",
                 data=json_str,
@@ -277,21 +299,13 @@ def main():
                 mime="application/json"
             )
             
-            # Сохранение в указанный путь
+            # Кнопка сохранения
             if st.button("Сохранить базу"):
-                try:
-                    save_path = st.session_state.save_path.strip()
-                    if not save_path:
-                        save_path = "knowledge_base.json"
-                    
-                    # Создаем директорию, если ее нет
-                    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                    
-                    with open(save_path, 'w', encoding='utf-8') as f:
-                        json.dump(st.session_state.knowledge_base, f, ensure_ascii=False, indent=2)
-                    st.success(f"База знаний сохранена в {os.path.abspath(save_path)}")
-                except Exception as e:
-                    st.error(f"Ошибка сохранения в файл: {str(e)}")
+                success, message = save_knowledge_base(st.session_state.save_path)
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
         else:
             st.warning("База знаний пуста. Загрузите и обработайте документы.")
 
@@ -323,19 +337,24 @@ def main():
                         st.session_state.knowledge_base['documents'] = []
                     st.session_state.knowledge_base['documents'].append(doc_data)
 
-                    # Сохраняем после каждого обработанного файла
-                    save_path = st.session_state.get('save_path', 'knowledge_base.json')
-                    try:
-                        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                        with open(save_path, 'w', encoding='utf-8') as f:
-                            json.dump(st.session_state.knowledge_base, f, ensure_ascii=False, indent=2)
-                    except Exception as e:
-                        st.error(f"Ошибка сохранения: {str(e)}")
+                    # Автосохранение после каждого файла
+                    auto_save_path = "knowledge_base_autosave.json"
+                    success, message = save_knowledge_base(auto_save_path)
+                    if not success:
+                        st.error(f"Ошибка автосохранения: {message}")
 
                 progress_bar.progress((i + 1) / total_files)
 
             status_text.text("Обработка завершена!")
             st.success(f"Обработано файлов: {total_files}")
+            
+            # Сохранение итогового файла
+            if st.session_state.save_path:
+                success, message = save_knowledge_base(st.session_state.save_path)
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
 
     with tab2:
         st.header("Поиск информации")
