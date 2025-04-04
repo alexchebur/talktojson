@@ -254,62 +254,31 @@ def main():
     if 'knowledge_base' not in st.session_state:
         st.session_state.knowledge_base = {'documents': []}
 
-    # Функция для сохранения файла
-    def save_knowledge_base(save_path):
-        try:
-            # Если путь не указан, используем имя по умолчанию в текущей директории
-            if not save_path.strip():
-                save_path = "knowledge_base.json"
-            
-            # Нормализуем путь (заменяем слеши, убираем лишние символы)
-            save_path = os.path.normpath(save_path.strip())
-            
-            # Создаем директорию, если ее нет
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            
-            # Сохраняем файл
-            with open(save_path, 'w', encoding='utf-8') as f:
-                json.dump(st.session_state.knowledge_base, f, ensure_ascii=False, indent=2)
-            return True, f"База знаний сохранена в {os.path.abspath(save_path)}"
-        except Exception as e:
-            return False, f"Ошибка сохранения: {str(e)}"
-
-    # Сайдбар для управления базой знаний
+    # Сайдбар для управления базой знаний (упрощённая версия)
     with st.sidebar:
         st.header("Управление базой знаний")
+        
+        # Загрузка существующей базы (если нужно)
         kb_file = st.file_uploader("Загрузить базу знаний", type=['json'])
         if kb_file:
             st.session_state.knowledge_base = json.load(kb_file)
             st.session_state.search_engine.build_index(st.session_state.knowledge_base)
             st.success("База знаний загружена")
 
-        # Устанавливаем путь по умолчанию в текущую директорию
-        default_path = os.path.join(os.getcwd(), "knowledge_base.json")
-        st.session_state.save_path = st.text_input("Путь для сохранения базы знаний", default_path)
-        
-        # Проверяем наличие данных в базе знаний
-        if st.session_state.knowledge_base and st.session_state.knowledge_base.get('documents'):
+        # Кнопка скачивания (всегда видна, но активна только при наличии данных)
+        if st.session_state.knowledge_base.get('documents'):
             json_str = json.dumps(st.session_state.knowledge_base, ensure_ascii=False, indent=2)
-            
-            # Кнопка скачивания
             st.download_button(
                 label="Скачать базу знаний",
                 data=json_str,
                 file_name="knowledge_base.json",
-                mime="application/json"
+                mime="application/json",
+                help="Скачать текущую базу знаний в формате JSON"
             )
-            
-            # Кнопка сохранения
-            if st.button("Сохранить базу"):
-                success, message = save_knowledge_base(st.session_state.save_path)
-                if success:
-                    st.success(message)
-                else:
-                    st.error(message)
         else:
-            st.warning("База знаний пуста. Загрузите и обработайте документы.")
-
-    # Основной интерфейс
+            st.warning("База знаний пуста")
+   
+    # Основной интерфейс обработки документов (без изменений)
     tab1, tab2 = st.tabs(["Обработка документов", "Поиск информации"])
 
     with tab1:
@@ -337,24 +306,11 @@ def main():
                         st.session_state.knowledge_base['documents'] = []
                     st.session_state.knowledge_base['documents'].append(doc_data)
 
-                    # Автосохранение после каждого файла
-                    auto_save_path = "knowledge_base_autosave.json"
-                    success, message = save_knowledge_base(auto_save_path)
-                    if not success:
-                        st.error(f"Ошибка автосохранения: {message}")
-
                 progress_bar.progress((i + 1) / total_files)
 
             status_text.text("Обработка завершена!")
             st.success(f"Обработано файлов: {total_files}")
-            
-            # Сохранение итогового файла
-            if st.session_state.save_path:
-                success, message = save_knowledge_base(st.session_state.save_path)
-                if success:
-                    st.success(message)
-                else:
-                    st.error(message)
+            st.session_state.search_engine.build_index(st.session_state.knowledge_base)
 
     with tab2:
         st.header("Поиск информации")
