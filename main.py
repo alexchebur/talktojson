@@ -276,19 +276,24 @@ def main():
                 file_name="knowledge_base.json",
                 mime="application/json"
             )
+            
+            # Сохранение в указанный путь
+            if st.button("Сохранить базу"):
+                try:
+                    save_path = st.session_state.save_path.strip()
+                    if not save_path:
+                        save_path = "knowledge_base.json"
+                    
+                    # Создаем директорию, если ее нет
+                    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                    
+                    with open(save_path, 'w', encoding='utf-8') as f:
+                        json.dump(st.session_state.knowledge_base, f, ensure_ascii=False, indent=2)
+                    st.success(f"База знаний сохранена в {os.path.abspath(save_path)}")
+                except Exception as e:
+                    st.error(f"Ошибка сохранения в файл: {str(e)}")
         else:
             st.warning("База знаний пуста. Загрузите и обработайте документы.")
-        
-        # Сохранение в указанный путь
-        if st.button("Сохранить базу"):
-            try:
-                save_path = st.session_state.save_path
-                os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                with open(save_path, 'w', encoding='utf-8') as f:
-                    f.write(json_str)
-                st.success(f"База знаний сохранена в {os.path.abspath(save_path)}")
-            except Exception as e:
-                st.error(f"Ошибка сохранения в файл: {str(e)}")
 
     # Основной интерфейс
     tab1, tab2 = st.tabs(["Обработка документов", "Поиск информации"])
