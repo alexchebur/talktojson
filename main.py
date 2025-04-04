@@ -221,8 +221,10 @@ class SearchEngine:
         self.bm25 = BM25Okapi(tokenized_corpus)
 
     def search(self, query, top_n=5):
-        if not self.bm25:
-            return []
+        if not self.bm25 or not self.chunks_info:
+            self.build_index(st.session_state.knowledge_base)
+            if not self.bm25:
+                return []
 
         tokens = self.preprocessor.preprocess(query)
         scores = self.bm25.get_scores(tokens)
@@ -289,6 +291,8 @@ def main():
             accept_multiple_files=True
         )
 
+        with st.spinner("Обновление поискового индекса..."):
+            st.session_state.search_engine.build_index(st.session_state.knowledge_base)
         with st.expander("Настройка промпта"):
             prompt = st.text_area("Промпт для обработки", DEFAULT_PROMPT, height=300)
 
@@ -309,10 +313,10 @@ def main():
                 progress_bar.progress((i + 1) / total_files)
 
             status_text.text("Обработка завершена!")
-            st.success(f"Обработано файлов: {total_files}")
             st.session_state.search_engine.build_index(st.session_state.knowledge_base)
+            st.success(f"Обработано файлов: {total_files}. Индекс поиска обновлён!")
 
-    with tab2:
+        with tab2:
         st.header("Поиск информации")
         query = st.text_input("Введите запрос")
 
@@ -324,6 +328,15 @@ def main():
             )
 
         if st.button("Искать") and query:
+            # Проверяем, что база знаний не пуста
+            if not st.session_state.knowledge_base.get('documents'):
+                st.warning("База знаний пуста. Сначала обработайте документы.")
+                return
+            
+            # Проверяем, что индекс построен
+            if not hasattr(st.session_state.search_engine, 'bm25'):
+                st.session_state.search_engine.build_index(st.session_state.knowledge_base)
+            
             results = st.session_state.search_engine.search(query)
             if results:
                 context = build_llm_context(query, results)
@@ -332,6 +345,13 @@ def main():
                 )
                 st.write("Ответ:")
                 st.write(response)
+            
+                # Показываем найденные документы для прозрачности
+                with st.expander("Показать найденные фрагменты"):
+                    for i, result in enumerate(results[:3]):  # Показываем первые 3 результата
+                        st.markdown(f"**Документ {i+1}:** {result.get('doc_name', '')}")
+                        st.caption(f"Рейтинг соответствия: {result.get('score', 0):.2f}")
+                        st.write(result.get('chunk_summary', ''))
             else:
                 st.warning("По запросу ничего не найдено")
 
