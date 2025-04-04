@@ -317,8 +317,8 @@ def main():
             st.success(f"Обработано файлов: {total_files}. Индекс поиска обновлён!")
 
         with tab2:
-        st.header("Поиск информации")
-        query = st.text_input("Введите запрос")
+            st.header("Поиск информации")
+            query = st.text_input("Введите запрос")
 
         with st.expander("Настройка промпта для LLM"):
             llm_prompt = st.text_area(
