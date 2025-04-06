@@ -62,6 +62,7 @@ class BM25SearchEngine:
         self.chunks_info = []
         self.doc_index = defaultdict(list)
         self.is_index_loaded = False
+        self.cache_path = os.path.join(DATA_DIR, "bm25_index.pkl")  # Добавим путь к кешу
 
     def build_index(self, documents: List[Dict]) -> None:
         corpus = []
@@ -78,27 +79,33 @@ class BM25SearchEngine:
         tokenized_corpus = [self.preprocessor.preprocess(doc) for doc in corpus]
         self.bm25 = BM25Okapi(tokenized_corpus)
         self.is_index_loaded = True
+        self.save_to_cache()  # Автоматически сохраняем индекс после построения
 
-    def load_from_cache(self, cache_path: str) -> bool:
+    def load_from_cache(self) -> bool:
         try:
-            if not os.path.exists(cache_path):
+            if not os.path.exists(self.cache_path):
                 return False
 
-            with open(cache_path, 'rb') as f:
+            with open(self.cache_path, 'rb') as f:
                 data = pickle.load(f)
                 self.bm25, self.chunks_info, self.doc_index = data
                 self.is_index_loaded = True
                 return True
-        except:
+        except Exception as e:
+            print(f"Ошибка загрузки кеша: {e}")
             return False
 
-    def save_to_cache(self, cache_path: str) -> None:
-        with open(cache_path, 'wb') as f:
-            pickle.dump((self.bm25, self.chunks_info, self.doc_index), f)
+    def save_to_cache(self) -> None:
+        try:
+            with open(self.cache_path, 'wb') as f:
+                pickle.dump((self.bm25, self.chunks_info, self.doc_index), f)
+        except Exception as e:
+            print(f"Ошибка сохранения кеша: {e}")
 
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
         if not self.is_index_loaded:
-            return []
+            if not self.load_from_cache():  # Попробуем загрузить из кеша
+                return []
 
         tokens = self.preprocessor.preprocess(query)
         if not tokens:
@@ -111,8 +118,8 @@ class BM25SearchEngine:
         for idx in best_indices:
             result = {**self.chunks_info[idx], 'score': float(scores[idx])}
             results.append(result)
-
         return results
+        
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
         self.api_url = api_url
@@ -173,30 +180,31 @@ class DocumentAnalyzer:
         self.llm_initialized = True
         return True
 
-    def load_documents(self, uploaded_files):
-        self.documents = []
-        for file in uploaded_files:
-            try:
-                doc = Document(file)
-                text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
-                
-                if len(text) > MAX_CONTEXT_LENGTH:
-                    truncate_ratio = MAX_CONTEXT_LENGTH / len(text)
-                    cutoff = int(len(text) * truncate_ratio)
-                    text = text[:cutoff]
-                    st.warning(f"Документ {file.name} был обрезан до {cutoff} символов")
-                
-                self.documents.append({
-                    "name": file.name,
-                    "content": text
-                })
-            except Exception as e:
-                st.error(f"Ошибка обработки файла {file.name}: {str(e)}")
-        
-        if self.documents:
-            self.search_engine.build_index(self.documents)
-            with open(os.path.join(DATA_DIR, "documents.json"), "w") as f:
-                json.dump(self.documents, f)
+def load_documents(self, uploaded_files):
+    self.documents = []
+    for file in uploaded_files:
+        try:
+            doc = Document(file)
+            text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+            
+            if len(text) > MAX_CONTEXT_LENGTH:
+                truncate_ratio = MAX_CONTEXT_LENGTH / len(text)
+                cutoff = int(len(text) * truncate_ratio)
+                text = text[:cutoff]
+                st.warning(f"Документ {file.name} был обрезан до {cutoff} символов")
+            
+            self.documents.append({
+                "name": file.name,
+                "content": text
+            })
+        except Exception as e:
+            st.error(f"Ошибка обработки файла {file.name}: {str(e)}")
+    
+    if self.documents:
+        self.search_engine.build_index(self.documents)
+        # Сохраняем документы в JSON (для истории, но не для поиска)
+        with open(os.path.join(DATA_DIR, "documents.json"), "w") as f:
+            json.dump(self.documents, f)
             self.search_engine.save_to_cache(os.path.join(DATA_DIR, "bm25_index.pkl"))
 
     def analyze_document(self, prompt_type: str) -> str:
