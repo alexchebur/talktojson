@@ -228,6 +228,28 @@ class DocumentAnalyzer:
         # Поиск с комбинированным запросом
         chunks = self.search_engine.search(boosted_query)
         context = self._build_context(chunks)
+
+        with st.expander("🔍 Показать полный контекст запроса", expanded=False):
+            st.write("### Системный промпт:")
+            st.code(SYSTEM_PROMPT, language="text")
+            
+            st.write("### Пользовательский промпт:")
+            st.code(BUTTON_PROMPTS[prompt_type], language="text")
+            
+            st.write("### Результаты поиска BM25:")
+            st.json({
+                "Поисковый запрос": combined_query,
+                "Найденные фрагменты": [
+                    {"Документ": chunk["doc_name"], "Текст": chunk["chunk_text"][:200]} 
+                    for chunk in chunks
+                ]
+            })
+            
+            st.write("### Полный контекст для LLM:")
+            st.text_area("Контекст", value=context, height=300, label_visibility="collapsed")
+        # ===== КОНЕЦ ВЫВОДА КОНТЕКСТА =====
+
+
         
         # Формирование промпта для LLM
         messages = [
