@@ -226,7 +226,7 @@ class DocumentAnalyzer:
 
 def main():
     st.set_page_config(page_title="El Documente", layout="wide")
-    st.title("Оценщик ваших процессуальных документов")
+    st.title("El Documente: проверьте свои процессуальные документы")
     
     # Инициализация анализатора
     if 'analyzer' not in st.session_state:
