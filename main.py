@@ -195,7 +195,7 @@ class DocumentAnalyzer:
 
     def _load_saved_documents(self) -> None:
         """Загружает сохраненные документы из JSON файла"""
-        json_path = os.path.join(DATA_DIR, "documents.json")
+        json_path = os.path.join(DATA_DIR, "knowledge_base.json")
         if os.path.exists(json_path):
             try:
                 with open(json_path, "r", encoding='utf-8') as f:
