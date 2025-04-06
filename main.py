@@ -75,7 +75,7 @@ class BM25SearchEngine:
                 'chunk_text': doc.get("content", "")
             })
             corpus.append(doc.get("content", ""))
-
+        print(f"Индексация документов: {self.chunks_info}")  # Отладочное сообщение
         tokenized_corpus = [self.preprocessor.preprocess(doc) for doc in corpus]
         self.bm25 = BM25Okapi(tokenized_corpus)
         self.is_index_loaded = True
