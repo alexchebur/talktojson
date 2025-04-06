@@ -1,374 +1,241 @@
 import streamlit as st
 import json
 import os
-from pathlib import Path
-import uuid
 import re
-from PyPDF2 import PdfReader
-import docx
-import requests
-import numpy as np
-import time
+import pickle
+from docx import Document
 from rank_bm25 import BM25Okapi
-from config import API_KEY, API_URL
+import numpy as np
+from collections import defaultdict
+import requests
+from typing import List, Dict, Any
 
-# Constants
-LLM = "anthropic/claude-3-haiku"
-CHUNK_SIZE = 20000
-CONTEXT_SUM = 4000
-MAX_ANSWER_LENGTH = 4000
+# Конфигурация
+DATA_DIR = "data"
+MAX_CONTEXT_LENGTH = 4000
+MAX_ANSWER_LENGTH = 12000
 TEMPERATURE = 0.4
+os.makedirs(DATA_DIR, exist_ok=True)
 
-# Base prompts
-DEFAULT_PROMPT = """Извлеки данные из юридического/публицистического документа. Формат ответа строго соблюдай:
-doc_name: [полное название документа]
-doc_date: [дата в формате ГГГГ-ММ-ДД или "Не указана"]
-doc_type: [тип: закон, указ, постановление, судебный акт, статья или иное]
-chunk_summary: [три тезиса о содержании]
-qa_pairs: [3 пары в формате "вопрос:: ответ" (разделитель - два двоеточия)]
-chunk_keywords: [3 ключевых слова, 3 ключевых фразы]"""
+# Системные промпты
+SYSTEM_PROMPT = "Ты - профессиональный опытный юрист-литигатор из энергетической компании. Ты можешь критически оценивать процессуальные документы, комментировать позиции и прогнозировать развитие споров."
 
-class DocumentProcessor:
-    def __init__(self):
-        self.knowledge_base = {}
+BUTTON_PROMPTS = {
+    "quality": """Ты юрист-литигатор в энергетической компании Т Плюс. Оцени сильные и слабые стороны процессуального документа, в том числе: 
+1. Полноту, последовательность и структуру аргументации, 
+2. относимость и достаточность доказательств, 
+3. правильность указания применимых норм права. 
+4. [ВАЖНО] ОБЯЗАТЕЛЬНО критично оцени документ на предмет соответствия методическим рекомендациям Т Плюс по подготовке процессуальных документов, при выявлении нарушений - процитируй нарушенные требования рекомендаций Т Плюс.""",
 
-    def read_file(self, file):
-        try:
-            if file.name.endswith('.pdf'):
-                reader = PdfReader(file)
-                return "\n".join([page.extract_text() for page in reader.pages])
-            elif file.name.endswith('.docx'):
-                doc = docx.Document(file)
-                return "\n".join([para.text for para in doc.paragraphs])
-            else:
-                return file.getvalue().decode('utf-8')
-        except Exception as e:
-            st.error(f"Ошибка чтения файла {file.name}: {str(e)}")
-            return ""
+    "strategy": """Ты - юрист-литигатор в энергетической компании. Оцени правовую ситуацию с точки зрения слабых и сильных мест в позиции оппонента и компании, неопределенности каких-либо фактических обстоятельств, недостатков доказательств. Напиши пошагово стратегию процессуального поведения, например проведения экспертиз, истребования доказательств, смены акцентов в обосновании позиции энергетической компании. Предложи, на чем необходимо сосредоточиться: на сборе доказательств, повышении качества представления интересов, дополнения позиции аргументами или сменой позиции.""",
 
-    def process_document(self, text, prompt_template):
-        chunks = self.split_text(text)
-        doc_id = str(uuid.uuid4())
-        doc_data = {
-            "doc_id": doc_id,
-            "chunks": [],
-            "doc_summary": "",
-            "doc_keywords": [],
-        }
-
-        for i, chunk in enumerate(chunks):
-            response = self.send_llm_request(
-                prompt_template + f"\n\nТекст: {chunk[:5000]}..."
-            )
-            chunk_data = self.parse_llm_response(response, i == 0)
-            chunk_data['chunk_text'] = chunk
-
-            if i == 0:
-                doc_data.update({
-                    "doc_name": chunk_data.get('doc_name', 'Неизвестно'),
-                    "doc_date": chunk_data.get('doc_date', 'Не указана'),
-                    "doc_type": chunk_data.get('doc_type', 'Неизвестен')
-                })
-
-            doc_data['chunks'].append(chunk_data)
-
-        return doc_data
-
-    def split_text(self, text):
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        chunks = []
-        current_chunk = []
-        current_length = 0
-
-        for sentence in sentences:
-            if current_length + len(sentence) > CHUNK_SIZE and current_chunk:
-                chunks.append(' '.join(current_chunk))
-                current_chunk = []
-                current_length = 0
-            current_chunk.append(sentence)
-            current_length += len(sentence)
-
-        if current_chunk:
-            chunks.append(' '.join(current_chunk))
-        return chunks
-
-    def send_llm_request(self, prompt):
-        headers = {
-            "Authorization": f"Bearer {API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": LLM,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3,
-            "max_tokens": 2000
-        }
-
-        max_retries = 3
-        base_delay = 2  # базовая задержка в секундах
-
-        # Принудительная задержка в 1 секунду между запросами
-        time.sleep(1)
-
-        for attempt in range(max_retries):
-            try:
-                if attempt > 0:
-                    # Экспоненциальная задержка с добавлением случайности
-                    delay = base_delay * (2 ** attempt) + np.random.uniform(0, 1)
-                    time.sleep(delay)
-
-                # Увеличиваем timeout и добавляем retries для requests
-                session = requests.Session()
-                adapter = requests.adapters.HTTPAdapter(max_retries=3)
-                session.mount('https://', adapter)
-                
-                response = session.post(API_URL, json=data, headers=headers, timeout=60)
-                response.raise_for_status()
-                response_data = response.json()
-
-                if 'choices' in response_data and len(response_data['choices']) > 0:
-                    return response_data['choices'][0]['message']['content']
-
-                raise ValueError("Неверный формат ответа от API")
-
-            except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 429 and attempt < max_retries - 1:
-                    continue
-                st.error(f"Ошибка API: {str(e)}\nСтатус: {e.response.status_code}\nОтвет: {e.response.text}")
-            except Exception as e:
-                st.error(f"Ошибка API: {str(e)}")
-
-            if attempt == max_retries - 1:
-                return ""
-
-    def parse_llm_response(self, response, is_first_chunk=False):
-        parsed = {
-            'chunk_summary': '',
-            'chunk_text': '',
-            'qa_pairs': [],
-            'chunk_keywords': []
-        }
-
-        if is_first_chunk:
-            parsed.update({
-                'doc_name': 'Неизвестно',
-                'doc_date': 'Не указана',
-                'doc_type': 'Неизвестен'
-            })
-
-        lines = response.split('\n')
-        current_section = None
-
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            if is_first_chunk:
-                if line.startswith('doc_name:'):
-                    parsed['doc_name'] = line.split(':', 1)[1].strip()
-                elif line.startswith('doc_date:'):
-                    parsed['doc_date'] = line.split(':', 1)[1].strip()
-                elif line.startswith('doc_type:'):
-                    parsed['doc_type'] = line.split(':', 1)[1].strip()
-
-            if line.startswith('chunk_summary:'):
-                current_section = 'summary'
-                parsed['chunk_summary'] = line.split(':', 1)[1].strip()
-            elif line.startswith('qa_pairs:'):
-                current_section = 'qa'
-            elif line.startswith('chunk_keywords:'):
-                current_section = 'keywords'
-            elif '::' in line and current_section == 'qa':
-                q, a = line.split('::', 1)
-                parsed['qa_pairs'].append({'question': q.strip(), 'answer': a.strip()})
-            elif current_section == 'keywords':
-                parsed['chunk_keywords'].append(line.strip())
-
-        return parsed
-
-class SearchEngine:
-    def __init__(self):
-        self.preprocessor = TextPreprocessor()
-        self.bm25 = None
-        self.chunks_info = []
-
-    def build_index(self, knowledge_base):
-        corpus = []
-        self.chunks_info = []
-
-        for doc in knowledge_base.get('documents', []):
-            for chunk in doc.get('chunks', []):
-                text_parts = [
-                    str(chunk.get('chunk_summary', '')),
-                    ' '.join(map(str, chunk.get('chunk_keywords', []))),
-                    str(chunk.get('chunk_text', ''))
-                ]
-                text_for_index = ' '.join(text_parts)
-                corpus.append(text_for_index)
-
-                self.chunks_info.append({
-                    'doc_name': doc.get('doc_name', ''),
-                    'chunk_summary': chunk.get('chunk_summary', ''),
-                    'chunk_text': chunk.get('chunk_text', ''),
-                    'chunk_keywords': chunk.get('chunk_keywords', [])
-                })
-
-        tokenized_corpus = [self.preprocessor.preprocess(doc) for doc in corpus]
-        if not tokenized_corpus:
-            st.warning("База знаний пуста. Пожалуйста, загрузите и обработайте документы.")
-            return
-        self.bm25 = BM25Okapi(tokenized_corpus)
-
-    def search(self, query, top_n=5):
-        if not self.bm25 or not self.chunks_info:
-            self.build_index(st.session_state.knowledge_base)
-            if not self.bm25:
-                return []
-
-        tokens = self.preprocessor.preprocess(query)
-        scores = self.bm25.get_scores(tokens)
-        best_indices = np.argsort(scores)[-top_n:][::-1]
-
-        results = []
-        for idx in best_indices:
-            if scores[idx] > 0.1:
-                result = {**self.chunks_info[idx], 'score': float(scores[idx])}
-                results.append(result)
-        return results
+    "prediction": """Ты - юрист-литигатор в энергетической компании. Оцени правовую ситуацию с точки зрения слабых и сильных мест в позиции энергетической компании, неопределенности каких-либо фактических обстоятельств, недостатков доказательств. Предположи три варианта ответных действий второй стороны после получения процессуального документа энергетической компании, например: [оппонент может пытаться доказывать…], [оппонент может усилить аргументацию в части…], [оппонент попытается опровергать…], с описанием существа действий. Предположи, каков может быть исход дела при неблагоприятном для энергетической компании развитии ситуации."""
+}
 
 class TextPreprocessor:
     def __init__(self):
         self.regex = re.compile(r'[^\w\s]')
 
-    def preprocess(self, text):
+    def preprocess(self, text: str) -> List[str]:
         text = self.regex.sub(' ', text.lower())
         return text.split()
 
-def main():
-    st.set_page_config(page_title="Документ-Ассистент", layout="wide")
-    st.title("Документ-Ассистент")
+class BM25SearchEngine:
+    def __init__(self, preprocessor: TextPreprocessor):
+        self.preprocessor = preprocessor
+        self.bm25 = None
+        self.chunks_info = []
+        self.doc_index = defaultdict(list)
+        self.is_index_loaded = False
 
-    if 'processor' not in st.session_state:
-        st.session_state.processor = DocumentProcessor()
-        st.session_state.search_engine = SearchEngine()
-        
-    if 'knowledge_base' not in st.session_state:
-        st.session_state.knowledge_base = {'documents': []}
+    def build_index(self, documents: List[Dict]) -> None:
+        corpus = []
+        self.chunks_info = []
 
-    # Сайдбар для управления базой знаний (упрощённая версия)
-    with st.sidebar:
-        st.header("Управление базой знаний")
-        
-        # Загрузка существующей базы (если нужно)
-        kb_file = st.file_uploader("Загрузить базу знаний", type=['json'])
-        if kb_file:
-            st.session_state.knowledge_base = json.load(kb_file)
-            st.session_state.search_engine.build_index(st.session_state.knowledge_base)
-            st.success("База знаний загружена")
+        for doc_idx, doc in enumerate(documents):
+            self.chunks_info.append({
+                'doc_id': doc.get("name", f"doc_{doc_idx}"),
+                'doc_name': doc.get("name", "Без названия"),
+                'chunk_text': doc.get("content", "")
+            })
+            corpus.append(doc.get("content", ""))
 
-        # Кнопка скачивания (всегда видна, но активна только при наличии данных)
-        if st.session_state.knowledge_base.get('documents'):
-            json_str = json.dumps(st.session_state.knowledge_base, ensure_ascii=False, indent=2)
-            st.download_button(
-                label="Скачать базу знаний",
-                data=json_str,
-                file_name="knowledge_base.json",
-                mime="application/json",
-                help="Скачать текущую базу знаний в формате JSON"
-            )
-        else:
-            st.warning("База знаний пуста")
-   
-    # Основной интерфейс обработки документов (без изменений)
-    tab1, tab2 = st.tabs(["Обработка документов", "Поиск информации"])
+        tokenized_corpus = [self.preprocessor.preprocess(doc) for doc in corpus]
+        self.bm25 = BM25Okapi(tokenized_corpus)
+        self.is_index_loaded = True
 
-    with tab1:
-        st.header("Обработка документов")
-        uploaded_files = st.file_uploader(
-            "Загрузите документы",
-            type=['txt', 'pdf', 'docx'],
-            accept_multiple_files=True
+    def load_from_cache(self, cache_path: str) -> bool:
+        try:
+            if not os.path.exists(cache_path):
+                return False
+
+            with open(cache_path, 'rb') as f:
+                data = pickle.load(f)
+                self.bm25, self.chunks_info, self.doc_index = data
+                self.is_index_loaded = True
+                return True
+        except:
+            return False
+
+    def save_to_cache(self, cache_path: str) -> None:
+        with open(cache_path, 'wb') as f:
+            pickle.dump((self.bm25, self.chunks_info, self.doc_index), f)
+
+    def search(self, query: str, top_n: int = 5) -> List[Dict]:
+        if not self.is_index_loaded:
+            return []
+
+        tokens = self.preprocessor.preprocess(query)
+        if not tokens:
+            return []
+
+        scores = self.bm25.get_scores(tokens)
+        best_indices = np.argsort(scores)[-top_n:][::-1]
+
+        results = []
+        for idx in best_indices:
+            result = {**self.chunks_info[idx], 'score': float(scores[idx])}
+            results.append(result)
+
+        return results
+
+class LLMClient:
+    def __init__(self, api_url: str, api_key: str):
+        self.api_url = api_url
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+    def query(self, messages: List[Dict], temperature: float, max_tokens: int) -> str:
+        payload = {
+            "model": "qwen/qwen-72b",
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+
+        response = requests.post(
+            self.api_url,
+            headers=self.headers,
+            json=payload,
+            timeout=30
         )
+        return response.json()['choices'][0]['message']['content']
 
-        with st.spinner("Обновление поискового индекса..."):
-            st.session_state.search_engine.build_index(st.session_state.knowledge_base)
-        with st.expander("Настройка промпта"):
-            prompt = st.text_area("Промпт для обработки", DEFAULT_PROMPT, height=300)
+class DocumentAnalyzer:
+    def __init__(self):
+        self.preprocessor = TextPreprocessor()
+        self.search_engine = BM25SearchEngine(self.preprocessor)
+        self.llm_client = None
+        self.documents = []
 
-        if st.button("Обработать документы") and uploaded_files:
-            total_files = len(uploaded_files)
-            progress_bar = st.progress(0)
-            status_text = st.empty()
+    def initialize_llm(self, api_url: str, api_key: str):
+        self.llm_client = LLMClient(api_url, api_key)
 
-            for i, file in enumerate(uploaded_files):
-                status_text.text(f"Обработка файла {i+1}/{total_files}: {file.name}")
-                text = st.session_state.processor.read_file(file)
-                if text:
-                    doc_data = st.session_state.processor.process_document(text, prompt)
-                    if 'documents' not in st.session_state.knowledge_base:
-                        st.session_state.knowledge_base['documents'] = []
-                    st.session_state.knowledge_base['documents'].append(doc_data)
+    def load_documents(self, uploaded_files):
+        self.documents = []
+        for file in uploaded_files:
+            try:
+                doc = Document(file)
+                text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+                
+                if len(text) > MAX_CONTEXT_LENGTH:
+                    truncate_ratio = MAX_CONTEXT_LENGTH / len(text)
+                    cutoff = int(len(text) * truncate_ratio)
+                    text = text[:cutoff]
+                    st.warning(f"Документ {file.name} был обрезан до {cutoff} символов")
+                
+                self.documents.append({
+                    "name": file.name,
+                    "content": text
+                })
+            except Exception as e:
+                st.error(f"Ошибка обработки файла {file.name}: {str(e)}")
+        
+        if self.documents:
+            self.search_engine.build_index(self.documents)
+            with open(os.path.join(DATA_DIR, "documents.json"), "w") as f:
+                json.dump(self.documents, f)
+            self.search_engine.save_to_cache(os.path.join(DATA_DIR, "bm25_index.pkl"))
 
-                progress_bar.progress((i + 1) / total_files)
+    def analyze_document(self, prompt_type: str) -> str:
+        if not self.documents:
+            return "Пожалуйста, загрузите документы для анализа"
+        
+        chunks = self.search_engine.search("анализ документа")
+        context = self._build_context(chunks)
+        
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\n" + context}
+        ]
+        
+        return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
-            status_text.text("Обработка завершена!")
-            st.session_state.search_engine.build_index(st.session_state.knowledge_base)
-            st.success(f"Обработано файлов: {total_files}. Индекс поиска обновлён!")
+    def _build_context(self, chunks: List[Dict]) -> str:
+        context_parts = ["Релевантные фрагменты из документов:"]
+        
+        for chunk in sorted(chunks, key=lambda x: x.get('score', 0), reverse=True)[:5]:
+            context_parts.extend([
+                f"\nДокумент: {chunk.get('doc_name', 'Без названия')}",
+                f"Содержание: {chunk.get('chunk_text', '')[:1000]}"
+            ])
+        
+        return '\n'.join(context_parts)[:MAX_CONTEXT_LENGTH]
 
-        with tab2:
-            st.header("Поиск информации")
-            query = st.text_input("Введите запрос")
-
-        with st.expander("Настройка промпта для LLM"):
-            llm_prompt = st.text_area(
-                "Промпт для LLM",
-                "Ты - AI ассистент, анализирующий документы. Ссылайся на номер статей и пунктов.",
-                height=100
-            )
-
-        if st.button("Искать") and query:
-            # Проверяем, что база знаний не пуста
-            if not st.session_state.knowledge_base.get('documents'):
-                st.warning("База знаний пуста. Сначала обработайте документы.")
-                return
-            
-            # Проверяем, что индекс построен
-            if not hasattr(st.session_state.search_engine, 'bm25'):
-                st.session_state.search_engine.build_index(st.session_state.knowledge_base)
-            
-            results = st.session_state.search_engine.search(query)
-            if results:
-                context = build_llm_context(query, results)
-                response = st.session_state.processor.send_llm_request(
-                    f"{llm_prompt}\n\n{context}"
-                )
-                st.write("Ответ:")
-                st.write(response)
-            
-                # Показываем найденные документы для прозрачности
-                with st.expander("Показать найденные фрагменты"):
-                    for i, result in enumerate(results[:3]):  # Показываем первые 3 результата
-                        st.markdown(f"**Документ {i+1}:** {result.get('doc_name', '')}")
-                        st.caption(f"Рейтинг соответствия: {result.get('score', 0):.2f}")
-                        st.write(result.get('chunk_summary', ''))
-            else:
-                st.warning("По запросу ничего не найдено")
-
-def build_llm_context(query, chunks):
-    context_parts = [
-        f"Запрос пользователя: {query}",
-        "Релевантные фрагменты из документов:"
-    ]
-
-    for chunk in chunks:
-        context_parts.extend([
-            f"\nДокумент: {chunk.get('doc_name', '')}",
-            f"Ключевые слова: {', '.join(chunk.get('chunk_keywords', []))}",
-            f"Содержание: {chunk.get('chunk_text', '')[:1000]}"
-        ])
-
-    return '\n'.join(context_parts)[:CONTEXT_SUM]
+def main():
+    st.set_page_config(page_title="Аналитический помощник юриста", layout="wide")
+    st.title("Аналитический помощник юриста-литигатора")
+    
+    analyzer = DocumentAnalyzer()
+    
+    # Настройки API
+    with st.sidebar:
+        st.header("Настройки API")
+        api_url = st.text_input("URL API", value="https://api.vsegpt.ru/v1/chat/completions")
+        api_key = st.text_input("API Key", type="password")
+        if st.button("Инициализировать LLM"):
+            try:
+                analyzer.initialize_llm(api_url, api_key)
+                st.success("LLM успешно инициализирован")
+            except Exception as e:
+                st.error(f"Ошибка инициализации: {str(e)}")
+    
+    # Загрузка документов
+    st.header("Загрузка документов")
+    uploaded_files = st.file_uploader(
+        "Выберите документы в формате DOCX", 
+        type=["docx"], 
+        accept_multiple_files=True
+    )
+    
+    if uploaded_files:
+        with st.spinner("Обработка документов..."):
+            analyzer.load_documents(uploaded_files)
+        st.success(f"Загружено документов: {len(uploaded_files)}")
+    
+    # Кнопки анализа
+    st.header("Анализ документов")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("Оценить качество документа", disabled=not uploaded_files):
+            with st.spinner("Анализ документа..."):
+                result = analyzer.analyze_document("quality")
+                st.text_area("Результат оценки", value=result, height=300)
+    
+    with col2:
+        if st.button("Дать рекомендации по стратегии спора", disabled=not uploaded_files):
+            with st.spinner("Формирование рекомендаций..."):
+                result = analyzer.analyze_document("strategy")
+                st.text_area("Рекомендации по стратегии", value=result, height=300)
+    
+    with col3:
+        if st.button("Спрогнозировать позицию второй стороны", disabled=not uploaded_files):
+            with st.spinner("Прогнозирование позиции..."):
+                result = analyzer.analyze_document("prediction")
+                st.text_area("Прогноз позиции оппонента", value=result, height=300)
 
 if __name__ == "__main__":
     main()
