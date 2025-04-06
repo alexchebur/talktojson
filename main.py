@@ -99,23 +99,24 @@ class BM25SearchEngine:
             results.append(result)
 
         return results
-
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
         self.api_url = api_url
         self.headers = {
             "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Accept": "application/json"
         }
         self.is_initialized = True
 
     def query(self, messages: List[Dict], temperature: float, max_tokens: int) -> str:
         try:
             payload = {
-                "model": "qwen/qwen-72b",
+                "model": "qwen/qwen-72b",  # Указываем только имя модели без провайдера
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": max_tokens
+                "max_tokens": max_tokens,
+                "stream": False  # Добавляем явное указание на не-streaming режим
             }
 
             response = requests.post(
@@ -124,10 +125,23 @@ class LLMClient:
                 json=payload,
                 timeout=30
             )
-            response.raise_for_status()
+            
+            # Добавляем детальное логирование ошибок
+            if response.status_code != 200:
+                error_detail = response.text
+                try:
+                    error_json = response.json()
+                    error_detail = error_json.get("error", {}).get("message", error_detail)
+                except:
+                    pass
+                
+                raise Exception(f"API Error {response.status_code}: {error_detail}")
+
             return response.json()['choices'][0]['message']['content']
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Ошибка соединения: {str(e)}")
         except Exception as e:
-            raise Exception(f"Ошибка запроса к LLM: {str(e)}")
+            raise Exception(f"Ошибка обработки ответа: {str(e)}")
 
 class DocumentAnalyzer:
     def __init__(self):
