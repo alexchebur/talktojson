@@ -165,12 +165,29 @@ class LLMClient:
 
 
 class DocumentAnalyzer:
-    def __init__(self):
+    def __init__(self, api_url: str = None, api_key: str = None):
         self.preprocessor = TextPreprocessor()
         self.search_engine = BM25SearchEngine(self.preprocessor)
-        self.llm_client = None
         self.documents = []
+        self.llm_client = None
         self.llm_initialized = False
+        
+        # Инициализируем LLM сразу при создании объекта
+        if api_url and api_key:
+            self._initialize_llm(api_url, api_key)
+
+    def _initialize_llm(self, api_url: str, api_key: str) -> bool:
+        """Внутренний метод для инициализации LLM клиента"""
+        try:
+            self.llm_client = LLMClient(api_url, api_key)
+            self.llm_initialized = True
+            return True
+        except Exception as e:
+            st.error(f"Ошибка инициализации LLM: {str(e)}")
+            self.llm_initialized = False
+            return False
+
+    # ... остальные методы класса (load_documents, analyze_document и др.) ...
 
     def load_documents(self, uploaded_files):
         self.documents = []
@@ -315,10 +332,10 @@ def main():
     st.sidebar.write(f"Выбрано значение: {weight}")
     
     # Инициализация анализатора
-    if 'analyzer' not in st.session_state:
-        st.session_state.analyzer = DocumentAnalyzer()
+    #if 'analyzer' not in st.session_state:
+    #    st.session_state.analyzer = DocumentAnalyzer()
     
-    analyzer = st.session_state.analyzer
+    #analyzer = st.session_state.analyzer
     
     # Автоматическая инициализация LLM при запуске
     if not hasattr(analyzer, 'llm_initialized') or not analyzer.llm_initialized:
