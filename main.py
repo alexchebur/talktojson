@@ -10,6 +10,8 @@ import numpy as np
 from collections import defaultdict
 import requests
 from typing import List, Dict, Any
+from rake_nltk import Rake
+from pymorphy2 import MorphAnalyzer
 
 try:
     from config import API_KEY, API_URL
@@ -196,22 +198,39 @@ class DocumentAnalyzer:
     def analyze_document(self, prompt_type: str) -> str:
         if not self.documents:
             return "Пожалуйста, загрузите документы для анализа"
-    
-        # Разные поисковые запросы для разных типов анализа
-        search_queries = {
+        
+        # Собираем текст всех документов
+        full_text = " ".join([doc["content"] for doc in self.documents])
+        
+        # Определяем веса для разных частей запроса
+        SEARCH_WEIGHTS = {
+            "base_query": 1.0,    # Вес стандартных ключевых слов
+            "doc_content": 0.7    # Вес контента документа
+        }
+        
+        # Формируем комбинированный запрос
+        base_queries = {
             "quality": "оценка качества документа структура аргументации доказательства нормы права",
             "strategy": "стратегия спора доказательства процессуальное поведение",
             "prediction": "позиция второй стороны прогнозирование аргументы оппонента"
         }
-    
-        chunks = self.search_engine.search(search_queries[prompt_type])
+        
+        # Усиливаем важные термины повторами
+        boosted_query = (
+            f"{base_queries[prompt_type]} " * int(SEARCH_WEIGHTS["base_query"] * 10) +
+            f"{full_text[:1000]} " * int(SEARCH_WEIGHTS["doc_content"] * 10)
+        )
+        
+        # Поиск с комбинированным запросом
+        chunks = self.search_engine.search(boosted_query)
         context = self._build_context(chunks)
-    
+        
+        # Формирование промпта для LLM
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\n" + context}
+            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\nКонтекст:\n" + context}
         ]
-    
+        
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
         #except Exception as e:
             #return f"Ошибка при анализе документа: {str(e)}"
@@ -264,7 +283,10 @@ def main():
     # Кнопки анализа
     st.header("Анализ документов")
     col1, col2, col3 = st.columns(3)
-    
+    weights = st.sidebar.slider(
+        "Вес контента документа в поиске",
+        0.1, 2.0, 0.7, 0.1
+    )
     # Проверка инициализации LLM и загрузки документов
     buttons_disabled = not (uploaded_files and hasattr(analyzer, 'llm_initialized') and analyzer.llm_initialized)
     
