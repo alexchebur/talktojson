@@ -210,7 +210,7 @@ class DocumentAnalyzer:
             return
             
         try:
-            if uploaded_files.size == 0:
+            if len(uploaded_files) = 0:
                 st.warning("Файл пуст")
                 return
                 
