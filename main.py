@@ -4,6 +4,7 @@ import json
 import os
 import re
 import pickle
+import rake_ntlk
 from docx import Document
 from rank_bm25 import BM25Okapi
 import numpy as np
