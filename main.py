@@ -213,8 +213,8 @@ class DocumentAnalyzer:
         ]
     
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
-        except Exception as e:
-            return f"Ошибка при анализе документа: {str(e)}"
+        #except Exception as e:
+            #return f"Ошибка при анализе документа: {str(e)}"
 
     def _build_context(self, chunks: List[Dict]) -> str:
         context_parts = ["Релевантные фрагменты из документов:"]
