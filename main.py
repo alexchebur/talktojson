@@ -205,7 +205,7 @@ class DocumentAnalyzer:
                 print(f"Ошибка загрузки базы знаний: {e}")
 
     def load_documents(self, uploaded_files) -> None:
-    """Загружает и обрабатывает DOCX файл (без сохранения в базу знаний)"""
+        """Загружает и обрабатывает DOCX файл (без сохранения в базу знаний)"""
         if not uploaded_files:
             return
         
