@@ -187,16 +187,33 @@ class DocumentAnalyzer:
             self.llm_initialized = False
             return False
 
+     # Загружаем сохраненные документы при инициализации
+        self._load_saved_documents()
+        
+        if api_url and api_key:
+            self._initialize_llm(api_url, api_key)
+
+    def _load_saved_documents(self) -> None:
+        """Загружает сохраненные документы из JSON файла"""
+        json_path = os.path.join(DATA_DIR, "documents.json")
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, "r", encoding='utf-8') as f:
+                    self.documents = json.load(f)
+                if self.documents:
+                    self.search_engine.build_index(self.documents)
+                    print(f"Загружено {len(self.documents)} сохраненных документов")
+            except Exception as e:
+                print(f"Ошибка загрузки сохраненных документов: {e}")
+
     def load_documents(self, uploaded_files):
-        self.documents = []
+        new_documents = []
         for file in uploaded_files:
             try:
-                # Проверяем, что файл не пустой
                 if file.size == 0:
                     st.warning(f"Файл {file.name} пуст и будет пропущен")
                     continue
                     
-                # Читаем содержимое файла в BytesIO
                 file_bytes = io.BytesIO(file.getvalue())
                 
                 try:
@@ -213,7 +230,7 @@ class DocumentAnalyzer:
                         text = text[:cutoff]
                         st.warning(f"Документ {file.name} был обрезан до {cutoff} символов")
                     
-                    self.documents.append({
+                    new_documents.append({
                         "name": file.name,
                         "content": text
                     })
@@ -226,9 +243,12 @@ class DocumentAnalyzer:
                 st.error(f"Общая ошибка обработки файла {file.name}: {str(e)}")
                 continue
         
-        if self.documents:
+        if new_documents:
+            # Добавляем новые документы к существующим
+            self.documents.extend(new_documents)
             self.search_engine.build_index(self.documents)
-            # Сохраняем документы в JSON
+            
+            # Сохраняем все документы (старые + новые) в JSON
             with open(os.path.join(DATA_DIR, "documents.json"), "w", encoding='utf-8') as f:
                 json.dump(self.documents, f, ensure_ascii=False, indent=2)
 
