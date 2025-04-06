@@ -262,6 +262,11 @@ class DocumentAnalyzer:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\nКОНТЕКСТ:\n" + context}
         ]
+
+        # Выводим итоговый запрос в сайдбар
+        st.sidebar.header("Итоговый запрос к LLM")
+        st.sidebar.markdown("### Запрос пользователя:")
+        st.sidebar.markdown(BUTTON_PROMPTS[prompt_type] + "\n\nКОНТЕКСТ:\n" + context)
         
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
