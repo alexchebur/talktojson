@@ -172,58 +172,52 @@ class DocumentAnalyzer:
         self.documents = []
         self.llm_initialized = False
 
-    def initialize_llm(self, api_url: str, api_key: str):
-        if not api_key:
-            raise ValueError("API Key не найден.")
-        
-        self.llm_client = LLMClient(api_url, api_key)
-        self.llm_initialized = True
-        return True
-
-def load_documents(self, uploaded_files):
-    self.documents = []
-    for file in uploaded_files:
-        try:
-            # Проверяем, что файл не пустой
-            if file.size == 0:
-                st.warning(f"Файл {file.name} пуст и будет пропущен")
-                continue
-                
-            # Читаем содержимое файла в BytesIO
-            file_bytes = io.BytesIO(file.getvalue())
-            
+    def load_documents(self, uploaded_files):
+        self.documents = []
+        for file in uploaded_files:
             try:
-                doc = Document(file_bytes)
-                text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
-                
-                if not text:
-                    st.warning(f"Файл {file.name} не содержит текста и будет пропущен")
+                # Проверяем, что файл не пустой
+                if file.size == 0:
+                    st.warning(f"Файл {file.name} пуст и будет пропущен")
                     continue
                     
-                if len(text) > MAX_CONTEXT_LENGTH:
-                    truncate_ratio = MAX_CONTEXT_LENGTH / len(text)
-                    cutoff = int(len(text) * truncate_ratio)
-                    text = text[:cutoff]
-                    st.warning(f"Документ {file.name} был обрезан до {cutoff} символов")
+                # Читаем содержимое файла в BytesIO
+                file_bytes = io.BytesIO(file.getvalue())
                 
-                self.documents.append({
-                    "name": file.name,
-                    "content": text
-                })
-                
+                try:
+                    doc = Document(file_bytes)
+                    text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+                    
+                    if not text:
+                        st.warning(f"Файл {file.name} не содержит текста и будет пропущен")
+                        continue
+                        
+                    if len(text) > MAX_CONTEXT_LENGTH:
+                        truncate_ratio = MAX_CONTEXT_LENGTH / len(text)
+                        cutoff = int(len(text) * truncate_ratio)
+                        text = text[:cutoff]
+                        st.warning(f"Документ {file.name} был обрезан до {cutoff} символов")
+                    
+                    self.documents.append({
+                        "name": file.name,
+                        "content": text
+                    })
+                    
+                except Exception as e:
+                    st.error(f"Ошибка чтения DOCX файла {file.name}: {str(e)}")
+                    continue
+                    
             except Exception as e:
-                st.error(f"Ошибка чтения DOCX файла {file.name}: {str(e)}")
+                st.error(f"Общая ошибка обработки файла {file.name}: {str(e)}")
                 continue
-                
-        except Exception as e:
-            st.error(f"Общая ошибка обработки файла {file.name}: {str(e)}")
-            continue
-    
-    if self.documents:
-        self.search_engine.build_index(self.documents)
-        # Сохраняем документы в JSON
-        with open(os.path.join(DATA_DIR, "documents.json"), "w", encoding='utf-8') as f:
-            json.dump(self.documents, f, ensure_ascii=False, indent=2)
+        
+        if self.documents:
+            self.search_engine.build_index(self.documents)
+            # Сохраняем документы в JSON
+            with open(os.path.join(DATA_DIR, "documents.json"), "w", encoding='utf-8') as f:
+                json.dump(self.documents, f, ensure_ascii=False, indent=2)
+
+    # ... остальные методы класса ...
 
     def analyze_document(self, prompt_type: str) -> str:
         if not self.documents:
