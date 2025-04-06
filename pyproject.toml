@@ -12,4 +12,6 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "requests>=2.32.3",
     "streamlit>=1.44.0",
+    "rake-nltk>=1.0.6",
+    "pymorphy2>=0.9.1",
 ]
