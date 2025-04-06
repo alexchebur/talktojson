@@ -227,6 +227,7 @@ class DocumentAnalyzer:
         
         # Поиск с комбинированным запросом
         chunks = self.search_engine.search(boosted_query)
+        combined_query = f"{search_queries[prompt_type]} {full_text[:1000]}"
         context = self._build_context(chunks)
 
         with st.expander("🔍 Показать полный контекст запроса", expanded=False):
