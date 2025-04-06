@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import json
 import os
@@ -106,22 +107,27 @@ class LLMClient:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
+        self.is_initialized = True
 
     def query(self, messages: List[Dict], temperature: float, max_tokens: int) -> str:
-        payload = {
-            "model": "qwen/qwen-72b",
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens
-        }
+        try:
+            payload = {
+                "model": "qwen/qwen-72b",
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens
+            }
 
-        response = requests.post(
-            self.api_url,
-            headers=self.headers,
-            json=payload,
-            timeout=30
-        )
-        return response.json()['choices'][0]['message']['content']
+            response = requests.post(
+                self.api_url,
+                headers=self.headers,
+                json=payload,
+                timeout=30
+            )
+            response.raise_for_status()
+            return response.json()['choices'][0]['message']['content']
+        except Exception as e:
+            raise Exception(f"Ошибка запроса к LLM: {str(e)}")
 
 class DocumentAnalyzer:
     def __init__(self):
@@ -129,9 +135,15 @@ class DocumentAnalyzer:
         self.search_engine = BM25SearchEngine(self.preprocessor)
         self.llm_client = None
         self.documents = []
+        self.llm_initialized = False
 
     def initialize_llm(self, api_url: str, api_key: str):
+        if not api_url or not api_key:
+            raise ValueError("URL API и API Key обязательны")
+        
         self.llm_client = LLMClient(api_url, api_key)
+        self.llm_initialized = True
+        return True
 
     def load_documents(self, uploaded_files):
         self.documents = []
@@ -163,15 +175,21 @@ class DocumentAnalyzer:
         if not self.documents:
             return "Пожалуйста, загрузите документы для анализа"
         
-        chunks = self.search_engine.search("анализ документа")
-        context = self._build_context(chunks)
+        if not self.llm_initialized:
+            return "LLM не инициализирован. Пожалуйста, укажите API ключ и URL в настройках"
         
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\n" + context}
-        ]
-        
-        return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
+        try:
+            chunks = self.search_engine.search("анализ документа")
+            context = self._build_context(chunks)
+            
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\n" + context}
+            ]
+            
+            return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
+        except Exception as e:
+            return f"Ошибка при анализе документа: {str(e)}"
 
     def _build_context(self, chunks: List[Dict]) -> str:
         context_parts = ["Релевантные фрагменты из документов:"]
@@ -188,17 +206,25 @@ def main():
     st.set_page_config(page_title="Аналитический помощник юриста", layout="wide")
     st.title("Аналитический помощник юриста-литигатора")
     
-    analyzer = DocumentAnalyzer()
+    # Инициализация анализатора
+    if 'analyzer' not in st.session_state:
+        st.session_state.analyzer = DocumentAnalyzer()
+    
+    analyzer = st.session_state.analyzer
     
     # Настройки API
     with st.sidebar:
         st.header("Настройки API")
         api_url = st.text_input("URL API", value="https://api.vsegpt.ru/v1/chat/completions")
         api_key = st.text_input("API Key", type="password")
+        
         if st.button("Инициализировать LLM"):
             try:
-                analyzer.initialize_llm(api_url, api_key)
-                st.success("LLM успешно инициализирован")
+                if analyzer.initialize_llm(api_url, api_key):
+                    st.success("LLM успешно инициализирован")
+                    st.session_state.llm_initialized = True
+                else:
+                    st.error("Не удалось инициализировать LLM")
             except Exception as e:
                 st.error(f"Ошибка инициализации: {str(e)}")
     
@@ -219,23 +245,26 @@ def main():
     st.header("Анализ документов")
     col1, col2, col3 = st.columns(3)
     
+    # Проверка инициализации LLM и загрузки документов
+    buttons_disabled = not (uploaded_files and hasattr(analyzer, 'llm_initialized') and analyzer.llm_initialized)
+    
     with col1:
-        if st.button("Оценить качество документа", disabled=not uploaded_files):
+        if st.button("Оценить качество документа", disabled=buttons_disabled):
             with st.spinner("Анализ документа..."):
                 result = analyzer.analyze_document("quality")
-                st.text_area("Результат оценки", value=result, height=300)
+                st.text_area("Результат оценки", value=result, height=300, key="quality_result")
     
     with col2:
-        if st.button("Дать рекомендации по стратегии спора", disabled=not uploaded_files):
+        if st.button("Дать рекомендации по стратегии спора", disabled=buttons_disabled):
             with st.spinner("Формирование рекомендаций..."):
                 result = analyzer.analyze_document("strategy")
-                st.text_area("Рекомендации по стратегии", value=result, height=300)
+                st.text_area("Рекомендации по стратегии", value=result, height=300, key="strategy_result")
     
     with col3:
-        if st.button("Спрогнозировать позицию второй стороны", disabled=not uploaded_files):
+        if st.button("Спрогнозировать позицию второй стороны", disabled=buttons_disabled):
             with st.spinner("Прогнозирование позиции..."):
                 result = analyzer.analyze_document("prediction")
-                st.text_area("Прогноз позиции оппонента", value=result, height=300)
+                st.text_area("Прогноз позиции оппонента", value=result, height=300, key="prediction_result")
 
 if __name__ == "__main__":
     main()
