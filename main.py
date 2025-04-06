@@ -204,8 +204,8 @@ class DocumentAnalyzer:
         
         # Определяем веса для разных частей запроса
         SEARCH_WEIGHTS = {
-            "base_query": 1.0,    # Вес стандартных ключевых слов
-            "doc_content": 0.7    # Вес контента документа
+            "base_query": 0.7,    # Вес стандартных ключевых слов
+            "doc_content": 1.0    # Вес контента документа
         }
         
         # Формируем комбинированный запрос
@@ -248,7 +248,7 @@ class DocumentAnalyzer:
 
 def main():
     st.set_page_config(page_title="El Documente", layout="wide")
-    st.title("El Documente: проверьте свои процессуальные документы")
+    st.title("El Documente: проверьте свой процессуальный документ")
     
     # Инициализация анализатора
     if 'analyzer' not in st.session_state:
@@ -268,6 +268,10 @@ def main():
             st.sidebar.error(f"Ошибка инициализации: {str(e)}")
     
     # Загрузка документов
+        weights = st.sidebar.slider(
+            "Вес контента документа в поиске",
+            0.1, 2.0, 0.7, 0.1
+        )
     st.header("Загрузка документов")
     uploaded_files = st.file_uploader(
         "Выберите документы в формате DOCX", 
@@ -283,10 +287,7 @@ def main():
     # Кнопки анализа
     st.header("Анализ документов")
     col1, col2, col3 = st.columns(3)
-    weights = st.sidebar.slider(
-        "Вес контента документа в поиске",
-        0.1, 2.0, 0.7, 0.1
-    )
+
     # Проверка инициализации LLM и загрузки документов
     buttons_disabled = not (uploaded_files and hasattr(analyzer, 'llm_initialized') and analyzer.llm_initialized)
     
