@@ -23,9 +23,9 @@ except ImportError:
 
 #конфигурация
 DATA_DIR = "data"
-MAX_CONTEXT_LENGTH = 8000
+MAX_CONTEXT_LENGTH = 9000
 MAX_ANSWER_LENGTH = 15000
-TEMPERATURE = 0.3
+TEMPERATURE = 0.2
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # Системные промпты
@@ -205,8 +205,8 @@ class DocumentAnalyzer:
         
         # Определяем веса для разных частей запроса
         SEARCH_WEIGHTS = {
-            "base_query": 0.7,    # Вес стандартных ключевых слов
-            "doc_content": 1.0    # Вес контента документа
+            "base_query": 1.0,    # Вес стандартных ключевых слов
+            "doc_content": 0.3    # Вес контента документа
         }
         
         # Формируем комбинированный запрос
