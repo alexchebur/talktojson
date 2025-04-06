@@ -225,8 +225,8 @@ class DocumentAnalyzer:
         return '\n'.join(context_parts)[:MAX_CONTEXT_LENGTH]
 
 def main():
-    st.set_page_config(page_title="Аналитический помощник юриста", layout="wide")
-    st.title("Аналитический помощник юриста-литигатора")
+    st.set_page_config(page_title="El Documente", layout="wide")
+    st.title("Оценщик ваших процессуальных документов")
     
     # Инициализация анализатора
     if 'analyzer' not in st.session_state:
