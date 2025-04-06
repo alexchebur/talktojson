@@ -11,7 +11,14 @@ from collections import defaultdict
 import requests
 from typing import List, Dict, Any
 
-# Конфигурация
+try:
+    from config import API_KEY, API_URL
+except ImportError:
+    st.error("Ошибка: Создайте файл config.py с переменными API_KEY и API_URL")
+    API_KEY = ""
+    API_URL = "https://api.vsegpt.ru/v1/chat/completions"
+
+#конфигурация
 DATA_DIR = "data"
 MAX_CONTEXT_LENGTH = 4000
 MAX_ANSWER_LENGTH = 12000
@@ -25,8 +32,9 @@ BUTTON_PROMPTS = {
     "quality": """Ты юрист-литигатор в энергетической компании Т Плюс. Оцени сильные и слабые стороны процессуального документа, в том числе: 
 1. Полноту, последовательность и структуру аргументации, 
 2. относимость и достаточность доказательств, 
-3. правильность указания применимых норм права. 
-4. [ВАЖНО] ОБЯЗАТЕЛЬНО критично оцени документ на предмет соответствия методическим рекомендациям Т Плюс по подготовке процессуальных документов, при выявлении нарушений - процитируй нарушенные требования рекомендаций Т Плюс.""",
+3. правильность, полноту указания применимых норм права. 
+4. суммарное количество недостатков в формате оценки от 1 до 10 ["Я бы поставил итоговую оценку документу ... из 10] 
+5.[ВАЖНО] ОБЯЗАТЕЛЬНО критично оцени документ на предмет соответствия методическим рекомендациям Т Плюс по подготовке процессуальных документов, при выявлении нарушений - процитируй нарушенные требования рекомендаций Т Плюс.""",
 
     "strategy": """Ты - юрист-литигатор в энергетической компании. Оцени правовую ситуацию с точки зрения слабых и сильных мест в позиции оппонента и компании, неопределенности каких-либо фактических обстоятельств, недостатков доказательств. Напиши пошагово стратегию процессуального поведения, например проведения экспертиз, истребования доказательств, смены акцентов в обосновании позиции энергетической компании. Предложи, на чем необходимо сосредоточиться: на сборе доказательств, повышении качества представления интересов, дополнения позиции аргументами или сменой позиции.""",
 
@@ -112,11 +120,11 @@ class LLMClient:
     def query(self, messages: List[Dict], temperature: float, max_tokens: int) -> str:
         try:
             payload = {
-                "model": "qwen/qwq-32b",  # Указываем только имя модели без провайдера
+                "model": "qwen/qwen-72b",
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
-                "stream": False  # Добавляем явное указание на не-streaming режим
+                "stream": False
             }
 
             response = requests.post(
@@ -126,7 +134,6 @@ class LLMClient:
                 timeout=30
             )
             
-            # Добавляем детальное логирование ошибок
             if response.status_code != 200:
                 error_detail = response.text
                 try:
@@ -143,6 +150,7 @@ class LLMClient:
         except Exception as e:
             raise Exception(f"Ошибка обработки ответа: {str(e)}")
 
+
 class DocumentAnalyzer:
     def __init__(self):
         self.preprocessor = TextPreprocessor()
@@ -152,8 +160,8 @@ class DocumentAnalyzer:
         self.llm_initialized = False
 
     def initialize_llm(self, api_url: str, api_key: str):
-        if not api_url or not api_key:
-            raise ValueError("URL API и API Key обязательны")
+        if not api_key:
+            raise ValueError("API Key не найден.")
         
         self.llm_client = LLMClient(api_url, api_key)
         self.llm_initialized = True
@@ -226,21 +234,16 @@ def main():
     
     analyzer = st.session_state.analyzer
     
-    # Настройки API
-    with st.sidebar:
-        st.header("Настройки API")
-        api_url = st.text_input("URL API", value="https://api.vsegpt.ru/v1/chat/completions")
-        api_key = st.text_input("API Key", type="password")
-        
-        if st.button("Инициализировать LLM"):
-            try:
-                if analyzer.initialize_llm(api_url, api_key):
-                    st.success("LLM успешно инициализирован")
-                    st.session_state.llm_initialized = True
-                else:
-                    st.error("Не удалось инициализировать LLM")
-            except Exception as e:
-                st.error(f"Ошибка инициализации: {str(e)}")
+    # Автоматическая инициализация LLM при запуске
+    if not hasattr(analyzer, 'llm_initialized') or not analyzer.llm_initialized:
+        try:
+            if analyzer.initialize_llm(API_URL, API_KEY):
+                st.session_state.llm_initialized = True
+                st.sidebar.success("LLM успешно инициализирован")
+            else:
+                st.sidebar.error("Не удалось инициализировать LLM")
+        except Exception as e:
+            st.sidebar.error(f"Ошибка инициализации: {str(e)}")
     
     # Загрузка документов
     st.header("Загрузка документов")
