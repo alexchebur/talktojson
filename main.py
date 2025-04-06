@@ -306,10 +306,10 @@ def main():
             st.sidebar.error(f"Ошибка инициализации: {str(e)}")
     
     # Загрузка документов
-        weights = st.sidebar.slider(
-            "Вес контента документа в поиске",
-            0.1, 2.0, 0.7, 0.1
-        )
+        #weights = st.sidebar.slider(
+        #    "Вес контента документа в поиске",
+        #    0.1, 2.0, 0.7, 0.1
+        #)
     st.header("Загрузка документов")
     uploaded_files = st.file_uploader(
         "Выберите документы в формате DOCX", 
