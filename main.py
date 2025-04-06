@@ -126,7 +126,7 @@ class LLMClient:
     def query(self, messages: List[Dict], temperature: float, max_tokens: int) -> str:
         try:
             payload = {
-                "model": "qwen/qwq-32b-preview",# "qwen/qwq-32b",
+                "model": "qwen/qwq-32b",
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
