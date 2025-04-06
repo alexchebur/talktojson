@@ -227,7 +227,7 @@ class DocumentAnalyzer:
         
         # Поиск с комбинированным запросом
         chunks = self.search_engine.search(boosted_query)
-        combined_query = f"{search_queries[prompt_type]} {full_text[:1000]}"
+        combined_query = f"{BUTTON_PROMPTS[prompt_type]} {full_text[:1000]}"
         context = self._build_context(chunks)
 
         with st.expander("🔍 Показать полный контекст запроса", expanded=False):
@@ -273,7 +273,7 @@ def main():
     st.set_page_config(page_title="El Documente", layout="wide")
     st.title("El Documente: проверьте свой процессуальный документ")
     st.sidebar.header("Настройки поиска")
-    col1, col2 = st.sidebar.columns([3, 1])
+    #col1, col2 = st.sidebar.columns([3, 1])
     with col1:
         weight = st.slider(
             "Вес контента документа",
