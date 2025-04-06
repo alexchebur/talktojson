@@ -272,19 +272,22 @@ def main():
         if st.button("Оценить качество документа", disabled=buttons_disabled):
             with st.spinner("Анализ документа..."):
                 result = analyzer.analyze_document("quality")
-                st.text_area("Результат оценки", value=result, height=300, key="quality_result")
+                st.markdown("### Результат оценки")
+                st.markdown(result)  # Автоматически рендерит Markdown
     
     with col2:
         if st.button("Дать рекомендации по стратегии спора", disabled=buttons_disabled):
             with st.spinner("Формирование рекомендаций..."):
                 result = analyzer.analyze_document("strategy")
-                st.text_area("Рекомендации по стратегии", value=result, height=300, key="strategy_result")
+                st.markdown("### Рекомендации по стратегии")
+                st.markdown(result)
     
     with col3:
         if st.button("Спрогнозировать позицию второй стороны", disabled=buttons_disabled):
             with st.spinner("Прогнозирование позиции..."):
                 result = analyzer.analyze_document("prediction")
-                st.text_area("Прогноз позиции оппонента", value=result, height=300, key="prediction_result")
+                st.markdown("### Прогноз позиции оппонента")
+                st.markdown(result)
 
 if __name__ == "__main__":
     main()
