@@ -168,16 +168,20 @@ class DocumentAnalyzer:
     def __init__(self, api_url: str = None, api_key: str = None):
         self.preprocessor = TextPreprocessor()
         self.search_engine = BM25SearchEngine(self.preprocessor)
-        self.documents = []
+        self.knowledge_base = []  # Документы из knowledge_base.json для поиска BM25
+        self.current_docx = None  # Текущий загруженный DOCX-документ
         self.llm_client = None
         self.llm_initialized = False
         
-        # Инициализируем LLM сразу при создании объекта
+        # Загружаем базу знаний при инициализации
+        self._load_knowledge_base()
+        
+        # Инициализируем LLM
         if api_url and api_key:
             self._initialize_llm(api_url, api_key)
 
     def _initialize_llm(self, api_url: str, api_key: str) -> bool:
-        """Внутренний метод для инициализации LLM клиента"""
+        """Инициализация LLM клиента"""
         try:
             self.llm_client = LLMClient(api_url, api_key)
             self.llm_initialized = True
@@ -187,135 +191,103 @@ class DocumentAnalyzer:
             self.llm_initialized = False
             return False
 
-     # Загружаем сохраненные документы при инициализации
-        self._load_saved_documents()
-        
-        if api_url and api_key:
-            self._initialize_llm(api_url, api_key)
-
-    def _load_saved_documents(self) -> None:
-        """Загружает сохраненные документы из JSON файла"""
+    def _load_knowledge_base(self) -> None:
+        """Загружает базу знаний из JSON файла для BM25 поиска"""
         json_path = os.path.join(DATA_DIR, "knowledge_base.json")
         if os.path.exists(json_path):
             try:
                 with open(json_path, "r", encoding='utf-8') as f:
-                    self.documents = json.load(f)
-                if self.documents:
-                    self.search_engine.build_index(self.documents)
-                    print(f"Загружено {len(self.documents)} сохраненных документов")
+                    self.knowledge_base = json.load(f)
+                if self.knowledge_base:
+                    self.search_engine.build_index(self.knowledge_base)
+                    print(f"Загружено {len(self.knowledge_base)} документов из базы знаний")
             except Exception as e:
-                print(f"Ошибка загрузки сохраненных документов: {e}")
+                print(f"Ошибка загрузки базы знаний: {e}")
 
-    def load_documents(self, uploaded_files):
-        new_documents = []
-        for file in uploaded_files:
-            try:
-                if file.size == 0:
-                    st.warning(f"Файл {file.name} пуст и будет пропущен")
-                    continue
-                    
-                file_bytes = io.BytesIO(file.getvalue())
-                
-                try:
-                    doc = Document(file_bytes)
-                    text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
-                    
-                    if not text:
-                        st.warning(f"Файл {file.name} не содержит текста и будет пропущен")
-                        continue
-                        
-                    if len(text) > MAX_CONTEXT_LENGTH:
-                        truncate_ratio = MAX_CONTEXT_LENGTH / len(text)
-                        cutoff = int(len(text) * truncate_ratio)
-                        text = text[:cutoff]
-                        st.warning(f"Документ {file.name} был обрезан до {cutoff} символов")
-                    
-                    new_documents.append({
-                        "name": file.name,
-                        "content": text
-                    })
-                    
-                except Exception as e:
-                    st.error(f"Ошибка чтения DOCX файла {file.name}: {str(e)}")
-                    continue
-                    
-            except Exception as e:
-                st.error(f"Общая ошибка обработки файла {file.name}: {str(e)}")
-                continue
-        
-        if new_documents:
-            # Добавляем новые документы к существующим
-            self.documents.extend(new_documents)
-            self.search_engine.build_index(self.documents)
+    def load_document(self, uploaded_file) -> None:
+        """Загружает и обрабатывает DOCX файл (без сохранения в базу знаний)"""
+        if not uploaded_file:
+            return
             
-            # Сохраняем все документы (старые + новые) в JSON
-            with open(os.path.join(DATA_DIR, "documents.json"), "w", encoding='utf-8') as f:
-                json.dump(self.documents, f, ensure_ascii=False, indent=2)
+        try:
+            if uploaded_file.size == 0:
+                st.warning("Файл пуст")
+                return
+                
+            file_bytes = io.BytesIO(uploaded_file.getvalue())
+            doc = Document(file_bytes)
+            text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+            
+            if not text:
+                st.warning("Файл не содержит текста")
+                return
+                
+            if len(text) > MAX_CONTEXT_LENGTH:
+                text = text[:MAX_CONTEXT_LENGTH]
+                st.warning(f"Документ обрезан до {MAX_CONTEXT_LENGTH} символов")
+            
+            self.current_docx = {
+                "name": uploaded_file.name,
+                "content": text
+            }
+            
+            st.success("Документ загружен для анализа")
+            
+        except Exception as e:
+            st.error(f"Ошибка обработки файла: {str(e)}")
 
     def analyze_document(self, prompt_type: str) -> str:
-        if not self.documents:
-            return "Пожалуйста, загрузите документы для анализа"
+        """Анализирует документ с использованием LLM"""
+        if not self.current_docx:
+            return "Пожалуйста, загрузите DOCX файл"
+            
+        if not self.knowledge_base:
+            return "База знаний пуста (добавьте документы в knowledge_base.json)"
         
-        # Собираем текст всех документов
-        full_text = " ".join([doc["content"] for doc in self.documents])
+        # 1. Получаем текст из загруженного DOCX
+        docx_text = self.current_docx["content"]
         
-        # Определяем веса для разных частей запроса
-        SEARCH_WEIGHTS = {
-            "base_query": 0.1,    # Вес стандартных ключевых слов
-            "doc_content": 1.0    # Вес контента документа
-        }
+        # 2. Формируем запрос для BM25 на основе текста DOCX
+        query = self._generate_search_query(prompt_type, docx_text)
         
-        # Формируем комбинированный запрос
+        # 3. Ищем релевантные фрагменты в базе знаний
+        chunks = self.search_engine.search(query)
+        
+        # 4. Формируем контекст для LLM
+        context = self._build_context(docx_text, chunks)
+        
+        # 5. Формируем и выполняем запрос к LLM
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\nКОНТЕКСТ:\n" + context}
+        ]
+        
+        return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
+
+    def _generate_search_query(self, prompt_type: str, docx_text: str) -> str:
+        """Генерирует поисковый запрос для BM25"""
         base_queries = {
             "quality": "оценка качества документа структура аргументации доказательства нормы права",
             "strategy": "стратегия спора доказательства процессуальное поведение",
             "prediction": "позиция второй стороны прогнозирование аргументы оппонента"
         }
         
-        # Усиливаем важные термины повторами
-        boosted_query = (
-            f"{base_queries[prompt_type]} " * int(SEARCH_WEIGHTS["base_query"] * 10) +
-            f"{full_text[:1000]} " * int(SEARCH_WEIGHTS["doc_content"] * 10)
-        )
-        
-        # Поиск с комбинированным запросом
-        chunks = self.search_engine.search(boosted_query)
-        combined_query = f"{BUTTON_PROMPTS[prompt_type]} {full_text[:1000]}"
-        context = self._build_context(chunks)
+        # Комбинируем базовый запрос с текстом DOCX
+        return f"{base_queries[prompt_type]} {docx_text[:1000]}"
 
-        with st.expander("🔍 Показать полный контекст запроса", expanded=False):
-            st.write("### Системный промпт:")
-            st.code(SYSTEM_PROMPT, language="text")
-            
-            st.write("### Пользовательский промпт:")
-            st.code(BUTTON_PROMPTS[prompt_type], language="text")
-            
-            st.write("### Результаты поиска BM25:")
-            st.json({
-                "Поисковый запрос": combined_query,
-                "Найденные фрагменты": [
-                    {"Документ": chunk["doc_name"], "Текст": chunk["chunk_text"][:200]} 
-                    for chunk in chunks
-                ]
-            })
-            
-            st.write("### Полный контекст для LLM:")
-            st.text_area("Контекст", value=context, height=300, label_visibility="collapsed")
-        
-        # Формирование промпта для LLM
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\nКонтекст:\n" + context}
+    def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
+        """Строит контекст для LLM из DOCX и найденных фрагментов"""
+        context_parts = [
+            "=== ЗАГРУЖЕННЫЙ ДОКУМЕНТ ===",
+            docx_text,
+            "\n=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ ИЗ БАЗЫ ЗНАНИЙ ==="
         ]
         
-        return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
-
-    def _build_context(self, chunks: List[Dict]) -> str:
-        context = ["Наиболее релевантные фрагменты (поиск BM25):"]
         for chunk in chunks:
-            context.append(f"\n📄 {chunk['doc_name']} (релевантность: {chunk['score']:.2f}):")
-            context.append(chunk['chunk_text'][:1000])
-        return "\n".join(context)
+            context_parts.append(f"\n📄 {chunk['doc_name']} (релевантность: {chunk['score']:.2f}):")
+            context_parts.append(chunk['chunk_text'][:1000])
+        
+        return "\n".join(context_parts)
 
 def main():
     st.set_page_config(page_title="El Documente", layout="wide")
