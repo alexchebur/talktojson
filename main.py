@@ -251,20 +251,20 @@ def main():
     st.set_page_config(page_title="El Documente", layout="wide")
     st.title("El Documente: проверьте свой процессуальный документ")
     st.sidebar.header("Настройки поиска")
-col1, col2 = st.sidebar.columns([3, 1])
-with col1:
-    weight = st.slider(
-        "Вес контента документа",
-        0.1, 2.0, 0.7, 0.1,
-        key="doc_weight_slider",
-        help="Регулирует влияние текста документа на результаты поиска"
-    )
+    col1, col2 = st.sidebar.columns([3, 1])
+    with col1:
+        weight = st.slider(
+            "Вес контента документа",
+            0.1, 2.0, 0.7, 0.1,
+            key="doc_weight_slider",
+            help="Регулирует влияние текста документа на результаты поиска"
+        )
 
-with col2:
-    st.metric("Текущее значение", f"{weight:.1f}")
+    with col2:
+        st.metric("Текущее значение", f"{weight:.1f}")
 
-# Для отладки (можно убрать в продакшене)
-st.sidebar.write(f"Выбрано значение: {weight}")
+    # Для отладки (можно убрать в продакшене)
+    st.sidebar.write(f"Выбрано значение: {weight}")
     
     # Инициализация анализатора
     if 'analyzer' not in st.session_state:
