@@ -196,20 +196,23 @@ class DocumentAnalyzer:
     def analyze_document(self, prompt_type: str) -> str:
         if not self.documents:
             return "Пожалуйста, загрузите документы для анализа"
-        
-        if not self.llm_initialized:
-            return "LLM не инициализирован. Пожалуйста, укажите API ключ и URL в настройках"
-        
-        try:
-            chunks = self.search_engine.search("анализ документа")
-            context = self._build_context(chunks)
-            
-            messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\n" + context}
-            ]
-            
-            return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
+    
+        # Разные поисковые запросы для разных типов анализа
+        search_queries = {
+            "quality": "оценка качества документа структура аргументации доказательства нормы права",
+            "strategy": "стратегия спора доказательства процессуальное поведение",
+            "prediction": "позиция второй стороны прогнозирование аргументы оппонента"
+        }
+    
+        chunks = self.search_engine.search(search_queries[prompt_type])
+        context = self._build_context(chunks)
+    
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\n" + context}
+        ]
+    
+        return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
         except Exception as e:
             return f"Ошибка при анализе документа: {str(e)}"
 
