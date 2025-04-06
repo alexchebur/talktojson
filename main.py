@@ -137,7 +137,7 @@ class LLMClient:
                 self.api_url,
                 headers=self.headers,
                 json=payload,
-                timeout=30
+                timeout=60
             )
             
             if response.status_code != 200:
