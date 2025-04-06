@@ -204,17 +204,17 @@ class DocumentAnalyzer:
             except Exception as e:
                 print(f"Ошибка загрузки базы знаний: {e}")
 
-    def load_document(self, uploaded_file) -> None:
+    def load_document(self, uploaded_files) -> None:
         """Загружает и обрабатывает DOCX файл (без сохранения в базу знаний)"""
-        if not uploaded_file:
+        if not uploaded_files:
             return
             
         try:
-            if uploaded_file.size == 0:
+            if uploaded_files.size == 0:
                 st.warning("Файл пуст")
                 return
                 
-            file_bytes = io.BytesIO(uploaded_file.getvalue())
+            file_bytes = io.BytesIO(uploaded_files.getvalue())
             doc = Document(file_bytes)
             text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
             
@@ -227,7 +227,7 @@ class DocumentAnalyzer:
                 st.warning(f"Документ обрезан до {MAX_CONTEXT_LENGTH} символов")
             
             self.current_docx = {
-                "name": uploaded_file.name,
+                "name": uploaded_files.name,
                 "content": text
             }
             
