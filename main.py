@@ -240,15 +240,11 @@ class DocumentAnalyzer:
             #return f"Ошибка при анализе документа: {str(e)}"
 
     def _build_context(self, chunks: List[Dict]) -> str:
-        context_parts = ["Релевантные фрагменты из документов:"]
-        
-        for chunk in sorted(chunks, key=lambda x: x.get('score', 0), reverse=True)[:5]:
-            context_parts.extend([
-                f"\nДокумент: {chunk.get('doc_name', 'Без названия')}",
-                f"Содержание: {chunk.get('chunk_text', '')[:1000]}"
-            ])
-        
-        return '\n'.join(context_parts)[:MAX_CONTEXT_LENGTH]
+        context = ["Наиболее релевантные фрагменты (поиск BM25):"]
+        for chunk in chunks:
+            context.append(f"\n📄 {chunk['doc_name']} (релевантность: {chunk['score']:.2f}):")
+            context.append(chunk['chunk_text'][:1000])
+        return "\n".join(context)
 
 def main():
     st.set_page_config(page_title="El Documente", layout="wide")
