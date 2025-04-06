@@ -4,7 +4,7 @@ import json
 import os
 import re
 import pickle
-#import rake_nltk
+import io  # Добавлен отсутствующий импорт
 from docx import Document
 from rank_bm25 import BM25Okapi
 import numpy as np
@@ -187,8 +187,6 @@ class DocumentAnalyzer:
             self.llm_initialized = False
             return False
 
-    # ... остальные методы класса (load_documents, analyze_document и др.) ...
-
     def load_documents(self, uploaded_files):
         self.documents = []
         for file in uploaded_files:
@@ -233,8 +231,6 @@ class DocumentAnalyzer:
             # Сохраняем документы в JSON
             with open(os.path.join(DATA_DIR, "documents.json"), "w", encoding='utf-8') as f:
                 json.dump(self.documents, f, ensure_ascii=False, indent=2)
-
-    # ... остальные методы класса ...
 
     def analyze_document(self, prompt_type: str) -> str:
         if not self.documents:
@@ -285,9 +281,6 @@ class DocumentAnalyzer:
             
             st.write("### Полный контекст для LLM:")
             st.text_area("Контекст", value=context, height=300, label_visibility="collapsed")
-        # ===== КОНЕЦ ВЫВОДА КОНТЕКСТА =====
-
-
         
         # Формирование промпта для LLM
         messages = [
@@ -296,8 +289,6 @@ class DocumentAnalyzer:
         ]
         
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
-        #except Exception as e:
-            #return f"Ошибка при анализе документа: {str(e)}"
 
     def _build_context(self, chunks: List[Dict]) -> str:
         context = ["Наиболее релевантные фрагменты (поиск BM25):"]
@@ -312,9 +303,10 @@ def main():
     
     # Инициализация анализатора
     if 'analyzer' not in st.session_state:
-        st.session_state.analyzer = DocumentAnalyzer()
+        st.session_state.analyzer = DocumentAnalyzer(API_URL, API_KEY)  # Передаем параметры при создании
     
     analyzer = st.session_state.analyzer
+    
     st.sidebar.header("Настройки поиска")
     col1, col2 = st.sidebar.columns([3, 1])
     with col1:
@@ -331,28 +323,11 @@ def main():
     # Для отладки (можно убрать в продакшене)
     st.sidebar.write(f"Выбрано значение: {weight}")
     
-    # Инициализация анализатора
-    #if 'analyzer' not in st.session_state:
-    #    st.session_state.analyzer = DocumentAnalyzer()
-    
-    #analyzer = st.session_state.analyzer
-    
-    # Автоматическая инициализация LLM при запуске
-    if not hasattr(analyzer, 'llm_initialized') or not analyzer.llm_initialized:
-        try:
-            if analyzer.initialize_llm(API_URL, API_KEY):
-                st.session_state.llm_initialized = True
-                st.sidebar.success("LLM успешно инициализирован")
-            else:
-                st.sidebar.error("Не удалось инициализировать LLM")
-        except Exception as e:
-            st.sidebar.error(f"Ошибка инициализации: {str(e)}")
+    # Проверка инициализации LLM
+    if not analyzer.llm_initialized:
+        st.sidebar.error("LLM не инициализирован. Проверьте API ключ и URL")
     
     # Загрузка документов
-        #weights = st.sidebar.slider(
-        #    "Вес контента документа в поиске",
-        #    0.1, 2.0, 0.7, 0.1
-        #)
     st.header("Загрузка документов")
     uploaded_files = st.file_uploader(
         "Выберите документы в формате DOCX", 
@@ -370,14 +345,14 @@ def main():
     col1, col2, col3 = st.columns(3)
 
     # Проверка инициализации LLM и загрузки документов
-    buttons_disabled = not (uploaded_files and hasattr(analyzer, 'llm_initialized') and analyzer.llm_initialized)
+    buttons_disabled = not (uploaded_files and analyzer.llm_initialized)
     
     with col1:
         if st.button("Оценить качество документа", disabled=buttons_disabled):
             with st.spinner("Анализ документа..."):
                 result = analyzer.analyze_document("quality")
                 st.markdown("### Результат оценки")
-                st.markdown(result)  # Автоматически рендерит Markdown
+                st.markdown(result)
     
     with col2:
         if st.button("Дать рекомендации по стратегии спора", disabled=buttons_disabled):
