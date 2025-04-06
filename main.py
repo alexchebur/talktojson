@@ -273,7 +273,7 @@ def main():
     st.set_page_config(page_title="El Documente", layout="wide")
     st.title("El Documente: проверьте свой процессуальный документ")
     st.sidebar.header("Настройки поиска")
-    #col1, col2 = st.sidebar.columns([3, 1])
+    col1, col2 = st.sidebar.columns([3, 1])
     with col1:
         weight = st.slider(
             "Вес контента документа",
