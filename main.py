@@ -292,6 +292,12 @@ class DocumentAnalyzer:
 def main():
     st.set_page_config(page_title="El Documente", layout="wide")
     st.title("El Documente: проверьте свой процессуальный документ")
+    
+    # Инициализация анализатора
+    if 'analyzer' not in st.session_state:
+        st.session_state.analyzer = DocumentAnalyzer()
+    
+    analyzer = st.session_state.analyzer
     st.sidebar.header("Настройки поиска")
     col1, col2 = st.sidebar.columns([3, 1])
     with col1:
