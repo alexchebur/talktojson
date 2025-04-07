@@ -256,6 +256,8 @@ class DocumentAnalyzer:
                             st.error("Ошибка: Не удалось извлечь фрагменты из документов.")
                     else:
                         st.error("Ошибка: База знаний должна содержать список документов.")
+                        print(f"Тип данных documents: {type(documents)}")  # Проверка типа
+                        print(f"Содержимое documents: {documents}")  # Проверка содержимого
                 else:
                     st.error("Ошибка: Загруженные данные не являются словарем.")
             except Exception as e:
