@@ -234,91 +234,54 @@ class DocumentAnalyzer:
         
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
-
     def _load_knowledge_base(self) -> None:
-        """Загружает базу знаний из JSON файла, обрабатывая пустые документы"""
+        """Загружает базу знаний из JSON, обрабатывает ошибки формата"""
         json_path = os.path.join(DATA_DIR, "knowledge_base.json")
+    
+        # Проверка существования файла
         if not os.path.exists(json_path):
-            st.warning("Файл knowledge_base.json не найден")
+            st.error(f"Файл {json_path} не найден! Создайте его в папке 'data'.")
             return
 
         try:
-            with open(json_path, "r", encoding='utf-8') as f:
+            with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+        
+            print("Загруженные данные:", data)  # Отладочный вывод
 
-            # Извлекаем документы (поддержка разных форматов JSON)
+            # Обработка разных форматов JSON
             if isinstance(data, dict) and "documents" in data:
                 raw_docs = data["documents"]
             elif isinstance(data, list):
                 raw_docs = data
             else:
-                st.error("Неправильный формат JSON. Ожидается список или объект с ключом 'documents'")
+                st.error("Ошибка: JSON должен содержать 'documents' или быть массивом")
                 return
 
-            # Фильтруем пустые документы и нормализуем структуру
+            # Фильтрация и нормализация документов
             self.knowledge_base = [
-                {"name": doc.get("name", "Без названия"), "content": doc.get("content", "")}
+                {
+                    "name": doc.get("name", "Без названия"),
+                    "content": doc.get("content", "")
+                }
                 for doc in raw_docs
                 if isinstance(doc, dict) and doc.get("content", "").strip()
             ]
 
+            print("Документы после обработки:", self.knowledge_base)  # Отладочный вывод
+
             if not self.knowledge_base:
-                st.warning("База знаний пуста или все документы не содержат текста")
+                st.warning("База знаний пуста. Проверьте содержимое файла!")
                 return
 
-            # Строим индекс только для непустых документов
+            # Индексация
             self.search_engine.build_index(self.knowledge_base)
-            st.success(f"Загружено {len(self.knowledge_base)} документов")
+            st.success(f"Успешно загружено {len(self.knowledge_base)} документов")
 
         except json.JSONDecodeError as e:
-            st.error(f"Ошибка чтения JSON: {e}")
+            st.error(f"Ошибка в формате JSON: {e}")
         except Exception as e:
-            st.error(f"Ошибка загрузки базы знаний: {str(e)}")
-    
-    def load_documents(self, uploaded_files) -> None:
-        """Загружает и обрабатывает DOCX файл (без сохранения в базу знаний)"""
-        if not uploaded_files:
-            return
-
-        try:
-            documents = []  # Список для хранения загруженных документов
-            for uploaded_file in uploaded_files:  # Обработка каждого загруженного файла
-                if uploaded_file.size == 0:  # Проверка на пустой файл
-                    st.warning(f"Файл {uploaded_file.name} пуст")
-                    continue
-
-                file_bytes = io.BytesIO(uploaded_file.read())  # Используем read() вместо getvalue()
-                doc = Document(file_bytes)
-                text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
-
-                if not text:
-                    st.warning(f"Файл {uploaded_file.name} не содержит текста")
-                    continue
-
-                if len(text) > MAX_CONTEXT_LENGTH:
-                    text = text[:MAX_CONTEXT_LENGTH]
-                    st.warning(f"Документ {uploaded_file.name} обрезан до {MAX_CONTEXT_LENGTH} символов")
-
-                # Добавляем документ в список
-                documents.append({
-                    "name": uploaded_file.name,  # Имя документа
-                    "content": text              # Содержимое документа
-                })
-
-                # Обновляем current_docx для последнего загруженного файла
-                self.current_docx = {
-                    "name": uploaded_file.name,
-                    "content": text
-                }
-
-                st.success(f"Документ {uploaded_file.name} загружен для анализа")
-
-            # Индексируем загруженные документы
-            if documents:
-                self.search_engine.build_index(documents)  # Передаем список документов в индекс
-
-        except Exception as e:
-            st.error(f"Ошибка обработки файла: {str(e)}")
+            st.error(f"Неизвестная ошибка: {str(e)}")
         
     def analyze_document(self, prompt_type: str) -> str:
         """Анализирует документ с использованием LLM"""
