@@ -307,7 +307,7 @@ class DocumentAnalyzer:
         except Exception as e:
             st.error(f"Неизвестная ошибка: {str(e)}")
 
-        def load_documents(self, uploaded_files) -> None:
+    def load_documents(self, uploaded_files) -> None:
         """Загружает и обрабатывает DOCX файл (без сохранения в базу знаний)"""
         if not uploaded_files:
             return
