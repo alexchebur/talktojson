@@ -377,7 +377,7 @@ class DocumentAnalyzer:
         
         for chunk in chunks:
             context_parts.append(f"\n📄 {chunk['doc_name']} (релевантность: {chunk['score']:.2f}):")
-            context_parts.append(chunk['chunk_text'][:1000])
+            context_parts.append(chunk['chunk_text'][:3000])
         
         return "\n".join(context_parts)
 
