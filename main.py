@@ -351,8 +351,8 @@ class DocumentAnalyzer:
                     continue
 
             # Индексируем все загруженные документы
-            if documents:
-                self.search_engine.build_index(documents)
+            #if documents:
+            #    self.search_engine.build_index(documents)
 
         except Exception as e:
             st.error(f"Общая ошибка при загрузке документов: {str(e)}")
