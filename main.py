@@ -65,21 +65,30 @@ class BM25SearchEngine:
         self.cache_path = os.path.join(DATA_DIR, "bm25_index.pkl")  # Добавим путь к кешу
 
     def build_index(self, documents: List[Dict]) -> None:
+        """Строит индекс BM25, обрабатывая пустые документы"""
         corpus = []
         self.chunks_info = []
 
         for doc_idx, doc in enumerate(documents):
+            content = doc.get("content", "").strip()
+            if not content:  # Пропускаем пустые документы
+                continue
+
             self.chunks_info.append({
                 'doc_id': doc.get("name", f"doc_{doc_idx}"),
                 'doc_name': doc.get("name", "Без названия"),
-                'chunk_text': doc.get("content", "")
+                'chunk_text': content
             })
-            corpus.append(doc.get("content", ""))
-        print(f"Индексация документов: {self.chunks_info}")  # Отладочное сообщение
+            corpus.append(content)
+
+        if not corpus:  # Если все документы пустые
+            st.warning("Нет текста для индексации")
+            return
+
         tokenized_corpus = [self.preprocessor.preprocess(doc) for doc in corpus]
         self.bm25 = BM25Okapi(tokenized_corpus)
         self.is_index_loaded = True
-        self.save_to_cache()  # Автоматически сохраняем индекс после построения
+        self.save_to_cache()
 
     def load_from_cache(self) -> bool:
         try:
