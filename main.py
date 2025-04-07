@@ -244,8 +244,11 @@ class DocumentAnalyzer:
                                 "name": doc.get("source_file", "Без названия"),
                                 "content": chunk.get("chunk_text", "")
                             })
-                    self.search_engine.build_index(formatted_documents)
-                    print(f"Загружено {len(formatted_documents)} фрагментов из базы знаний")
+                    if formatted_documents:
+                        self.search_engine.build_index(formatted_documents)
+                        print(f"Загружено {len(formatted_documents)} фрагментов из базы знаний")
+                    else:
+                        st.error("Ошибка: Не удалось извлечь фрагменты из документов.")
                 else:
                     st.error("Ошибка: База знаний должна содержать список документов.")
             except Exception as e:
