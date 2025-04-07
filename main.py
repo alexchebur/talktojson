@@ -385,7 +385,7 @@ def main():
     st.set_page_config(page_title="El Documente", layout="wide")
     gif_path = "data/maracas-sombrero-hat.gif"  # Укажите путь к вашему GIF
     #st.image(gif_path, caption="Hola!", width=64, height=64)
-    st.markdown(f'<img src="{gif_path}" width="64" height="64" style="display: block; margin: auto;">', unsafe_allow_html=True)
+    st.image(gif_path, caption="Hola!", width=64)
     st.title("El Documente: проверьте свой процессуальный документ")
     
     # Инициализация анализатора
