@@ -232,25 +232,29 @@ class DocumentAnalyzer:
             try:
                 with open(json_path, "r", encoding='utf-8') as f:
                     data = json.load(f)
-                
-                # Извлекаем документы из структуры
-                documents = data.get("object", {}).get("documents", [])
-                if isinstance(documents, list) and documents:
-                    # Преобразуем документы в нужный формат для BM25
-                    formatted_documents = []
-                    for doc in documents:
-                        for chunk in doc.get("chunks", []):
-                            formatted_documents.append({
-                                "name": doc.get("source_file", "Без названия"),
-                                "content": chunk.get("chunk_text", "")
-                            })
-                    if formatted_documents:
-                        self.search_engine.build_index(formatted_documents)
-                        print(f"Загружено {len(formatted_documents)} фрагментов из базы знаний")
+                    print(f"Загруженные данные: {data}")  # Отладочное сообщение
+
+                # Убедитесь, что data является словарем
+                if isinstance(data, dict):
+                    documents = data.get("object", {}).get("documents", [])
+                    if isinstance(documents, list) and documents:
+                        # Преобразуем документы в нужный формат для BM25
+                        formatted_documents = []
+                        for doc in documents:
+                            for chunk in doc.get("chunks", []):
+                                formatted_documents.append({
+                                    "name": doc.get("source_file", "Без названия"),
+                                    "content": chunk.get("chunk_text", "")
+                                })
+                        if formatted_documents:
+                            self.search_engine.build_index(formatted_documents)
+                            print(f"Загружено {len(formatted_documents)} фрагментов из базы знаний")
+                        else:
+                            st.error("Ошибка: Не удалось извлечь фрагменты из документов.")
                     else:
-                        st.error("Ошибка: Не удалось извлечь фрагменты из документов.")
+                        st.error("Ошибка: База знаний должна содержать список документов.")
                 else:
-                    st.error("Ошибка: База знаний должна содержать список документов.")
+                    st.error("Ошибка: Загруженные данные не являются словарем.")
             except Exception as e:
                 print(f"Ошибка загрузки базы знаний: {e}")
 
