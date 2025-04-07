@@ -306,7 +306,46 @@ class DocumentAnalyzer:
             st.error("Ошибка: Файл JSON поврежден")
         except Exception as e:
             st.error(f"Неизвестная ошибка: {str(e)}")
-        
+
+        def load_documents(self, uploaded_files) -> None:
+        """Загружает и обрабатывает DOCX файл (без сохранения в базу знаний)"""
+        if not uploaded_files:
+            return
+
+        try:
+            documents = []  # Список для хранения загруженных документов
+            for uploaded_file in uploaded_files:  # Обработка каждого загруженного файла
+                if uploaded_file.size == 0:  # Проверка на пустой файл
+                    st.warning(f"Файл {uploaded_file.name} пуст")
+                    continue
+
+                file_bytes = io.BytesIO(uploaded_file.read())  # Используем read() вместо getvalue()
+                doc = Document(file_bytes)
+                text = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+
+                if not text:
+                    st.warning(f"Файл {uploaded_file.name} не содержит текста")
+                    continue
+
+                if len(text) > MAX_CONTEXT_LENGTH:
+                    text = text[:MAX_CONTEXT_LENGTH]
+                    st.warning(f"Документ {uploaded_file.name} обрезан до {MAX_CONTEXT_LENGTH} символов")
+
+                # Добавляем документ в список
+                documents.append({
+                    "name": uploaded_file.name,  # Имя документа
+                    "content": text              # Содержимое документа
+                })
+
+                # Обновляем current_docx для последнего загруженного файла
+                self.current_docx = {
+                    "name": uploaded_file.name,
+                    "content": text
+                }
+
+                st.success(f"Документ {uploaded_file.name} загружен для анализа")
+
+    
     def analyze_document(self, prompt_type: str) -> str:
         """Анализирует документ с использованием LLM"""
         if not self.current_docx:
