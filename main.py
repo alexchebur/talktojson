@@ -307,7 +307,7 @@ class DocumentAnalyzer:
 
             # Индексируем документы
             self.search_engine.build_index(self.knowledge_base)
-            st.success(f"Успешно загружено {len(self.knowledge_base)} фрагментов")
+            st.success(f"Успешно загружено {len(self.knowledge_base)} фрагментов базы данных")
 
         except json.JSONDecodeError:
             st.error("Ошибка: Файл JSON поврежден")
@@ -412,9 +412,9 @@ def main():
         st.sidebar.error("LLM не инициализирован. Проверьте API ключ и URL")
     
     # Загрузка документов
-    st.header("Загрузка документов")
+    st.header("Загрузка документа")
     uploaded_files = st.file_uploader(
-        "Выберите документы в формате DOCX", 
+        "Выберите документ в формате DOCX", 
         type=["docx"], 
         accept_multiple_files=True
     )
@@ -425,7 +425,7 @@ def main():
         st.success(f"Загружено документов: {len(uploaded_files)}")
     
     # Кнопки анализа
-    st.header("Анализ документов")
+    st.header("Анализ документа")
     col1, col2, col3 = st.columns(3)
 
     # Проверка инициализации LLM и загрузки документов
