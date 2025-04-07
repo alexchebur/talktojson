@@ -222,9 +222,13 @@ class DocumentAnalyzer:
         context = self._build_context(docx_text, chunks)
         
         # 5. Формируем и выполняем запрос к LLM
+        #messages = [
+        #    {"role": "system", "content": SYSTEM_PROMPT},
+        #    {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\nКОНТЕКСТ:\n" + context}
+        #]
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\nКОНТЕКСТ:\n" + context}
+            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + f"\n\nВес контента: {weight:.1f}\n\nКОНТЕКСТ:\n" + context}
         ]
 
         # Выводим итоговый запрос в сайдбар
