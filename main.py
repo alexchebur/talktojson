@@ -225,42 +225,51 @@ class DocumentAnalyzer:
         
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
-    def _load_knowledge_base(self) -> None:
-        """Загружает базу знаний из JSON файла для BM25 поиска"""
-        json_path = os.path.join(DATA_DIR, "knowledge_base.json")
-        if os.path.exists(json_path):
-            try:
-                with open(json_path, "r", encoding='utf-8') as f:
-                    data = json.load(f)
-                    print(f"Загруженные данные: {data}")  # Отладочное сообщение
 
-                # Убедитесь, что data является словарем
-                if isinstance(data, dict):
-                    # Извлекаем документы непосредственно из корня
-                    documents = data.get("documents", [])
-                    print(f"Найденные документы: {documents}")  # Отладочное сообщение
+def _load_knowledge_base(self) -> None:
+    """Загружает базу знаний из JSON файла для BM25 поиска"""
+    json_path = os.path.join(DATA_DIR, "knowledge_base.json")
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding='utf-8') as f:
+                data = json.load(f)
+                print(f"Загруженные данные: {data}")  # Отладочное сообщение
 
-                    if isinstance(documents, list) and documents:
-                        # Преобразуем документы в нужный формат для BM25
-                        formatted_documents = []
-                        for doc in documents:
-                            for chunk in doc.get("chunks", []):
+            # Убедитесь, что data является словарем
+            if isinstance(data, dict):
+                # Извлекаем документы непосредственно из корня
+                documents = data.get("documents", [])
+                print(f"Найденные документы: {documents}")  # Отладочное сообщение
+
+                if isinstance(documents, list) and documents:
+                    # Преобразуем документы в нужный формат для BM25
+                    formatted_documents = []
+                    for doc in documents:
+                        if 'chunks' in doc:
+                            for chunk in doc['chunks']:
                                 formatted_documents.append({
                                     "name": doc.get("source_file", "Без названия"),
                                     "content": chunk.get("chunk_text", "")
                                 })
-                        if formatted_documents:
-                            self.search_engine.build_index(formatted_documents)
-                            print(f"Загружено {len(formatted_documents)} фрагментов из базы знаний")
                         else:
-                            st.error("Ошибка: Не удалось извлечь фрагменты из документов.")
-                    else:
-                        st.error("Ошибка: База знаний должна содержать список документов.")
-                else:
-                    st.error("Ошибка: Загруженные данные не являются словарем.")
-            except Exception as e:
-                print(f"Ошибка загрузки базы знаний: {e}")
+                            print(f"Предупреждение: Документ {doc} не содержит ключа 'chunks'.")
 
+                    if formatted_documents:
+                        self.search_engine.build_index(formatted_documents)
+                        print(f"Загружено {len(formatted_documents)} фрагментов из базы знаний")
+                    else:
+                        print("Ошибка: Не удалось извлечь фрагменты из документов.")
+                else:
+                    print("Ошибка: База знаний должна содержать список документов.")
+                    print(f"Полученные документы: {documents}")  # Отладочное сообщение
+            else:
+                print("Ошибка: Загруженные данные не являются словарем.")
+        except json.JSONDecodeError as e:
+            print(f"Ошибка декодирования JSON: {e}")
+        except Exception as e:
+            print(f"Ошибка загрузки базы знаний: {e}")
+    else:
+        print(f"Ошибка: Файл {json_path} не найден.")
     def load_documents(self, uploaded_files) -> None:
         """Загружает и обрабатывает DOCX файл (без сохранения в базу знаний)"""
         if not uploaded_files:
