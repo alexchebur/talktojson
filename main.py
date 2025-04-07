@@ -226,7 +226,7 @@ class DocumentAnalyzer:
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
 
-    def load_knowledge_base(self) -> None:
+    def _load_knowledge_base(self) -> None:
         """Загружает базу знаний из JSON файла, обрабатывая пустые документы"""
         json_path = os.path.join(DATA_DIR, "knowledge_base.json")
         if not os.path.exists(json_path):
@@ -265,7 +265,6 @@ class DocumentAnalyzer:
             st.error(f"Ошибка чтения JSON: {e}")
         except Exception as e:
             st.error(f"Ошибка загрузки базы знаний: {str(e)}")
-
     
     def load_documents(self, uploaded_files) -> None:
         """Загружает и обрабатывает DOCX файл (без сохранения в базу знаний)"""
