@@ -231,12 +231,23 @@ class DocumentAnalyzer:
         if os.path.exists(json_path):
             try:
                 with open(json_path, "r", encoding='utf-8') as f:
-                    self.knowledge_base = json.load(f)
-                if isinstance(self.knowledge_base, list) and self.knowledge_base:
-                    self.search_engine.build_index(self.knowledge_base)
-                    print(f"Загружено {len(self.knowledge_base)} документов из базы знаний")
+                    data = json.load(f)
+                
+                # Извлекаем документы из структуры
+                documents = data.get("object", {}).get("documents", [])
+                if isinstance(documents, list) and documents:
+                    # Преобразуем документы в нужный формат для BM25
+                    formatted_documents = []
+                    for doc in documents:
+                        for chunk in doc.get("chunks", []):
+                            formatted_documents.append({
+                                "name": doc.get("source_file", "Без названия"),
+                                "content": chunk.get("chunk_text", "")
+                            })
+                    self.search_engine.build_index(formatted_documents)
+                    print(f"Загружено {len(formatted_documents)} фрагментов из базы знаний")
                 else:
-                    st.error("Ошибка: База знаний должна быть списком документов.")
+                    st.error("Ошибка: База знаний должна содержать список документов.")
             except Exception as e:
                 print(f"Ошибка загрузки базы знаний: {e}")
 
