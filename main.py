@@ -235,53 +235,55 @@ class DocumentAnalyzer:
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
     def _load_knowledge_base(self) -> None:
-        """Загружает базу знаний из JSON, обрабатывает ошибки формата"""
+        """Загружает и проверяет базу знаний"""
         json_path = os.path.join(DATA_DIR, "knowledge_base.json")
     
-        # Проверка существования файла
+        # 1. Проверка существования файла
         if not os.path.exists(json_path):
-            st.error(f"Файл {json_path} не найден! Создайте его в папке 'data'.")
+            st.error(f"❌ Файл {json_path} не найден! Создайте его.")
             return
 
         try:
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        
-            print("Загруженные данные:", data)  # Отладочный вывод
-
-            # Обработка разных форматов JSON
+                # Временный код для отладки (удалите после проверки)
+                st.write("### Отладочная информация")
+                st.json(data)  # Покажет содержимое файла
+                st.write("Документы после обработки:", self.knowledge_base)
+            # 2. Извлечение документов (поддержка разных форматов)
             if isinstance(data, dict) and "documents" in data:
                 raw_docs = data["documents"]
             elif isinstance(data, list):
                 raw_docs = data
             else:
-                st.error("Ошибка: JSON должен содержать 'documents' или быть массивом")
+                st.error("❌ Ошибка: Неверный формат JSON. Ожидается объект с 'documents' или массив.")
                 return
 
-            # Фильтрация и нормализация документов
+            # 3. Фильтрация документов
             self.knowledge_base = [
                 {
                     "name": doc.get("name", "Без названия"),
-                    "content": doc.get("content", "")
+                    "content": doc.get("content", "").strip()  # Удаляем пробелы
                 }
                 for doc in raw_docs
-                if isinstance(doc, dict) and doc.get("content", "").strip()
+                if isinstance(doc, dict) and doc.get("content", "").strip()  # Пропускаем пустые
             ]
 
-            print("Документы после обработки:", self.knowledge_base)  # Отладочный вывод
-
+            # 4. Проверка результата
             if not self.knowledge_base:
-                st.warning("База знаний пуста. Проверьте содержимое файла!")
+                st.warning("⚠️ База знаний пуста. Проверьте:")
+                st.write("- Есть ли поле `content` в документах?")
+                st.write("- Не пустые ли значения в `content`?")
                 return
 
-            # Индексация
+            # 5. Индексация
             self.search_engine.build_index(self.knowledge_base)
-            st.success(f"Успешно загружено {len(self.knowledge_base)} документов")
+            st.success(f"✅ Загружено документов: {len(self.knowledge_base)}")
 
-        except json.JSONDecodeError as e:
-            st.error(f"Ошибка в формате JSON: {e}")
+        except json.JSONDecodeError:
+            st.error("❌ Ошибка: Файл JSON поврежден или имеет неверный формат.")
         except Exception as e:
-            st.error(f"Неизвестная ошибка: {str(e)}")
+            st.error(f"❌ Неизвестная ошибка: {str(e)}")
         
     def analyze_document(self, prompt_type: str) -> str:
         """Анализирует документ с использованием LLM"""
