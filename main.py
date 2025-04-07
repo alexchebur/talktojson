@@ -227,49 +227,44 @@ class DocumentAnalyzer:
 
 
     def _load_knowledge_base(self) -> None:
-        """Загружает базу знаний из JSON файла для BM25 поиска"""
+        """Загружает базу знаний из JSON файла с учетом структуры documents"""
         json_path = os.path.join(DATA_DIR, "knowledge_base.json")
         if os.path.exists(json_path):
             try:
                 with open(json_path, "r", encoding='utf-8') as f:
                     data = json.load(f)
-                    print(f"Загруженные данные: {data}")  # Отладочное сообщение
-
-                # Убедитесь, что data является словарем
-                if isinstance(data, dict):
-                    # Извлекаем документы непосредственно из корня
-                    documents = data.get("documents", [])
-                    print(f"Найденные документы: {documents}")  # Отладочное сообщение
-
-                    if isinstance(documents, list) and documents:
-                        # Преобразуем документы в нужный формат для BM25
-                        formatted_documents = []
-                        for doc in documents:
-                            if 'chunks' in doc:
-                                for chunk in doc['chunks']:
-                                    formatted_documents.append({
-                                        "name": doc.get("source_file", "Без названия"),
-                                        "content": chunk.get("chunk_text", "")
-                                    })
-                            else:
-                                print(f"Предупреждение: Документ {doc} не содержит ключа 'chunks'.")
-
-                        if formatted_documents:
-                            self.search_engine.build_index(formatted_documents)
-                            print(f"Загружено {len(formatted_documents)} фрагментов из базы знаний")
-                        else:
-                            print("Ошибка: Не удалось извлечь фрагменты из документов.")
+            
+                # Извлекаем документы из корневого элемента 'documents'
+                if isinstance(data, dict) and 'documents' in data:
+                    raw_documents = data['documents']
                 else:
-                        print("Ошибка: База знаний должна содержать список документов.")
-                        print(f"Полученные документы: {documents}")  # Отладочное сообщение
+                    raw_documents = data  # На случай, если структура другая
+            
+                # Нормализуем формат документов
+                self.knowledge_base = []
+                if isinstance(raw_documents, list):
+                    for doc in raw_documents:
+                        if isinstance(doc, dict):
+                            self.knowledge_base.append({
+                                'name': doc.get('name', 'Без названия'),
+                                'content': doc.get('content', '')
+                            })
+                elif isinstance(raw_documents, dict):
+                    self.knowledge_base.append({
+                        'name': raw_documents.get('name', 'Без названия'),
+                        'content': raw_documents.get('content', '')
+                    })
+            
+                if self.knowledge_base:
+                    self.search_engine.build_index(self.knowledge_base)
+                    st.success(f"Загружено {len(self.knowledge_base)} документов из базы знаний")
                 else:
-                    print("Ошибка: Загруженные данные не являются словарем.")
+                    st.warning("База знаний пуста или имеет неправильный формат")
+                
             except json.JSONDecodeError as e:
-                print(f"Ошибка декодирования JSON: {e}")
+                st.error(f"Ошибка чтения JSON: {e}")
             except Exception as e:
-                print(f"Ошибка загрузки базы знаний: {e}")
-        else:
-            print(f"Ошибка: Файл {json_path} не найден.")
+                st.error(f"Ошибка загрузки базы знаний: {str(e)}")
 
     
     def load_documents(self, uploaded_files) -> None:
