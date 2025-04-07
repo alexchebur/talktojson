@@ -235,55 +235,77 @@ class DocumentAnalyzer:
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
     def _load_knowledge_base(self) -> None:
-        """Загружает и проверяет базу знаний"""
+        """Загружает базу знаний из JSON с учетом сложной структуры"""
         json_path = os.path.join(DATA_DIR, "knowledge_base.json")
     
-        # 1. Проверка существования файла
         if not os.path.exists(json_path):
-            st.error(f"❌ Файл {json_path} не найден! Создайте его.")
+            st.error(f"Файл {json_path} не найден")
             return
 
         try:
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                # Временный код для отладки (удалите после проверки)
-                st.write("### Отладочная информация")
-                st.json(data)  # Покажет содержимое файла
-                st.write("Документы после обработки:", self.knowledge_base)
-            # 2. Извлечение документов (поддержка разных форматов)
-            if isinstance(data, dict) and "documents" in data:
-                raw_docs = data["documents"]
-            elif isinstance(data, list):
-                raw_docs = data
-            else:
-                st.error("❌ Ошибка: Неверный формат JSON. Ожидается объект с 'documents' или массив.")
+
+            # Извлекаем documents из object
+            if not isinstance(data, dict) or "object" not in data:
+                st.error("Неверная структура: отсутствует 'object'")
                 return
 
-            # 3. Фильтрация документов
-            self.knowledge_base = [
-                {
-                    "name": doc.get("name", "Без названия"),
-                    "content": doc.get("content", "").strip()  # Удаляем пробелы
-                }
-                for doc in raw_docs
-                if isinstance(doc, dict) and doc.get("content", "").strip()  # Пропускаем пустые
-            ]
+            object_data = data["object"]
+            if "documents" not in object_data:
+                st.error("Неверная структура: отсутствует 'documents'")
+                return
 
-            # 4. Проверка результата
+            raw_docs = object_data["documents"]
+            self.knowledge_base = []
+
+            # Обрабатываем каждый документ
+            for doc in raw_docs:
+                if not isinstance(doc, dict):
+                    continue
+
+                # Извлекаем название документа
+                doc_name = doc.get("source_file", "Без названия")
+            
+                # Обрабатываем chunks (основное содержимое)
+                chunks = doc.get("chunks", [])
+                for chunk in chunks:
+                    if not isinstance(chunk, dict):
+                        continue
+                
+                    # Используем chunk_text как основной контент
+                    chunk_text = chunk.get("chunk_text", "")
+                    if chunk_text.strip():
+                        self.knowledge_base.append({
+                            "name": f"{doc_name} [chunk]",
+                            "content": chunk_text.strip()
+                        })
+
+                # Добавляем doc_summary как отдельный документ
+                doc_summary = doc.get("doc_summary", "")
+                if doc_summary.strip():
+                    self.knowledge_base.append({
+                        "name": f"{doc_name} [summary]",
+                        "content": doc_summary.strip()
+                    })
+
+            # Проверяем результат
             if not self.knowledge_base:
-                st.warning("⚠️ База знаний пуста. Проверьте:")
-                st.write("- Есть ли поле `content` в документах?")
-                st.write("- Не пустые ли значения в `content`?")
+                st.error("""
+                Не удалось извлечь данные. Проверьте:
+                1. Наличие 'chunk_text' в chunks
+                2. Что поля не пустые
+                """)
                 return
 
-            # 5. Индексация
+            # Индексируем документы
             self.search_engine.build_index(self.knowledge_base)
-            st.success(f"✅ Загружено документов: {len(self.knowledge_base)}")
+            st.success(f"Успешно загружено {len(self.knowledge_base)} фрагментов")
 
         except json.JSONDecodeError:
-            st.error("❌ Ошибка: Файл JSON поврежден или имеет неверный формат.")
+            st.error("Ошибка: Файл JSON поврежден")
         except Exception as e:
-            st.error(f"❌ Неизвестная ошибка: {str(e)}")
+            st.error(f"Неизвестная ошибка: {str(e)}")
         
     def analyze_document(self, prompt_type: str) -> str:
         """Анализирует документ с использованием LLM"""
