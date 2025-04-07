@@ -227,44 +227,44 @@ class DocumentAnalyzer:
 
 
     def _load_knowledge_base(self) -> None:
-        """Загружает базу знаний из JSON файла с учетом структуры documents"""
+        """Загружает базу знаний из JSON файла, обрабатывая пустые документы"""
         json_path = os.path.join(DATA_DIR, "knowledge_base.json")
-        if os.path.exists(json_path):
-            try:
-                with open(json_path, "r", encoding='utf-8') as f:
-                    data = json.load(f)
-            
-                # Извлекаем документы из корневого элемента 'documents'
-                if isinstance(data, dict) and 'documents' in data:
-                    raw_documents = data['documents']
-                else:
-                    raw_documents = data  # На случай, если структура другая
-            
-                # Нормализуем формат документов
-                self.knowledge_base = []
-                if isinstance(raw_documents, list):
-                    for doc in raw_documents:
-                        if isinstance(doc, dict):
-                            self.knowledge_base.append({
-                                'name': doc.get('name', 'Без названия'),
-                                'content': doc.get('content', '')
-                            })
-                elif isinstance(raw_documents, dict):
-                    self.knowledge_base.append({
-                        'name': raw_documents.get('name', 'Без названия'),
-                        'content': raw_documents.get('content', '')
-                    })
-            
-                if self.knowledge_base:
-                    self.search_engine.build_index(self.knowledge_base)
-                    st.success(f"Загружено {len(self.knowledge_base)} документов из базы знаний")
-                else:
-                    st.warning("База знаний пуста или имеет неправильный формат")
-                
-            except json.JSONDecodeError as e:
-                st.error(f"Ошибка чтения JSON: {e}")
-            except Exception as e:
-                st.error(f"Ошибка загрузки базы знаний: {str(e)}")
+        if not os.path.exists(json_path):
+            st.warning("Файл knowledge_base.json не найден")
+            return
+
+        try:
+            with open(json_path, "r", encoding='utf-8') as f:
+                data = json.load(f)
+
+            # Извлекаем документы (поддержка разных форматов JSON)
+            if isinstance(data, dict) and "documents" in data:
+                raw_docs = data["documents"]
+            elif isinstance(data, list):
+                raw_docs = data
+            else:
+                st.error("Неправильный формат JSON. Ожидается список или объект с ключом 'documents'")
+                return
+
+            # Фильтруем пустые документы и нормализуем структуру
+            self.knowledge_base = [
+                {"name": doc.get("name", "Без названия"), "content": doc.get("content", "")}
+                for doc in raw_docs
+                if isinstance(doc, dict) and doc.get("content", "").strip()
+            ]
+
+            if not self.knowledge_base:
+                st.warning("База знаний пуста или все документы не содержат текста")
+                return
+
+            # Строим индекс только для непустых документов
+            self.search_engine.build_index(self.knowledge_base)
+            st.success(f"Загружено {len(self.knowledge_base)} документов")
+
+        except json.JSONDecodeError as e:
+            st.error(f"Ошибка чтения JSON: {e}")
+        except Exception as e:
+            st.error(f"Ошибка загрузки базы знаний: {str(e)}")
 
     
     def load_documents(self, uploaded_files) -> None:
