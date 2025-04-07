@@ -237,7 +237,7 @@ class DocumentAnalyzer:
     def _load_knowledge_base(self) -> None:
         """Загружает базу знаний из JSON с учетом сложной структуры"""
         json_path = os.path.join(DATA_DIR, "knowledge_base.json")
-    
+
         if not os.path.exists(json_path):
             st.error(f"Файл {json_path} не найден")
             return
@@ -246,17 +246,20 @@ class DocumentAnalyzer:
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            # Извлекаем documents из object
-            if not isinstance(data, dict) or "object" not in data:
-                st.error("Неверная структура: отсутствует 'object'")
+            # Проверяем разные возможные структуры
+            if isinstance(data, dict) and "object" in data and "documents" in data["object"]:
+                # Структура: { "object": { "documents": [...] } }
+                raw_docs = data["object"]["documents"]
+            elif isinstance(data, dict) and "documents" in data:
+                # Структура: { "documents": [...] }
+                raw_docs = data["documents"]
+            elif isinstance(data, list):
+                # Структура: [ ... ] (прямой массив документов)
+                raw_docs = data
+            else:
+                st.error("Неверная структура JSON: ожидается 'documents' или массив документов")
                 return
 
-            object_data = data["object"]
-            if "documents" not in object_data:
-                st.error("Неверная структура: отсутствует 'documents'")
-                return
-
-            raw_docs = object_data["documents"]
             self.knowledge_base = []
 
             # Обрабатываем каждый документ
@@ -266,13 +269,13 @@ class DocumentAnalyzer:
 
                 # Извлекаем название документа
                 doc_name = doc.get("source_file", "Без названия")
-            
+        
                 # Обрабатываем chunks (основное содержимое)
                 chunks = doc.get("chunks", [])
                 for chunk in chunks:
                     if not isinstance(chunk, dict):
                         continue
-                
+            
                     # Используем chunk_text как основной контент
                     chunk_text = chunk.get("chunk_text", "")
                     if chunk_text.strip():
