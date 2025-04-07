@@ -1,0 +1,14 @@
+{
+  "object": {
+    "documents": [
+      {
+        "source_file": "test.docx",
+        "chunks": [
+          {"chunk_text": "Это тестовый текст чанка 1"},
+          {"chunk_text": "Это тестовый текст чанка 2"}
+        ],
+        "doc_summary": "Краткое содержание документа"
+      }
+    ]
+  }
+}
