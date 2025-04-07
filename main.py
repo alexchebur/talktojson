@@ -232,9 +232,11 @@ class DocumentAnalyzer:
             try:
                 with open(json_path, "r", encoding='utf-8') as f:
                     self.knowledge_base = json.load(f)
-                if self.knowledge_base:
+                if isinstance(self.knowledge_base, list) and self.knowledge_base:
                     self.search_engine.build_index(self.knowledge_base)
                     print(f"Загружено {len(self.knowledge_base)} документов из базы знаний")
+                else:
+                    st.error("Ошибка: База знаний должна быть списком документов.")
             except Exception as e:
                 print(f"Ошибка загрузки базы знаний: {e}")
 
