@@ -236,7 +236,10 @@ class DocumentAnalyzer:
 
                 # Убедитесь, что data является словарем
                 if isinstance(data, dict):
+                    # Извлекаем документы
                     documents = data.get("object", {}).get("documents", [])
+                    print(f"Найденные документы: {documents}")  # Отладочное сообщение
+
                     if isinstance(documents, list) and documents:
                         # Преобразуем документы в нужный формат для BM25
                         formatted_documents = []
