@@ -383,6 +383,8 @@ class DocumentAnalyzer:
 
 def main():
     st.set_page_config(page_title="El Documente", layout="wide")
+    gif_path = "data/maracas-sombrero-hat.gif"  # Укажите путь к вашему GIF
+    st.image(gif_path, width=int(st.sidebar.slider("Ширина GIF", 0, 100, 20)), caption="El Documente")
     st.title("El Documente: проверьте свой процессуальный документ")
     
     # Инициализация анализатора
