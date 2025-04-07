@@ -177,8 +177,20 @@ class DocumentAnalyzer:
         self._load_knowledge_base()
         
         # Инициализируем LLM
-        if api_url and api_key:
-            self._initialize_llm(api_url, api_key)
+        self._initialize_llm(api_url, api_key)  # Убрали условие, так как проверка внутри метода
+
+    def _initialize_llm(self, api_url: str, api_key: str) -> None:
+        """Инициализирует клиент LLM"""
+        if not api_url or not api_key:
+            self.llm_initialized = False
+            return
+            
+        try:
+            self.llm_client = LLMClient(api_url, api_key)
+            self.llm_initialized = True
+        except Exception as e:
+            print(f"Ошибка инициализации LLM: {e}")
+            self.llm_initialized = False
 
     def analyze_document(self, prompt_type: str) -> str:
         """Анализирует документ с использованием LLM"""
