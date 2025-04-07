@@ -346,38 +346,6 @@ class DocumentAnalyzer:
                 st.success(f"Документ {uploaded_file.name} загружен для анализа")
 
     
-    def analyze_document(self, prompt_type: str) -> str:
-        """Анализирует документ с использованием LLM"""
-        if not self.current_docx:
-            return "Пожалуйста, загрузите DOCX файл"
-            
-        if not self.knowledge_base:
-            return "База знаний пуста (добавьте документы в knowledge_base.json)"
-        
-        # 1. Получаем текст из загруженного DOCX
-        docx_text = self.current_docx["content"]
-        
-        # 2. Формируем запрос для BM25 на основе текста DOCX
-        query = self._generate_search_query(prompt_type, docx_text)
-        
-        # 3. Ищем релевантные фрагменты в базе знаний
-        chunks = self.search_engine.search(query)
-        
-        # 4. Формируем контекст для LLM
-        context = self._build_context(docx_text, chunks)
-        
-        # 5. Формируем и выполняем запрос к LLM
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\nКОНТЕКСТ:\n" + context}
-        ]
-
-        # Выводим итоговый запрос в сайдбар
-        st.sidebar.header("Итоговый запрос к LLM")
-        st.sidebar.markdown("### Запрос пользователя:")
-        st.sidebar.markdown(BUTTON_PROMPTS[prompt_type] + "\n\nКОНТЕКСТ:\n" + context)
-        
-        return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
     def _generate_search_query(self, prompt_type: str, docx_text: str) -> str:
         """Генерирует поисковый запрос для BM25"""
