@@ -226,7 +226,7 @@ class DocumentAnalyzer:
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
 
-    def _load_knowledge_base(self) -> None:
+    def load_knowledge_base(self) -> None:
         """Загружает базу знаний из JSON файла, обрабатывая пустые документы"""
         json_path = os.path.join(DATA_DIR, "knowledge_base.json")
         if not os.path.exists(json_path):
