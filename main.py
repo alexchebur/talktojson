@@ -428,10 +428,10 @@ def main():
         st.success(f"Загружено документов: {len(uploaded_files)}")
 
     # Добавьте новую переменную для температуры LLM для чата
-    CHAT_TEMPERATURE = 0.5  # Вы можете настроить это значение по своему усмотрению
+    CHAT_TEMPERATURE = 0.6  # Вы можете настроить это значение по своему усмотрению
 
     # Новый промпт для чата
-    CHAT_SYSTEM_PROMPT = """Ты - опытный дружелюбный юрист энергетической компании, комментирующий вопросы пользователей и представленные документы, в которых содержится в том числе история диалога с тобой. ЗАПРЕЩЕНО ссылаться на выдуманные законы и судебную практику. Ответы излагай в деловом стиле, без категорических мнений."""
+    CHAT_SYSTEM_PROMPT = """Ты - опытный дружелюбный юрист энергетической компании, отвечающий на вопросы юристов. ЗАПРЕЩЕНО:  1. ссылаться на выдуманные законы и судебную практику. 2. указывать в ответе, что ты ознакомился с документом, просто поддерживай диалог. Ответы излагай в деловом стиле, без категорических мнений."""
 
     # Чат с наставником Карлосом
     st.header("Обсудить с наставником Карлосом")
@@ -446,9 +446,19 @@ def main():
     # Кнопка "Спросить"
     ask_button = st.button("Спросить", disabled=not (uploaded_files and user_input))
 
+    # Создаем переменную для отслеживания, добавлено ли содержимое DOCX
+    if 'docx_added' not in st.session_state:
+        st.session_state.docx_added = False
+
     if ask_button:
         # Обработка введенного текста
-        conversation_log = [analyzer.current_docx["content"]]  # Начинаем с текста загруженного файла
+        conversation_log = []  # Начинаем с пустого лога
+
+        # Добавляем содержимое DOCX только один раз
+        if not st.session_state.docx_added and analyzer.current_docx:
+            conversation_log.append(analyzer.current_docx["content"])  # Добавляем текст загруженного файла
+            st.session_state.docx_added = True  # Устанавливаем флаг, что содержимое добавлено
+
         conversation_log.append(user_input)  # Добавляем пользовательский ввод
 
         # Поиск релевантных данных в JSON
@@ -456,7 +466,7 @@ def main():
 
         # Добавляем результаты поиска в лог
         for chunk in relevant_chunks:
-            conversation_log.append(chunk['chunk_text'])
+        conversation_log.append(chunk['chunk_text'])
 
         # Формируем запрос к LLM
         messages = [
@@ -474,7 +484,6 @@ def main():
         response_container.text_area("Ответ от Карлоса", value=response, height=200, disabled=True)
 
 
-    
     # Кнопки анализа
     st.header("Анализ документа")
     col1, col2, col3 = st.columns(3)
