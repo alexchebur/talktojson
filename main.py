@@ -390,26 +390,6 @@ class DocumentAnalyzer:
         
         return "\n".join(context_parts)
 
-class FAISSSearchEngine:
-    def __init__(self, index_path: str, texts: List[str]):
-        # Загружаем индекс FAISS
-        self.index = faiss.read_index(index_path)
-        self.texts = texts  # Список текстов, соответствующих векторам в индексе
-
-    def search(self, query_vector: np.ndarray, top_n: int = 5) -> List[Dict]:
-        # Выполняем поиск по векторному индексу
-        distances, indices = self.index.search(query_vector.reshape(1, -1), top_n)
-        
-        # Извлекаем соответствующие тексты
-        results = []
-        for i in range(top_n):
-            if indices[0][i] >= 0:  # Проверяем, что индекс валиден
-                results.append({
-                    'chunk_text': self.texts[indices[0][i]],
-                    'distance': distances[0][i]
-                })
-        return results
-
 
 
 def main():
@@ -471,14 +451,14 @@ def main():
             self.index = faiss.read_index(index_path)
             self.texts = texts  # Список текстов, соответствующих векторам в индексе
 
-        def search(self, query_vector: np.ndarray, top_n: int = 5) -> List[Dict]:
+        def search(self, query_vector: np.ndarray, top_n: int = 5, distance_threshold: float = 0.5) -> List[Dict]:
             # Выполняем поиск по векторному индексу
             distances, indices = self.index.search(query_vector.reshape(1, -1), top_n)
-            
-            # Извлекаем соответствующие тексты
+        
+            # Извлекаем соответствующие тексты с учетом порога расстояния
             results = []
             for i in range(top_n):
-                if indices[0][i] >= 0:  # Проверяем, что индекс валиден
+                if indices[0][i] >= 0 and distances[0][i] <= distance_threshold:  # Проверяем, что индекс валиден и расстояние меньше порога
                     results.append({
                         'chunk_text': self.texts[indices[0][i]],
                         'distance': distances[0][i]
@@ -520,7 +500,12 @@ def main():
             st.session_state.docx_added = True  # Устанавливаем флаг, что содержимое добавлено
 
         conversation_log.append(user_input)  # Добавляем пользовательский ввод
+        query_vector = vectorize_query(user_input)  # Векторизация запроса
 
+        # Поиск релевантных данных с помощью FAISS с порогом расстояния
+        distance_threshold = 0.5  # Установите значение порога по вашему усмотрению
+        faiss_results = faiss_search_engine.search(query_vector, top_n=5, distance_threshold=distance_threshold)
+        
         # Поиск релевантных данных в JSON
         relevant_chunks = analyzer.search_engine.search(user_input)
 
