@@ -8,5 +8,5 @@ numpy>=2.2.4
 rake-nltk>=1.0.6
 pymorphy2>=0.9.1
 pymorphy2-dicts-ru>=2.4.417127.4579844
-faiss>=1.10.0
+faiss-cpu>=1.10.0
 sentence_transformers>=4.0.1
