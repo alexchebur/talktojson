@@ -427,42 +427,51 @@ def main():
             analyzer.load_documents(uploaded_files)
         st.success(f"Загружено документов: {len(uploaded_files)}")
 
+    # Добавьте новую переменную для температуры LLM для чата
+    CHAT_TEMPERATURE = 0.5  # Вы можете настроить это значение по своему усмотрению
+
+    # Новый промпт для чата
+    CHAT_SYSTEM_PROMPT = """Ты - опытный дружелюбный юрист энергетической компании, комментирующий вопросы пользователей и представленные документы, в которых содержится в том числе история диалога с тобой. ЗАПРЕЩЕНО ссылаться на выдуманные законы и судебную практику. Ответы излагай в деловом стиле, без категорических мнений."""
+
     # Чат с наставником Карлосом
     st.header("Обсудить с наставником Карлосом")
-    
+
     # Поле для ввода текста
     user_input = st.text_area(
         "Обсудить с наставником Карлосом",
         max_chars=500,
         height=100
     )
-    
+
     # Кнопка "Спросить"
     ask_button = st.button("Спросить", disabled=not (uploaded_files and user_input))
-    
+
     if ask_button:
         # Обработка введенного текста
         conversation_log = [analyzer.current_docx["content"]]  # Начинаем с текста загруженного файла
         conversation_log.append(user_input)  # Добавляем пользовательский ввод
-        
+
         # Поиск релевантных данных в JSON
         relevant_chunks = analyzer.search_engine.search(user_input)
-        
+
         # Добавляем результаты поиска в лог
         for chunk in relevant_chunks:
             conversation_log.append(chunk['chunk_text'])
-        
+
         # Формируем запрос к LLM
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": CHAT_SYSTEM_PROMPT},
             {"role": "user", "content": "\n".join(conversation_log)}
         ]
-        
+
         # Получаем ответ от LLM
-        response = analyzer.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
-        
-        # Выводим ответ в текстовое окно
-        st.text_area("Ответ от Карлоса", value=response, height=200, disabled=True)
+        response = analyzer.llm_client.query(messages, CHAT_TEMPERATURE, MAX_ANSWER_LENGTH)
+
+        # Создаем контейнер для вывода ответа
+        response_container = st.empty()  # Создаем пустой контейнер
+
+        # Выводим ответ в текстовое окно с фиксированным размером и прокруткой
+        response_container.text_area("Ответ от Карлоса", value=response, height=200, disabled=True)
 
 
     
