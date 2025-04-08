@@ -49,6 +49,13 @@ BUTTON_PROMPTS = {
     "prediction": """Ты - юрист-литигатор в энергетической компании. Оцени правовую ситуацию с точки зрения слабых и сильных мест в позиции энергетической компании, неопределенности каких-либо фактических обстоятельств, недостатков доказательств. Предположи три варианта ответных действий второй стороны после получения процессуального документа энергетической компании, например: [оппонент может пытаться доказывать…], [оппонент может усилить аргументацию в части…], [оппонент попытается опровергать…], с описанием существа действий. Предположи, каков может быть исход дела при неблагоприятном для энергетической компании развитии ситуации."""
 }
 
+##################
+# Функция для загрузки текстов из файла index.pkl
+def load_texts_from_pkl(pkl_path: str) -> List[str]:
+    with open(pkl_path, 'rb') as f:
+        texts = pickle.load(f)  # Предполагается, что в файле хранится список строк
+    return texts
+##################
 class TextPreprocessor:
     def __init__(self):
         self.regex = re.compile(r'[^\w\s]')
@@ -383,6 +390,28 @@ class DocumentAnalyzer:
         
         return "\n".join(context_parts)
 
+class FAISSSearchEngine:
+    def __init__(self, index_path: str, texts: List[str]):
+        # Загружаем индекс FAISS
+        self.index = faiss.read_index(index_path)
+        self.texts = texts  # Список текстов, соответствующих векторам в индексе
+
+    def search(self, query_vector: np.ndarray, top_n: int = 5) -> List[Dict]:
+        # Выполняем поиск по векторному индексу
+        distances, indices = self.index.search(query_vector.reshape(1, -1), top_n)
+        
+        # Извлекаем соответствующие тексты
+        results = []
+        for i in range(top_n):
+            if indices[0][i] >= 0:  # Проверяем, что индекс валиден
+                results.append({
+                    'chunk_text': self.texts[indices[0][i]],
+                    'distance': distances[0][i]
+                })
+        return results
+
+
+
 def main():
     st.set_page_config(page_title="El Documente", layout="wide")
     gif_path = "data/maracas-sombrero-hat.gif"  # Укажите путь к вашему GIF
@@ -434,7 +463,36 @@ def main():
 
     # Новый промпт для чата
     CHAT_SYSTEM_PROMPT = """Ты - опытный дружелюбный юрист энергетической компании, отвечающий на правовые вопросы. ЗАПРЕЩЕНО:  1. ссылаться на выдуманные законы и судебную практику. 2. указывать в ответе, что ты ознакомился с документом, просто поддерживай диалог. Ответы излагай в деловом стиле, без категорических мнений."""
+    
+    # Класс для работы с FAISS
+    class FAISSSearchEngine:
+        def __init__(self, index_path: str, texts: List[str]):
+            # Загружаем индекс FAISS
+            self.index = faiss.read_index(index_path)
+            self.texts = texts  # Список текстов, соответствующих векторам в индексе
 
+        def search(self, query_vector: np.ndarray, top_n: int = 5) -> List[Dict]:
+            # Выполняем поиск по векторному индексу
+            distances, indices = self.index.search(query_vector.reshape(1, -1), top_n)
+            
+            # Извлекаем соответствующие тексты
+            results = []
+            for i in range(top_n):
+                if indices[0][i] >= 0:  # Проверяем, что индекс валиден
+                    results.append({
+                        'chunk_text': self.texts[indices[0][i]],
+                        'distance': distances[0][i]
+                    })
+            return results
+
+    # Функция векторизации пользовательского запроса
+    def vectorize_query(query: str) -> np.ndarray:
+        model = SentenceTransformer('all-MiniLM-L6-v2')  # Вы можете выбрать другую модель
+        return model.encode(query)
+
+    # Загрузка текстов и создание экземпляра FAISSSearchEngine
+    texts = [...]  # Замените на ваш список текстов, соответствующих индексам FAISS
+    faiss_search_engine = FAISSSearchEngine('data/faiss_index.index', texts)
     # Чат с наставником Карлосом
     st.header("Обсудить с наставником Карлосом")
 
