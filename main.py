@@ -13,7 +13,7 @@ import requests
 from typing import List, Dict, Any
 from rake_nltk import Rake
 from pymorphy2 import MorphAnalyzer
-import faiss-cpu
+import faiss
 from sentence_transformers import SentenceTransformer
 
 try:
