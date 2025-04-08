@@ -466,7 +466,7 @@ def main():
 
         # Добавляем результаты поиска в лог
         for chunk in relevant_chunks:
-        conversation_log.append(chunk['chunk_text'])
+            conversation_log.append(chunk['chunk_text'])
 
         # Формируем запрос к LLM
         messages = [
