@@ -114,11 +114,11 @@ class BM25SearchEngine:
             # Формируем результаты
             results = []
             for idx in best_indices:
-                if idx < len(self.chunks_info):  # Проверка на выход за границы
+                if idx < len(self.chunks_info):
                     result = {
-                        'doc_id': self.chunks_info[idx].get('doc_id', ''),
-                        'doc_name': self.chunks_info[idx].get('doc_name', 'Без названия'),
-                        'chunk_text': self.chunks_info[idx].get('chunk_text', ''),
+                        'doc_id': self.chunks_info[idx].get('file_id', ''),
+                        'doc_name': self.chunks_info[idx].get('file_id', 'Без названия'),
+                        'chunk_text': self.chunks_info[idx].get('original', ''),  # Измените на 'original'
                         'score': float(scores[idx])
                     }
                     results.append(result)
