@@ -12,6 +12,7 @@ import requests
 from typing import List, Dict, Any
 from pymorphy2 import MorphAnalyzer
 import logging
+from rake_nltk import Rake
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
