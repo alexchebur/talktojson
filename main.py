@@ -59,11 +59,13 @@ class BM25SearchEngine:
         self.preprocessor = preprocessor
         self.bm25 = None
         self.chunks_info = []
-        self.doc_index = defaultdict(list)
         self.is_index_loaded = False
         self.cache_path = os.path.join(DATA_DIR, "bm25_index.pkl")
+        
+        # Пытаемся загрузить индекс сразу при инициализации
+        self._load_index()
 
-    def load_index(self) -> bool:
+    def _load_index(self) -> bool:
         """Загружает индекс из файла bm25_index.pkl"""
         try:
             if not os.path.exists(self.cache_path):
@@ -73,42 +75,66 @@ class BM25SearchEngine:
             with open(self.cache_path, 'rb') as f:
                 data = pickle.load(f)
                 
-                # Проверяем структуру загруженных данных
-                if len(data) == 2:  # Если в файле только bm25 и chunks_info
-                    self.bm25, self.chunks_info = data
-                    self.doc_index = defaultdict(list)  # Инициализируем пустой doc_index
-                elif len(data) == 3:  # Если в файле все три компонента
-                    self.bm25, self.chunks_info, self.doc_index = data
+                # Проверяем структуру данных
+                if isinstance(data, tuple) and len(data) >= 2:
+                    self.bm25 = data[0]
+                    self.chunks_info = data[1]
+                    
+                    # Если есть doc_index (третий элемент)
+                    if len(data) > 2:
+                        self.doc_index = data[2]
+                    else:
+                        self.doc_index = defaultdict(list)
+                    
+                    self.is_index_loaded = True
+                    st.success("Индекс успешно загружен")
+                    return True
                 else:
                     st.error("Неправильный формат файла индекса")
                     return False
                     
-                self.is_index_loaded = True
-                st.success(f"Успешно загружен индекс из {self.cache_path}")
-                return True
-                
         except Exception as e:
-            st.error(f"Ошибка загрузки индекса: {e}")
+            st.error(f"Ошибка загрузки индекса: {str(e)}")
             return False
 
-    # Остальные методы класса остаются без изменений
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
+        """Выполняет поиск по индексу"""
         if not self.is_index_loaded:
-            if not self.load_index():  # Попробуем загрузить индекс
-                return []
-
-        tokens = self.preprocessor.preprocess(query)
-        if not tokens:
+            st.error("Индекс не загружен")
             return []
 
-        scores = self.bm25.get_scores(tokens)
-        best_indices = np.argsort(scores)[-top_n:][::-1]
+        if not query or not isinstance(query, str):
+            return []
 
-        results = []
-        for idx in best_indices:
-            result = {**self.chunks_info[idx], 'score': float(scores[idx])}
-            results.append(result)
-        return results
+        try:
+            # Препроцессинг запроса
+            tokens = self.preprocessor.preprocess(query)
+            if not tokens:
+                return []
+
+            # Получаем оценки релевантности
+            scores = self.bm25.get_scores(tokens)
+            
+            # Сортируем результаты по релевантности
+            best_indices = np.argsort(scores)[-top_n:][::-1]
+
+            # Формируем результаты
+            results = []
+            for idx in best_indices:
+                if idx < len(self.chunks_info):  # Проверка на выход за границы
+                    result = {
+                        'doc_id': self.chunks_info[idx].get('doc_id', ''),
+                        'doc_name': self.chunks_info[idx].get('doc_name', 'Без названия'),
+                        'chunk_text': self.chunks_info[idx].get('chunk_text', ''),
+                        'score': float(scores[idx])
+                    }
+                    results.append(result)
+            
+            return results
+
+        except Exception as e:
+            st.error(f"Ошибка при выполнении поиска: {str(e)}")
+            return []
 
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
