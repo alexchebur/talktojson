@@ -22,7 +22,7 @@ try:
     from config import API_KEY, API_URL
 except ImportError:
     st.error("Ошибка: Создайте файл config.py с переменными API_KEY и API_URL")
-    API_KEY = ""
+    #API_KEY = ""
     API_URL = "https://api.vsegpt.ru/v1/chat/completions"
 
 # Конфигурация
