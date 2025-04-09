@@ -58,6 +58,12 @@ class BM25SearchEngine:
 
             with open(self.index_path, 'rb') as f:
                 data = pickle.load(f)
+
+
+                if not isinstance(data, dict) or 'metadata' not in data or 'processed_files' not in data:
+                    st.error("Неверный формат данных в файле индекса")
+                    return
+                
                 
                 if isinstance(data, tuple) and len(data) == 3:
                     self.bm25, self.chunks_info, self.doc_index = data
