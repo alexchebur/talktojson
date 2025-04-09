@@ -72,14 +72,26 @@ class BM25SearchEngine:
 
             with open(self.cache_path, 'rb') as f:
                 data = pickle.load(f)
-                self.bm25, self.chunks_info, self.doc_index = data
+                
+                # Проверяем структуру загруженных данных
+                if len(data) == 2:  # Если в файле только bm25 и chunks_info
+                    self.bm25, self.chunks_info = data
+                    self.doc_index = defaultdict(list)  # Инициализируем пустой doc_index
+                elif len(data) == 3:  # Если в файле все три компонента
+                    self.bm25, self.chunks_info, self.doc_index = data
+                else:
+                    st.error("Неправильный формат файла индекса")
+                    return False
+                    
                 self.is_index_loaded = True
                 st.success(f"Успешно загружен индекс из {self.cache_path}")
                 return True
+                
         except Exception as e:
             st.error(f"Ошибка загрузки индекса: {e}")
             return False
 
+    # Остальные методы класса остаются без изменений
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
         if not self.is_index_loaded:
             if not self.load_index():  # Попробуем загрузить индекс
