@@ -26,6 +26,60 @@ MAX_ANSWER_LENGTH = 15000
 TEMPERATURE = 0.2
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# Промпт для генерации ключевых слов
+KEYWORDS_PROMPT = """Задача:
+Преобразуй пользовательский запрос в оптимизированную форму для BM25-поиска в базе юридических документов (нормативных документов и образцов процессуальных документов) по ключевым словам и выражениям. Учитывай особенности юридической лексики и следующие требования:
+
+Саммари:
+Сформулируй одним предложением, о чем документ.
+
+Семантическое расширение:
+
+К десяти самым семантически значимым в запросе словам и выражениям в запросе добавь по 2-3 синонима/близко связанных слова/тождественных по смыслу выражения через ИЛИ:
+"расторжение договора" → "расторжение ИЛИ прекращение ИЛИ аннулирование договора"
+
+"теплоснабжение" → "поставка тепловой энергии"
+
+Укажи альтернативные формулировки законов:
+"ГК РФ" → "Гражданский кодекс РФ (ГК РФ)"
+
+Контекстуализация:
+
+Для общих понятий добавь конкретику:
+"нарушение сроков" → "просрочка исполнения обязательств (ст. 395 ГК РФ)"
+
+Укажи ближайшие смежные правовые аспекты:
+"неустойка" → "неустойка (штраф, пеня)"
+
+Сохранение структуры:
+
+НЕ ИЗМЕНЯЙ номера статей/документов:
+"ст. 15.25 КоАП" → "статья 15.25 Кодекса об административных правонарушениях (КоАП)"
+
+
+Сохраняй специальные обозначения:
+"№ 127-ФЗ" → "Федеральный закон № 127-ФЗ"
+
+Обработка ошибок:
+
+Исправь очевидные опечатки:
+"Эллектронный документ" → "электронный документ"
+
+Предложи варианты для неоднозначных терминов:
+"иск" → "исковое заявление (ИСК) ИЛИ индивидуальный инвестиционный счет (ИИС)"
+
+НЕ ПРИДУМЫВАЙ несуществующих нормативных или судебных актов.
+
+Формат вывода:
+
+Основные термины и выражения (включая исправленные)
+
+Синонимы через "ИЛИ"
+
+Уточняющие конструкции в скобках
+
+Номера документов в полной форме"""
+
 # Системные промпты
 SYSTEM_PROMPT = """Ты - профессиональный опытный юрист-литигатор из энергетической компании. Ты можешь критически оценивать
 процессуальные документы, комментировать позиции и прогнозировать развитие споров. правила цитирования: ЗАПРЕЩЕНО цитировать и ссылаться на конкретные нормы, пункты, правила и конкретные законы,
@@ -33,15 +87,13 @@ SYSTEM_PROMPT = """Ты - профессиональный опытный юри
 
 BUTTON_PROMPTS = {
     "quality": """Ты юрист-литигатор в энергетической компании. Оцени сильные и слабые стороны процессуального документа НА ОСНОВЕ ЭТИХ ФРАГМЕНТОВ:\n{context}\n\n. Правила анализа: 
-1. Полноту, последовательность и структуру аргументации, 
-2. относимость и достаточность доказательств, 
-3. полноту указания в подкрепление аргументов применимых норм права. 
-4. суммарное количество недостатков в формате оценки от 1 до 10 ["Я бы поставил итоговую оценку документу ... из 10]
-5. правила цитирования: ЗАПРЕЩЕНО цитировать и ссылаться на конкретные нормы и конкретные законы, отсутствующие в предоставленных документах. Все выводы и цитаты должны основываться на тексте предоставленных документов.
-6.[ВАЖНО] критично оцени документ на предмет соответствия методическим указаниям по процессуальным документам из фрагментов  \n{context}\n\n  (если рекомендации представлены в документе), при выявлении нарушений - процитируй нарушенные требования методических указаний, если требования указаны в предоставленных документах.""",
-
+    1. Полноту, последовательность и структуру аргументации, 
+    2. относимость и достаточность доказательств, 
+    3. полноту указания в подкрепление аргументов применимых норм права. 
+    4. суммарное количество недостатков в формате оценки от 1 до 10 ["Я бы поставил итоговую оценку документу ... из 10]
+    5. правила цитирования: ЗАПРЕЩЕНО цитировать и ссылаться на конкретные нормы и конкретные законы, отсутствующие в предоставленных документах. Все выводы и цитаты должны основываться на тексте предоставленных документов.
+    6.[ВАЖНО] критично оцени документ на предмет соответствия методическим указаниям по процессуальным документам из фрагментов  \n{context}\n\n  (если рекомендации представлены в документе), при выявлении нарушений - процитируй нарушенные требования методических указаний, если требования указаны в предоставленных документах.""",
     "strategy": """Ты - юрист-литигатор в энергетической компании. Оцени правовую ситуацию с точки зрения слабых и сильных мест в позиции оппонента и компании, неопределенности каких-либо фактических обстоятельств, недостатков доказательств. Напиши пошагово стратегию процессуального поведения, например проведения экспертиз, истребования доказательств, смены акцентов в обосновании позиции энергетической компании. Предложи, на чем необходимо сосредоточиться: на сборе доказательств, повышении качества представления интересов, дополнения позиции аргументами или сменой позиции.""",
-
     "prediction": """Ты - юрист-литигатор в энергетической компании. Оцени правовую ситуацию с точки зрения слабых и сильных мест в позиции энергетической компании, неопределенности каких-либо фактических обстоятельств, недостатков доказательств. Предположи три варианта ответных действий второй стороны после получения процессуального документа энергетической компании, например: [оппонент может пытаться доказывать…], [оппонент может усилить аргументацию в части…], [оппонент попытается опровергать…], с описанием существа действий. Предположи, каков может быть исход дела при неблагоприятном для энергетической компании развитии ситуации."""
 }
 
@@ -72,11 +124,9 @@ class BM25SearchEngine:
             with open(self.index_path, 'rb') as f:
                 data = pickle.load(f)
                 
-                # Проверяем структуру загруженных данных
                 if isinstance(data, tuple) and len(data) == 3:
                     self.bm25, self.chunks_info, self.doc_index = data
                 elif isinstance(data, dict):
-                    # Если данные сохранены как словарь (альтернативный формат)
                     self.bm25 = data.get('bm25')
                     self.chunks_info = data.get('chunks_info', [])
                     self.doc_index = data.get('doc_index', defaultdict(list))
@@ -106,7 +156,7 @@ class BM25SearchEngine:
 
         results = []
         for idx in best_indices:
-            if idx < len(self.chunks_info):  # Проверка на выход за границы
+            if idx < len(self.chunks_info):
                 result = {
                     'doc_id': self.chunks_info[idx].get('doc_id', f"doc_{idx}"),
                     'doc_name': self.chunks_info[idx].get('doc_name', "Без названия"),
@@ -163,11 +213,10 @@ class DocumentAnalyzer:
     def __init__(self, api_url: str = None, api_key: str = None):
         self.preprocessor = TextPreprocessor()
         self.search_engine = BM25SearchEngine(self.preprocessor)
-        self.current_docx = None  # Текущий загруженный DOCX-документ
+        self.current_docx = None
         self.llm_client = None
         self.llm_initialized = False
-        
-        # Инициализируем LLM
+        self.generated_keywords = ""
         self._initialize_llm(api_url, api_key)
 
     def _initialize_llm(self, api_url: str, api_key: str) -> None:
@@ -183,30 +232,46 @@ class DocumentAnalyzer:
             print(f"Ошибка инициализации LLM: {e}")
             self.llm_initialized = False
 
+    def generate_keywords(self, text: str) -> str:
+        """Генерирует ключевые слова для документа через LLM"""
+        if not self.llm_initialized:
+            return ""
+
+        messages = [
+            {"role": "system", "content": KEYWORDS_PROMPT},
+            {"role": "user", "content": text[:5000]}  # Ограничиваем длину текста для запроса
+        ]
+
+        try:
+            with st.spinner("Генерация ключевых слов..."):
+                keywords = self.llm_client.query(messages, TEMPERATURE, 500)
+                st.session_state.generated_keywords = keywords
+                return keywords
+        except Exception as e:
+            st.error(f"Ошибка генерации ключевых слов: {str(e)}")
+            return ""
+
     def analyze_document(self, prompt_type: str) -> str:
         """Анализирует документ с использованием LLM"""
         if not self.current_docx:
             return "Пожалуйста, загрузите DOCX файл"
             
-        # 1. Получаем текст из загруженного DOCX
         docx_text = self.current_docx["content"]
         
-        # 2. Формируем запрос для BM25 на основе текста DOCX
+        # Формируем комбинированный запрос: оригинальный + сгенерированные ключевые слова
         query = self._generate_search_query(prompt_type, docx_text)
         
-        # 3. Ищем релевантные фрагменты в индексе BM25
-        chunks = self.search_engine.search(query)
+        if hasattr(st.session_state, 'generated_keywords') and st.session_state.generated_keywords:
+            query += " " + st.session_state.generated_keywords
         
-        # 4. Формируем контекст для LLM
+        chunks = self.search_engine.search(query)
         context = self._build_context(docx_text, chunks)
         
-        # 5. Формируем и выполняем запрос к LLM
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + f"\n\nВес контента: {st.session_state.doc_weight_slider:.1f}\n\nКОНТЕКСТ:\n" + context}
         ]
 
-        # Выводим итоговый запрос в сайдбар
         st.sidebar.header("Итоговый запрос к LLM")
         st.sidebar.markdown("### Запрос пользователя:")
         st.sidebar.markdown(BUTTON_PROMPTS[prompt_type] + f"\n\nВес контента: {st.session_state.doc_weight_slider:.1f}\n\nКОНТЕКСТ:\n" + context)
@@ -214,7 +279,7 @@ class DocumentAnalyzer:
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
     def load_documents(self, uploaded_files) -> None:
-        """Загружает DOCX файлы"""
+        """Загружает DOCX файлы и генерирует ключевые слова"""
         if not uploaded_files:
             return
 
@@ -237,13 +302,20 @@ class DocumentAnalyzer:
                         text = text[:MAX_CONTEXT_LENGTH]
                         st.warning(f"Документ {uploaded_file.name} обрезан до {MAX_CONTEXT_LENGTH} символов")
 
-                    # Сохраняем только последний загруженный документ
                     self.current_docx = {
                         "name": uploaded_file.name,
                         "content": text
                     }
 
                     st.success(f"Документ {uploaded_file.name} загружен для анализа")
+                    
+                    # Генерируем ключевые слова после загрузки документа
+                    if self.llm_initialized:
+                        keywords = self.generate_keywords(text)
+                        if keywords:
+                            st.session_state.generated_keywords = keywords
+                            st.sidebar.header("Сгенерированные ключевые слова")
+                            st.sidebar.text_area("Ключевые слова", value=keywords, height=200)
 
                 except Exception as e:
                     st.error(f"Ошибка обработки файла {uploaded_file.name}: {str(e)}")
@@ -259,12 +331,10 @@ class DocumentAnalyzer:
             "strategy": "стратегия спора доказательства процессуальное поведение",
             "prediction": "позиция второй стороны прогнозирование аргументы оппонента"
         }
-        
-        # Комбинируем базовый запрос с текстом DOCX
         return f"{base_queries[prompt_type]} {docx_text[:1000]}"
 
     def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
-        """Строит контекст для LLM из DOCX и найденных фрагментов"""
+        """Строит контекст для LLM"""
         context_parts = [
             "=== ЗАГРУЖЕННЫЙ ДОКУМЕНТ ===",
             docx_text,
@@ -283,7 +353,6 @@ def main():
     st.image(gif_path, caption="Hola!", width=64)
     st.title("El Documente: проверьте свой процессуальный документ")
     
-    # Инициализация анализатора
     if 'analyzer' not in st.session_state:
         st.session_state.analyzer = DocumentAnalyzer(API_URL, API_KEY)
     
@@ -302,11 +371,9 @@ def main():
     with col2:
         st.metric("Текущее значение", f"{weight:.1f}")
 
-    # Проверка инициализации LLM
     if not analyzer.llm_initialized:
         st.sidebar.error("LLM не инициализирован. Проверьте API ключ и URL")
     
-    # Загрузка документов
     st.header("Загрузка документа")
     uploaded_files = st.file_uploader(
         "Выберите документ в формате DOCX", 
@@ -319,17 +386,13 @@ def main():
             analyzer.load_documents(uploaded_files)
         st.success(f"Загружено документов: {len(uploaded_files)}")
 
-    # Чат с наставником Карлосом
     st.header("Чат")
-
-    # Поле для ввода текста
     user_input = st.text_area(
         "Обсудить с наставником Карлосом",
         max_chars=500,
         height=100
     )
 
-    # Кнопка "Спросить"
     ask_button = st.button("Спросить", disabled=not (uploaded_files and user_input))
 
     if 'docx_added' not in st.session_state:
@@ -344,7 +407,12 @@ def main():
 
         conversation_log.append(user_input)
 
-        relevant_chunks = analyzer.search_engine.search(user_input)
+        # Добавляем сгенерированные ключевые слова к запросу
+        query = user_input
+        if hasattr(st.session_state, 'generated_keywords') and st.session_state.generated_keywords:
+            query += " " + st.session_state.generated_keywords
+
+        relevant_chunks = analyzer.search_engine.search(query)
 
         for chunk in relevant_chunks:
             conversation_log.append(chunk['chunk_text'])
@@ -358,7 +426,6 @@ def main():
         response_container = st.empty()
         response_container.text_area("Ответ от Карлоса", value=response, height=200, disabled=True)
 
-    # Кнопки анализа
     st.header("Анализ документа")
     col1, col2, col3 = st.columns(3)
 
