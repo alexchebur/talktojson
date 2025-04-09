@@ -68,6 +68,7 @@ class BM25SearchEngine:
                     st.error("Неверный формат данных в файле индекса")
                     return False
                 
+                # Проверяем, что bm25 был успешно загружен
                 if self.bm25 is None:
                     st.error("Не удалось загрузить индекс BM25 из файла")
                     return False
