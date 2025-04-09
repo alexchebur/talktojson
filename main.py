@@ -1,22 +1,22 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
+import json
 import os
 import re
 import pickle
-import io
+import io  # Добавлен отсутствующий импорт
 from docx import Document
 from rank_bm25 import BM25Okapi
 import numpy as np
 from collections import defaultdict
 import requests
 from typing import List, Dict, Any
-from pymorphy2 import MorphAnalyzer
-import logging
 from rake_nltk import Rake
+from pymorphy2 import MorphAnalyzer
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+#logging.basicConfig(level=logging.INFO)
+#logger = logging.getLogger(__name__)
 
 try:
     from config import API_KEY, API_URL
