@@ -118,7 +118,7 @@ class BM25SearchEngine:
                     result = {
                         'doc_id': self.chunks_info[idx].get('file_id', ''),
                         'doc_name': self.chunks_info[idx].get('file_id', 'Без названия'),
-                        'chunk_text': self.chunks_info[idx].get('processed', '')[:1000],  # Измените на 'original'
+                        'chunk_text': self.chunks_info[idx].get('original', '')[:1000],  # Измените на 'original'
                         'score': float(scores[idx])
                     }
                     results.append(result)
