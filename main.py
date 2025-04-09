@@ -65,7 +65,7 @@ class BM25SearchEngine:
         self.chunks_info = []
         self.doc_index = defaultdict(list)
         self.is_index_loaded = False
-        self.index_path = os.path.join(DATA_DIR, "bm25_index.pkl")
+        self.index_path = os.path.join(DATA_DIR, "index.pkl")  # Убедитесь, что путь правильный
 
     def load_index(self) -> bool:
         """Загружает индекс из pickle файла"""
@@ -76,20 +76,21 @@ class BM25SearchEngine:
 
             with open(self.index_path, 'rb') as f:
                 data = pickle.load(f)
-                
+                st.write("Загруженные данные:", data)  # Отладочное сообщение
+
                 # Проверяем структуру загруженных данных
-                if isinstance(data, tuple) and len(data) == 3:
-                    self.bm25, self.chunks_info, self.doc_index = data
-                elif isinstance(data, dict):
-                    # Если данные сохранены как словарь (альтернативный формат)
-                    self.bm25 = data.get('bm25')
-                    self.chunks_info = data.get('chunks_info', [])
-                    self.doc_index = data.get('doc_index', defaultdict(list))
+                self.metadata = data.get('metadata', [])
+                self.processed_files = set(data.get('processed_files', []))
+
+                if self.metadata:
+                    corpus = [item['processed'] for item in self.metadata]
+                    self.bm25 = BM25Okapi(corpus)
+                    self.is_index_loaded = True
+                    st.success("Индекс BM25 успешно загружен.")  # Успешное сообщение
                 else:
-                    st.error("Неверный формат данных в файле индекса")
+                    st.error("Индекс не содержит документов.")
                     return False
                 
-                self.is_index_loaded = True
                 return True
                 
         except Exception as e:
