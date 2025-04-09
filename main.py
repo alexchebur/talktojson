@@ -75,17 +75,10 @@ class BM25SearchEngine:
             with open(self.cache_path, 'rb') as f:
                 data = pickle.load(f)
                 
-                # Проверяем структуру данных
-                if isinstance(data, tuple) and len(data) >= 2:
-                    self.bm25 = data[0]
-                    self.chunks_info = data[1]
-                    
-                    # Если есть doc_index (третий элемент)
-                    if len(data) > 2:
-                        self.doc_index = data[2]
-                    else:
-                        self.doc_index = defaultdict(list)
-                    
+                if isinstance(data, dict):
+                    self.bm25 = BM25Okapi([item['processed'] for item in data.get('metadata', [])])
+                    self.chunks_info = data.get('metadata', [])
+                    self.doc_index = defaultdict(list)  # Если у вас нет doc_index, просто инициализируйте его
                     self.is_index_loaded = True
                     st.success("Индекс успешно загружен")
                     return True
