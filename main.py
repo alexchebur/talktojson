@@ -50,7 +50,7 @@ def safe_read_json(file_path: str) -> dict:
         return json.loads(content[start:end])
         
     except Exception as e:
-        print(f"Ошибка чтения JSON: {e}")
+        st.sidebar.error(f"Ошибка чтения JSON:")
         # Пробуем прочитать резервную копию
         if os.path.exists(backup_path):
             try:
