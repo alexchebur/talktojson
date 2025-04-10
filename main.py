@@ -62,85 +62,115 @@ class BM25SearchEngine:
         self.is_index_loaded = False
         self.cache_path = os.path.join(DATA_DIR, "bm25_index.json")
         
-        self._safe_load_index()
+        self._load_index_with_retry()
+
+    def _load_index_with_retry(self, max_attempts=3):
+        """Пытается загрузить индекс с несколькими попытками"""
+        for attempt in range(max_attempts):
+            try:
+                if self._safe_load_index():
+                    return
+                print(f"Попытка {attempt + 1} не удалась, пробуем исправить файл...")
+                fix_json_file(self.cache_path)
+            except Exception as e:
+                print(f"Ошибка при попытке {attempt + 1}: {e}")
+        
+        st.error("Не удалось загрузить индекс после нескольких попыток")
 
     def _safe_load_index(self) -> bool:
-        """Безопасная загрузка индекса с восстановлением после ошибок"""
+        """Безопасная загрузка с проверкой всех возможных проблем"""
         try:
+            # Проверка существования файла
             if not os.path.exists(self.cache_path):
-                st.error(f"Файл индекса не найден: {self.cache_path}")
+                st.error(f"Файл {self.cache_path} не найден")
                 return False
-
-            # Чтение с обработкой возможных проблем кодировки
-            try:
-                with open(self.cache_path, 'r', encoding='utf-8') as f:
-                    content = f.read().strip()
-            except UnicodeDecodeError:
-                with open(self.cache_path, 'r', encoding='utf-8-sig') as f:
-                    content = f.read().strip()
-
-            # Удаление BOM если присутствует
-            if content.startswith('\ufeff'):
-                content = content[1:]
-
-            # Базовые проверки структуры
-            if not content.startswith('{') or not content.endswith('}'):
-                st.error("JSON должен начинаться с { и заканчиваться }")
+            
+            # Чтение содержимого файла
+            with open(self.cache_path, 'rb') as f:
+                raw_content = f.read()
+                
+            # Декодирование с обработкой BOM
+            content = self._decode_content(raw_content)
+            if not content:
                 return False
-
+                
+            # Проверка базовой структуры
+            if not self._validate_json_structure(content):
+                return False
+                
+            # Парсинг JSON
             try:
                 data = json.loads(content)
             except json.JSONDecodeError as e:
                 st.error(f"Ошибка в JSON (строка {e.lineno}, колонка {e.colno}): {e.msg}")
                 return False
-
-            # Валидация структуры данных
-            if not isinstance(data, dict) or 'metadata' not in data:
-                st.error("Некорректная структура JSON: ожидается словарь с ключом 'metadata'")
-                return False
-
-            if not isinstance(data['metadata'], list):
-                st.error("Поле 'metadata' должно быть списком")
-                return False
-
-            # Подготовка данных для BM25
-            processed_texts = []
-            valid_chunks = []
+                
+            # Загрузка данных
+            return self._initialize_index(data)
             
-            for item in data['metadata']:
-                if not isinstance(item, dict):
-                    continue
-                    
-                processed = self._get_processed_text(item)
-                if not processed:
-                    continue
-                    
-                processed_texts.append(processed.split())
-                valid_chunks.append(item)
-
-            if not processed_texts:
-                st.error("Нет валидных данных для индексации")
-                return False
-
-            self.bm25 = BM25Okapi(processed_texts)
-            self.chunks_info = valid_chunks
-            self.is_index_loaded = True
-            st.success(f"Успешно загружено {len(self.chunks_info)} документов")
-            return True
-
         except Exception as e:
-            st.error(f"Критическая ошибка загрузки индекса: {str(e)}")
+            st.error(f"Неожиданная ошибка: {str(e)}")
             return False
 
-    def _get_processed_text(self, item: dict) -> str:
-        """Извлекает и нормализует текст для индексации"""
-        processed = item.get('processed', '')
+    def _decode_content(self, raw_content: bytes) -> str:
+        """Декодирует содержимое файла с обработкой BOM"""
+        encodings = ['utf-8-sig', 'utf-8', 'windows-1251']
+        for enc in encodings:
+            try:
+                return raw_content.decode(enc).strip()
+            except UnicodeDecodeError:
+                continue
+        st.error("Не удалось декодировать файл (пробовали utf-8, utf-8-sig, windows-1251)")
+        return ""
+
+    def _validate_json_structure(self, content: str) -> bool:
+        """Проверяет базовую структуру JSON"""
+        content = content.strip()
+        if not content.startswith('{'):
+            st.error("JSON должен начинаться с '{'")
+            return False
+        if not content.endswith('}'):
+            st.error("JSON должен заканчиваться '}'")
+            return False
+        return True
+
+    def _initialize_index(self, data: dict) -> bool:
+        """Инициализирует индекс из загруженных данных"""
+        if not isinstance(data, dict) or 'metadata' not in data:
+            st.error("Ожидается словарь с ключом 'metadata'")
+            return False
+            
+        if not isinstance(data['metadata'], list):
+            st.error("Поле 'metadata' должно быть списком")
+            return False
+            
+        processed_texts = []
+        valid_chunks = []
         
+        for item in data['metadata']:
+            processed = self._normalize_processed_field(item)
+            if processed:
+                processed_texts.append(processed.split())
+                valid_chunks.append(item)
+        
+        if not processed_texts:
+            st.error("Нет валидных данных для индексации")
+            return False
+            
+        self.bm25 = BM25Okapi(processed_texts)
+        self.chunks_info = valid_chunks
+        self.is_index_loaded = True
+        st.success(f"Успешно загружено {len(self.chunks_info)} документов")
+        return True
+
+    def _normalize_processed_field(self, item: dict) -> str:
+        """Нормализует поле processed для индексации"""
+        processed = item.get('processed', '')
         if isinstance(processed, str):
             return processed
-        elif isinstance(processed, list):
+        if isinstance(processed, list):
             return ' '.join(str(x) for x in processed)
-        elif isinstance(processed, (int, float)):
+        if isinstance(processed, (int, float)):
             return str(processed)
         return ''
 
@@ -150,9 +180,6 @@ class BM25SearchEngine:
             return []
 
         try:
-            if not query or not isinstance(query, str):
-                return []
-
             tokens = self.preprocessor.preprocess(query)
             if not tokens:
                 return []
@@ -170,20 +197,8 @@ class BM25SearchEngine:
                 for idx in best_indices
                 if idx < len(self.chunks_info)
             ]
-
         except Exception:
             return []
-
-    def get_document_by_id(self, doc_id: str) -> Dict:
-        """Возвращает полный документ по его ID"""
-        if not self.is_index_loaded:
-            return {}
-            
-        for doc in self.chunks_info:
-            if doc.get('file_id') == doc_id:
-                return doc
-        return {}
-
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
         self.api_url = api_url
