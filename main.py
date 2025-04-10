@@ -54,7 +54,7 @@ class TextPreprocessor:
         text = self.regex.sub(' ', text.lower())
         return text.split()
 
-class BM25SearchEngine:
+class RobustBM25SearchEngine:
     def __init__(self, preprocessor: TextPreprocessor):
         self.preprocessor = preprocessor
         self.bm25 = None
@@ -62,125 +62,95 @@ class BM25SearchEngine:
         self.is_index_loaded = False
         self.cache_path = os.path.join(DATA_DIR, "bm25_index.json")
         
-        self._load_index_with_retry()
+        self._load_with_cleanup()
 
-    def _load_index_with_retry(self, max_attempts=3):
-        """Пытается загрузить индекс с несколькими попытками"""
-        for attempt in range(max_attempts):
-            try:
-                if self._safe_load_index():
-                    return
-                print(f"Попытка {attempt + 1} не удалась, пробуем исправить файл...")
-                fix_json_file(self.cache_path)
-            except Exception as e:
-                print(f"Ошибка при попытке {attempt + 1}: {e}")
-        
-        st.error("Не удалось загрузить индекс после нескольких попыток")
-
-    def _safe_load_index(self) -> bool:
-        """Безопасная загрузка с проверкой всех возможных проблем"""
+    def _load_with_cleanup(self):
+        """Загружает индекс с предварительной очисткой данных"""
         try:
-            # Проверка существования файла
-            if not os.path.exists(self.cache_path):
-                st.error(f"Файл {self.cache_path} не найден")
-                return False
+            # Чтение и очистка файла
+            with open(self.cache_path, 'r', encoding='utf-8') as f:
+                dirty_content = f.read()
             
-            # Чтение содержимого файла
-            with open(self.cache_path, 'rb') as f:
-                raw_content = f.read()
-                
-            # Декодирование с обработкой BOM
-            content = self._decode_content(raw_content)
-            if not content:
-                return False
-                
-            # Проверка базовой структуры
-            if not self._validate_json_structure(content):
-                return False
-                
+            # Очистка от непечатаемых символов
+            clean_content = self._sanitize_json(dirty_content)
+            
             # Парсинг JSON
-            try:
-                data = json.loads(content)
-            except json.JSONDecodeError as e:
-                st.error(f"Ошибка в JSON (строка {e.lineno}, колонка {e.colno}): {e.msg}")
-                return False
-                
+            data = json.loads(clean_content)
+            
             # Загрузка данных
-            return self._initialize_index(data)
+            self._initialize_index(data)
             
         except Exception as e:
-            st.error(f"Неожиданная ошибка: {str(e)}")
-            return False
+            st.error(f"Ошибка загрузки индекса: {str(e)}")
 
-    def _decode_content(self, raw_content: bytes) -> str:
-        """Декодирует содержимое файла с обработкой BOM"""
-        encodings = ['utf-8-sig', 'utf-8', 'windows-1251']
-        for enc in encodings:
-            try:
-                return raw_content.decode(enc).strip()
-            except UnicodeDecodeError:
-                continue
-        st.error("Не удалось декодировать файл (пробовали utf-8, utf-8-sig, windows-1251)")
-        return ""
-
-    def _validate_json_structure(self, content: str) -> bool:
-        """Проверяет базовую структуру JSON"""
-        content = content.strip()
-        if not content.startswith('{'):
-            st.error("JSON должен начинаться с '{'")
-            return False
-        if not content.endswith('}'):
-            st.error("JSON должен заканчиваться '}'")
-            return False
-        return True
-
-    def _initialize_index(self, data: dict) -> bool:
-        """Инициализирует индекс из загруженных данных"""
-        if not isinstance(data, dict) or 'metadata' not in data:
-            st.error("Ожидается словарь с ключом 'metadata'")
-            return False
+    def _sanitize_json(self, content: str) -> str:
+        """Очищает JSON от проблемных символов"""
+        # Удаляем непечатаемые символы
+        clean = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', content)
+        
+        # Удаляем BOM если есть
+        if clean.startswith('\ufeff'):
+            clean = clean[1:]
             
-        if not isinstance(data['metadata'], list):
-            st.error("Поле 'metadata' должно быть списком")
-            return False
+        return clean.strip()
+
+    def _initialize_index(self, data: dict):
+        """Инициализирует индекс из очищенных данных"""
+        if not isinstance(data, dict) or 'metadata' not in data:
+            raise ValueError("Invalid JSON structure")
             
         processed_texts = []
         valid_chunks = []
         
         for item in data['metadata']:
-            processed = self._normalize_processed_field(item)
-            if processed:
-                processed_texts.append(processed.split())
-                valid_chunks.append(item)
-        
+            try:
+                # Очищаем каждый текст в документе
+                clean_item = {
+                    'file_id': self._clean_text(item.get('file_id', '')),
+                    'original': self._clean_text(item.get('original', '')),
+                    'processed': self._normalize_processed(item.get('processed', ''))
+                }
+                
+                if clean_item['processed']:
+                    processed_texts.append(clean_item['processed'].split())
+                    valid_chunks.append(clean_item)
+                    
+            except Exception as e:
+                print(f"Ошибка обработки элемента: {e}")
+                continue
+                
         if not processed_texts:
-            st.error("Нет валидных данных для индексации")
-            return False
+            raise ValueError("No valid documents found")
             
         self.bm25 = BM25Okapi(processed_texts)
         self.chunks_info = valid_chunks
         self.is_index_loaded = True
-        st.success(f"Успешно загружено {len(self.chunks_info)} документов")
-        return True
+        st.success(f"Loaded {len(self.chunks_info)} documents")
 
-    def _normalize_processed_field(self, item: dict) -> str:
-        """Нормализует поле processed для индексации"""
-        processed = item.get('processed', '')
+    def _clean_text(self, text: str) -> str:
+        """Очищает текст от непечатаемых символов"""
+        if isinstance(text, str):
+            return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+        return str(text)
+
+    def _normalize_processed(self, processed) -> str:
+        """Нормализует поле processed"""
         if isinstance(processed, str):
-            return processed
-        if isinstance(processed, list):
-            return ' '.join(str(x) for x in processed)
-        if isinstance(processed, (int, float)):
+            return self._clean_text(processed)
+        elif isinstance(processed, list):
+            return ' '.join(self._clean_text(str(x)) for x in processed)
+        elif isinstance(processed, (int, float)):
             return str(processed)
         return ''
 
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
-        """Безопасный поиск с обработкой ошибок"""
+        """Поиск с обработкой ошибок"""
         if not self.is_index_loaded:
             return []
 
         try:
-            tokens = self.preprocessor.preprocess(query)
+            clean_query = self._clean_text(query)
+            tokens = self.preprocessor.preprocess(clean_query)
             if not tokens:
                 return []
 
@@ -189,10 +159,10 @@ class BM25SearchEngine:
 
             return [
                 {
-                    'doc_id': self.chunks_info[idx].get('file_id', ''),
-                    'doc_name': self.chunks_info[idx].get('doc_name', 'Документ'),
-                    'chunk_text': self.chunks_info[idx].get('original', '')[:1000],
-                    'score': round(float(scores[idx]), 4)
+                    'doc_id': self.chunks_info[idx]['file_id'],
+                    'doc_name': self.chunks_info[idx].get('doc_name', self.chunks_info[idx]['file_id']),
+                    'chunk_text': self.chunks_info[idx]['original'][:1000],
+                    'score': round(scores[idx], 4)
                 }
                 for idx in best_indices
                 if idx < len(self.chunks_info)
