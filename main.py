@@ -20,30 +20,26 @@ import os
 import re
 from pathlib import Path
 
-def validate_and_repair_json(file_path: str) -> bool:
+import json
+import os
+import re
+
+def check_and_repair_json(file_path):
     """Проверяет и восстанавливает JSON файл"""
     try:
-        path = Path(file_path)
-        
         # Проверка существования файла
-        if not path.exists():
+        if not os.path.exists(file_path):
             raise FileNotFoundError(f"Файл {file_path} не существует")
         
-        # Проверка размера файла
-        if path.stat().st_size == 0:
+        # Проверка что файл не пустой
+        if os.path.getsize(file_path) == 0:
             raise ValueError("Файл пуст")
         
-        # Чтение содержимого с разными кодировками
-        for encoding in ['utf-8-sig', 'utf-8', 'windows-1251']:
-            try:
-                content = path.read_text(encoding=encoding).strip()
-                break
-            except UnicodeDecodeError:
-                continue
-        else:
-            raise ValueError("Не удалось декодировать файл")
+        # Чтение файла с обработкой BOM
+        with open(file_path, 'rb') as f:
+            content = f.read().decode('utf-8-sig').strip()
         
-        # Удаление BOM и непечатаемых символов
+        # Удаление непечатаемых символов
         content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
         
         # Поиск действительного JSON содержимого
@@ -57,7 +53,7 @@ def validate_and_repair_json(file_path: str) -> bool:
         
         # Проверка валидности JSON
         try:
-            json.loads(json_content)
+            data = json.loads(json_content)
             return True
         except json.JSONDecodeError as e:
             raise ValueError(f"Невалидный JSON: {str(e)}")
@@ -66,24 +62,16 @@ def validate_and_repair_json(file_path: str) -> bool:
         print(f"Ошибка при проверке файла: {str(e)}")
         return False
 
-def repair_json_file(file_path: str) -> bool:
+def repair_json_file(file_path):
     """Пытается автоматически исправить JSON файл"""
     try:
-        path = Path(file_path)
+        # Создаем резервную копию
+        backup_path = file_path + '.bak'
+        os.replace(file_path, backup_path)
         
-        # Чтение файла
-        with open(file_path, 'rb') as f:
-            raw_content = f.read()
-        
-        # Попробуем разные кодировки
-        for encoding in ['utf-8-sig', 'utf-8', 'windows-1251']:
-            try:
-                content = raw_content.decode(encoding).strip()
-                break
-            except UnicodeDecodeError:
-                continue
-        else:
-            return False
+        # Читаем исходный файл
+        with open(backup_path, 'rb') as f:
+            content = f.read().decode('utf-8-sig').strip()
         
         # Удаляем все до первой {
         start = content.find('{')
@@ -100,13 +88,7 @@ def repair_json_file(file_path: str) -> bool:
         # Удаляем непечатаемые символы
         content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
         
-        # Проверяем валидность
-        try:
-            json.loads(content)
-        except json.JSONDecodeError:
-            return False
-        
-        # Перезаписываем файл
+        # Записываем исправленный файл
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(content)
         
@@ -115,6 +97,15 @@ def repair_json_file(file_path: str) -> bool:
     except Exception:
         return False
 
+# Проверка и восстановление файла перед созданием движка
+json_path = os.path.join("data", "bm25_index.json")
+if not check_and_repair_json(json_path):
+    st.warning("Файл индекса поврежден. Пытаемся восстановить...")
+    if repair_json_file(json_path):
+        st.success("Файл успешно восстановлен!")
+    else:
+        st.error("Не удалось восстановить файл индекса")
+        st.stop()  # Останавливаем приложение если файл не восстановлен
 
 
 try:
