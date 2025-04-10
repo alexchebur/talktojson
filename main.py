@@ -144,7 +144,9 @@ class BM25SearchEngine:
                     tokens = processed.split()
                     if tokens:
                         processed_texts.append(tokens)
-        
+            if not self.chunks_info:
+                st.warning("Индекс поиска пуст. Пожалуйста, загрузите документы для индексации.")
+                return []
             # Дополнительная проверка на наличие данных
             if not processed_texts or all(len(tokens) == 0 for tokens in processed_texts):
                 print("Ошибка: нет обработанных текстов для индекса.")
