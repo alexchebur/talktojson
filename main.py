@@ -146,6 +146,7 @@ class BM25SearchEngine:
                     tokens = processed.split()
                     if tokens:
                         processed_texts.append(tokens)
+                        st.sidebar.info(tokens)
             if not self.chunks_info:
                 st.sidebar.info("Индекс поиска пуст. Пожалуйста, загрузите документы для индексации.")
                 return []
