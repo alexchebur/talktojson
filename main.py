@@ -60,7 +60,7 @@ class BM25SearchEngine:
         self.bm25 = None
         self.chunks_info = []
         self.is_index_loaded = False
-        self.cache_path = os.path.join(DATA_DIR, "bm25_index.json")  # Изменено на .json
+        self.cache_path = os.path.join(DATA_DIR, "bm25_index.json")  # Только JSON
         
         # Пытаемся загрузить индекс сразу при инициализации
         self._load_index()
@@ -69,23 +69,32 @@ class BM25SearchEngine:
         """Загружает индекс из файла bm25_index.json"""
         try:
             if not os.path.exists(self.cache_path):
-                st.error(f"Файл индекса {self.cache_path} не найден")
+                st.error(f"Файл индекса {self.cache_path} не найден. Поместите файл bm25_index.json в папку data/")
                 return False
 
             with open(self.cache_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 
-                if isinstance(data, dict):
-                    self.bm25 = BM25Okapi([item['processed'] for item in data.get('metadata', [])])
-                    self.chunks_info = data.get('metadata', [])
-                    self.doc_index = defaultdict(list)
-                    self.is_index_loaded = True
-                    st.success("Индекс успешно загружен из JSON")
-                    return True
-                else:
-                    st.error("Неправильный формат файла индекса")
+                # Проверяем структуру JSON файла
+                if not isinstance(data, dict) or 'metadata' not in data:
+                    st.error("Неправильный формат JSON файла. Ожидается словарь с ключом 'metadata'")
                     return False
+                
+                # Проверяем, что есть данные для индексации
+                if not data['metadata']:
+                    st.error("JSON файл не содержит данных для индексации (пустой 'metadata')")
+                    return False
+                
+                # Создаем индекс BM25
+                self.bm25 = BM25Okapi([item['processed'].split() for item in data['metadata']])
+                self.chunks_info = data['metadata']
+                self.is_index_loaded = True
+                st.success(f"Индекс успешно загружен из {self.cache_path}. Загружено {len(self.chunks_info)} фрагментов")
+                return True
                     
+        except json.JSONDecodeError as e:
+            st.error(f"Ошибка декодирования JSON: {str(e)}")
+            return False
         except Exception as e:
             st.error(f"Ошибка загрузки индекса: {str(e)}")
             return False
@@ -93,7 +102,7 @@ class BM25SearchEngine:
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
         """Выполняет поиск по индексу"""
         if not self.is_index_loaded:
-            st.error("Индекс не загружен")
+            st.error("Индекс не загружен. Невозможно выполнить поиск.")
             return []
 
         if not query or not isinstance(query, str):
@@ -115,10 +124,11 @@ class BM25SearchEngine:
             results = []
             for idx in best_indices:
                 if idx < len(self.chunks_info):
+                    chunk_info = self.chunks_info[idx]
                     result = {
-                        'doc_id': self.chunks_info[idx].get('file_id', ''),
-                        'doc_name': self.chunks_info[idx].get('file_id', 'Без названия'),
-                        'chunk_text': self.chunks_info[idx].get('original', '')[:1000],
+                        'doc_id': chunk_info.get('file_id', ''),
+                        'doc_name': chunk_info.get('doc_name', chunk_info.get('file_id', 'Без названия')),
+                        'chunk_text': chunk_info.get('original', '')[:1000],
                         'score': float(scores[idx])
                     }
                     results.append(result)
