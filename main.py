@@ -487,7 +487,7 @@ def main():
         height=100
     )
 
-    ask_button = st.button("Спросить", disabled=not (uploaded_files and user_input))
+    ask_button = st.button("Спросить", disabled=not (uploaded_files))# and user_input))
 
     if 'docx_added' not in st.session_state:
         st.session_state.docx_added = False
