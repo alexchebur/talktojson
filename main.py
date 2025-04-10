@@ -116,6 +116,7 @@ class BM25SearchEngine:
 
     def _load_index(self) -> bool:
         """Загрузка индекса с проверкой"""
+        st.sidebar.info("Загрузка индекса")
         if not os.path.exists(self.cache_path):
             st.sidebar.error("Файл индекса не найден.")
             return False
@@ -129,7 +130,7 @@ class BM25SearchEngine:
                 return False
         
             data = json.loads(content)
-            st.sidebar.info("Переменной присвоено содержимое загруженного JSON")
+            
             
         
             # Проверка структуры
