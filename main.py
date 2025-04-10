@@ -132,6 +132,7 @@ class BM25SearchEngine:
         
             # Проверка структуры
             if not isinstance(data, dict) or 'metadata' not in data:
+                t.sidebar.info("Ошибка: нет элемента metadata")
                 return False
         
             # Подготовка данных
