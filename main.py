@@ -222,7 +222,7 @@ class BM25SearchEngine:
                 {
                     'doc_id': self.chunks_info[idx].get('file_id', ''),
                     'doc_name': self.chunks_info[idx].get('doc_name', 'Документ'),
-                    'chunk_text': self.chunks_info[idx].get('original', '')[:1000],
+                    'chunk_text': self.chunks_info[idx].get('original', '')[:2000],
                     'score': round(float(scores[idx]), 4)
                 }
                 for idx in best_indices
@@ -376,7 +376,7 @@ class DocumentAnalyzer:
         }
         
         # Комбинируем базовый запрос с текстом DOCX
-        return f"{base_queries[prompt_type]} {docx_text[:1000]}"
+        return f"{base_queries[prompt_type]} {docx_text[:10000]}"
 
     def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
         """Строит контекст для LLM из DOCX и найденных фрагментов"""
