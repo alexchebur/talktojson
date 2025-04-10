@@ -170,7 +170,9 @@ class BM25SearchEngine:
 
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
         """Поиск с обработкой ошибок"""
-        if not self.is_index_loaded or not self.chunks_info or not self.bm25:
+        print(f"Поисковый запрос: {query}")  # Debug
+        if not self.is_index_loaded:
+            print("Индекс не загружен!")  # Debug
             return []
 
         try:
