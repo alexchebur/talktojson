@@ -115,83 +115,82 @@ class BM25SearchEngine:
         
     def _normalize_processed(self, processed_data: Any) -> List[str]:
         """Нормализует поле processed в единый формат списка токенов"""
+        if processed_data is None:
+            return []
+    
         if isinstance(processed_data, str):
-            # Если это строка, разбиваем по пробелам
-            return processed_data.split()
+            # Если это строка, разбиваем по пробелам и фильтруем пустые значения
+            return [token for token in processed_data.split() if token]
         elif isinstance(processed_data, list):
-            # Если это список, проверяем элементы
-            if all(isinstance(x, str) for x in processed_data):
-                return processed_data
-            else:
-                return []
+            # Если это список, преобразуем все элементы в строки
+            result = []
+            for item in processed_data:
+                if isinstance(item, str):
+                    result.extend(item.split())
+                elif isinstance(item, (int, float)):
+                    result.append(str(item))
+            return result
         else:
-            return []  
+            # Для других типов (числа и т.д.) преобразуем в строку
+            return [str(processed_data)]
 
 
 
     def _load_index(self) -> bool:
         """Загрузка индекса с проверкой"""
-        st.sidebar.info("Загрузка индекса")
         if not os.path.exists(self.cache_path):
-            st.sidebar.error("Файл индекса не найден.")
+            st.sidebar.warning(f"Файл индекса не найден: {self.cache_path}")
             return False
-    
+
         try:
-            with open(self.cache_path, 'rb') as f:
-                content = f.read().decode('utf-8-sig')
-        
-            # Проверка минимальной валидности
-            if not content.strip().startswith('{'):
-                st.sidebar.info("Индекс минимально невалиден")
-                return False
-        
-            data = json.loads(content)
-            
-            
+            data = safe_read_json(self.cache_path)
         
             # Проверка структуры
-            if not isinstance(data, dict) or 'metadata' not in data:
-                st.sidebar.info("Ошибка: нет элемента metadata")
+            if not isinstance(data, dict):
+                st.sidebar.error("Индекс должен быть словарем")
                 return False
-        
+            
+            if 'metadata' not in data:
+                st.sidebar.error("Отсутствует ключ 'metadata' в индексе")
+                return False
+            
             # Подготовка данных
             processed_texts = []
-            for item in data.get('metadata', []):
-                processed = item.get('processed', [])
-                st.sidebar.info("Текст обрабатывается")
-                if isinstance(processed, list):
-                    processed = ' '.join(processed)  # Объединяем массив в строку
-                processed = self._normalize_processed(processed)
-                if processed:
-                    tokens = processed.split()
-                    if tokens:
-                        processed_texts.append(tokens)
-                        #st.sidebar.info(tokens)
-            if not self.chunks_info:
-                st.sidebar.info("Индекс поиска пуст. Пожалуйста, загрузите документы для индексации.")
-                return []
-            # Дополнительная проверка на наличие данных
-            if not processed_texts or all(len(tokens) == 0 for tokens in processed_texts):
-                st.sidebar.info("Ошибка: нет обработанных текстов для индекса.")
+            valid_metadata = []
+        
+            for i, item in enumerate(data.get('metadata', [])):
+                if not isinstance(item, dict):
+                    st.sidebar.warning(f"Пропущен элемент {i} - не является словарем")
+                    continue
+                
+                original_text = item.get('original', '')
+                processed = self._normalize_processed(item.get('processed', []))
+            
+                # Если processed пустое, обрабатываем original текст
+                if not processed and original_text:
+                    processed = self.preprocessor.preprocess(original_text)
+                
+                if processed:  # Только если есть токены
+                    processed_texts.append(processed)
+                    valid_metadata.append(item)
+        
+            if not processed_texts:
+                st.sidebar.error("Индекс не содержит валидных документов")
                 return False
         
-            # Инициализация BM25 с непустым списком токенов
+            # Инициализация BM25
             self.bm25 = BM25Okapi(processed_texts)
-            self.chunks_info = data['metadata']
+            self.chunks_info = valid_metadata
             self.is_index_loaded = True
-            st.sidebar.info(f"Инициализирован BM25 с {len(processed_texts)} документами.")
+        
+            st.sidebar.success(f"Загружен индекс с {len(processed_texts)} документами")
             return True
         
         except Exception as e:
-            st.sidebar.info(f"Ошибка загрузки индекса: {e}")
+            st.sidebar.error(f"Ошибка загрузки индекса: {str(e)}")
             return False
 
-#    def _create_empty_index(self):
-#        """Создание пустого индекса"""
-#        # Инициализируем BM25 с пустым списком, если нет документов
-#        self.bm25 = BM25Okapi([])  # Инициализация с пустым списком
-#        self.chunks_info = []
-#        self.is_index_loaded = True
+
 
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
         """Поиск с обработкой ошибок"""
