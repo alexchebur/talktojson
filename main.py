@@ -203,7 +203,7 @@ class BM25SearchEngine:
             self.chunks_info = valid_metadata
             self.is_index_loaded = True
         
-            st.sidebar.success(f"Загружен индекс с {len(processed_texts)} документами")
+            st.sidebar.success(f"Загружен индекс с {len(processed_texts)} фрагментами данных")
             return True
         
         except Exception as e:
