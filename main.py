@@ -62,97 +62,97 @@ class BM25SearchEngine:
         self.is_index_loaded = False
         self.cache_path = os.path.join(DATA_DIR, "bm25_index.json")
         
-        self._load_index()
+        self._safe_load_index()
 
-    def _load_index(self) -> bool:
-        """Загружает и валидирует индекс из JSON файла"""
+    def _safe_load_index(self) -> bool:
+        """Безопасная загрузка индекса с восстановлением после ошибок"""
         try:
             if not os.path.exists(self.cache_path):
-                st.warning(f"Файл индекса {self.cache_path} не найден")
+                st.error(f"Файл индекса не найден: {self.cache_path}")
                 return False
 
-            with open(self.cache_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                
-            # Валидация структуры JSON
-            if not self._validate_json_structure(data):
+            # Чтение с обработкой возможных проблем кодировки
+            try:
+                with open(self.cache_path, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+            except UnicodeDecodeError:
+                with open(self.cache_path, 'r', encoding='utf-8-sig') as f:
+                    content = f.read().strip()
+
+            # Удаление BOM если присутствует
+            if content.startswith('\ufeff'):
+                content = content[1:]
+
+            # Базовые проверки структуры
+            if not content.startswith('{') or not content.endswith('}'):
+                st.error("JSON должен начинаться с { и заканчиваться }")
                 return False
-                
-            # Подготовка данных для индексации
+
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError as e:
+                st.error(f"Ошибка в JSON (строка {e.lineno}, колонка {e.colno}): {e.msg}")
+                return False
+
+            # Валидация структуры данных
+            if not isinstance(data, dict) or 'metadata' not in data:
+                st.error("Некорректная структура JSON: ожидается словарь с ключом 'metadata'")
+                return False
+
+            if not isinstance(data['metadata'], list):
+                st.error("Поле 'metadata' должно быть списком")
+                return False
+
+            # Подготовка данных для BM25
             processed_texts = []
+            valid_chunks = []
+            
             for item in data['metadata']:
-                processed = self._normalize_processed_field(item)
+                if not isinstance(item, dict):
+                    continue
+                    
+                processed = self._get_processed_text(item)
                 if not processed:
-                    st.error(f"Некорректное поле 'processed' в документе {item.get('file_id', '')}")
-                    return False
+                    continue
+                    
                 processed_texts.append(processed.split())
-            
-            # Создание индекса
+                valid_chunks.append(item)
+
+            if not processed_texts:
+                st.error("Нет валидных данных для индексации")
+                return False
+
             self.bm25 = BM25Okapi(processed_texts)
-            self.chunks_info = data['metadata']
+            self.chunks_info = valid_chunks
             self.is_index_loaded = True
-            st.success(f"Загружено {len(self.chunks_info)} документов из {self.cache_path}")
+            st.success(f"Успешно загружено {len(self.chunks_info)} документов")
             return True
-            
-        except json.JSONDecodeError as e:
-            st.error(f"Ошибка JSON (строка {e.lineno}, колонка {e.colno}): {e.msg}")
-            return False
+
         except Exception as e:
             st.error(f"Критическая ошибка загрузки индекса: {str(e)}")
             return False
 
-    def _validate_json_structure(self, data: dict) -> bool:
-        """Проверяет структуру загруженного JSON"""
-        if not isinstance(data, dict):
-            st.error("Ожидается словарь в корне JSON")
-            return False
-            
-        if 'metadata' not in data:
-            st.error("Отсутствует обязательное поле 'metadata'")
-            return False
-            
-        if not isinstance(data['metadata'], list):
-            st.error("Поле 'metadata' должно быть списком")
-            return False
-            
-        required_fields = {'file_id', 'original', 'processed'}
-        for i, item in enumerate(data['metadata'], 1):
-            if not isinstance(item, dict):
-                st.error(f"Элемент {i} в metadata не является словарем")
-                return False
-                
-            missing_fields = required_fields - set(item.keys())
-            if missing_fields:
-                st.error(f"Элемент {i} не содержит обязательных полей: {', '.join(missing_fields)}")
-                return False
-                
-        return True
-
-    def _normalize_processed_field(self, item: dict) -> str:
-        """Приводит поле processed к строковому виду"""
-        processed = item['processed']
+    def _get_processed_text(self, item: dict) -> str:
+        """Извлекает и нормализует текст для индексации"""
+        processed = item.get('processed', '')
         
         if isinstance(processed, str):
             return processed
-            
-        if isinstance(processed, list):
+        elif isinstance(processed, list):
             return ' '.join(str(x) for x in processed)
-            
-        if isinstance(processed, (int, float)):
+        elif isinstance(processed, (int, float)):
             return str(processed)
-            
         return ''
 
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
-        """Выполняет поиск по индексу с улучшенной обработкой ошибок"""
+        """Безопасный поиск с обработкой ошибок"""
         if not self.is_index_loaded:
-            st.warning("Поиск невозможен: индекс не загружен")
-            return []
-
-        if not query or not isinstance(query, str):
             return []
 
         try:
+            if not query or not isinstance(query, str):
+                return []
+
             tokens = self.preprocessor.preprocess(query)
             if not tokens:
                 return []
@@ -160,26 +160,18 @@ class BM25SearchEngine:
             scores = self.bm25.get_scores(tokens)
             best_indices = np.argsort(scores)[-top_n:][::-1]
 
-            results = []
-            for idx in best_indices:
-                if idx >= len(self.chunks_info):
-                    continue
-                    
-                chunk = self.chunks_info[idx]
-                results.append({
-                    'doc_id': chunk.get('file_id', 'unknown'),
-                    'doc_name': chunk.get('doc_name', chunk.get('file_id', 'Без названия')),
-                    'chunk_text': chunk.get('original', '')[:1000],
-                    'score': round(float(scores[idx]), 4),
-                    'position': idx
-                })
-            
-            # Сортируем результаты по убыванию релевантности
-            results.sort(key=lambda x: x['score'], reverse=True)
-            return results[:top_n]
+            return [
+                {
+                    'doc_id': self.chunks_info[idx].get('file_id', ''),
+                    'doc_name': self.chunks_info[idx].get('doc_name', 'Документ'),
+                    'chunk_text': self.chunks_info[idx].get('original', '')[:1000],
+                    'score': round(float(scores[idx]), 4)
+                }
+                for idx in best_indices
+                if idx < len(self.chunks_info)
+            ]
 
-        except Exception as e:
-            st.error(f"Ошибка поиска: {str(e)}")
+        except Exception:
             return []
 
     def get_document_by_id(self, doc_id: str) -> Dict:
