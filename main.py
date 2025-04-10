@@ -129,10 +129,12 @@ class BM25SearchEngine:
                 return False
         
             data = json.loads(content)
+            st.sidebar.info("Переменной присвоено содержимое загруженного JSON")
+            
         
             # Проверка структуры
             if not isinstance(data, dict) or 'metadata' not in data:
-                t.sidebar.info("Ошибка: нет элемента metadata")
+                st.sidebar.info("Ошибка: нет элемента metadata")
                 return False
         
             # Подготовка данных
