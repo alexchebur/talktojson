@@ -109,7 +109,7 @@ class BM25SearchEngine:
         self.is_index_loaded = False
         self.cache_path = os.path.join("data", "bm25_index.json")
         
-        self._initialize_with_recovery()
+       
 
 
 
