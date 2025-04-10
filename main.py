@@ -15,42 +15,104 @@ from pymorphy2 import MorphAnalyzer
 
 from pathlib import Path
 
-def repair_json_file(file_path: str):
-    """Автоматически исправляет основные проблемы с JSON файлом"""
+import json
+import os
+import re
+from pathlib import Path
+
+def validate_and_repair_json(file_path: str) -> bool:
+    """Проверяет и восстанавливает JSON файл"""
     try:
         path = Path(file_path)
+        
+        # Проверка существования файла
         if not path.exists():
             raise FileNotFoundError(f"Файл {file_path} не существует")
         
-        # Чтение с обработкой BOM и разных кодировок
+        # Проверка размера файла
+        if path.stat().st_size == 0:
+            raise ValueError("Файл пуст")
+        
+        # Чтение содержимого с разными кодировками
         for encoding in ['utf-8-sig', 'utf-8', 'windows-1251']:
             try:
                 content = path.read_text(encoding=encoding).strip()
                 break
             except UnicodeDecodeError:
                 continue
+        else:
+            raise ValueError("Не удалось декодировать файл")
         
-        # Удаляем все непечатаемые символы
+        # Удаление BOM и непечатаемых символов
         content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
         
-        # Находим первую { и последнюю }
+        # Поиск действительного JSON содержимого
         start = content.find('{')
         end = content.rfind('}') + 1
         
         if start == -1 or end == 0:
-            raise ValueError("Не найдены требуемые скобки { }")
+            raise ValueError("Не найдены JSON-скобки { }")
+        
+        json_content = content[start:end]
+        
+        # Проверка валидности JSON
+        try:
+            json.loads(json_content)
+            return True
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Невалидный JSON: {str(e)}")
             
-        clean_content = content[start:end]
-        
-        # Проверяем валидность JSON
-        json.loads(clean_content)
-        
-        # Перезаписываем исправленный файл
-        path.write_text(clean_content, encoding='utf-8')
-        return True
-        
     except Exception as e:
-        print(f"Ошибка при исправлении JSON: {e}")
+        print(f"Ошибка при проверке файла: {str(e)}")
+        return False
+
+def repair_json_file(file_path: str) -> bool:
+    """Пытается автоматически исправить JSON файл"""
+    try:
+        path = Path(file_path)
+        
+        # Чтение файла
+        with open(file_path, 'rb') as f:
+            raw_content = f.read()
+        
+        # Попробуем разные кодировки
+        for encoding in ['utf-8-sig', 'utf-8', 'windows-1251']:
+            try:
+                content = raw_content.decode(encoding).strip()
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            return False
+        
+        # Удаляем все до первой {
+        start = content.find('{')
+        if start == -1:
+            return False
+        content = content[start:]
+        
+        # Удаляем все после последней }
+        end = content.rfind('}')
+        if end == -1:
+            return False
+        content = content[:end+1]
+        
+        # Удаляем непечатаемые символы
+        content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
+        
+        # Проверяем валидность
+        try:
+            json.loads(content)
+        except json.JSONDecodeError:
+            return False
+        
+        # Перезаписываем файл
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        return True
+    
+    except Exception:
         return False
 
 
