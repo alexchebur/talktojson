@@ -111,20 +111,7 @@ class BM25SearchEngine:
         
         self._initialize_with_recovery()
 
-    def _initialize_with_recovery(self):
-        """Инициализация с восстановлением при необходимости"""
-        try:
-            # Попытка обычной загрузки
-            if self._load_index():
-                return
-            
-            # Создание нового пустого индекса
-            self._create_empty_index()
-            st.warning("Создан новый пустой индекс")
-            
-        except Exception as e:
-            st.error(f"Критическая ошибка инициализации: {str(e)}")
-            #self._create_empty_index()  # Создаем пустой индекс в случае ошибки
+
 
     def _load_index(self) -> bool:
         """Загрузка индекса с проверкой"""
