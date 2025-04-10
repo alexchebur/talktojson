@@ -117,6 +117,7 @@ class BM25SearchEngine:
     def _load_index(self) -> bool:
         """Загрузка индекса с проверкой"""
         if not os.path.exists(self.cache_path):
+            st.sidebar.error("Файл индекса не найден.")
             return False
     
         try:
