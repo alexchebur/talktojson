@@ -13,6 +13,48 @@ from typing import List, Dict, Any
 from rake_nltk import Rake
 from pymorphy2 import MorphAnalyzer
 
+from pathlib import Path
+
+def repair_json_file(file_path: str):
+    """Автоматически исправляет основные проблемы с JSON файлом"""
+    try:
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Файл {file_path} не существует")
+        
+        # Чтение с обработкой BOM и разных кодировок
+        for encoding in ['utf-8-sig', 'utf-8', 'windows-1251']:
+            try:
+                content = path.read_text(encoding=encoding).strip()
+                break
+            except UnicodeDecodeError:
+                continue
+        
+        # Удаляем все непечатаемые символы
+        content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
+        
+        # Находим первую { и последнюю }
+        start = content.find('{')
+        end = content.rfind('}') + 1
+        
+        if start == -1 or end == 0:
+            raise ValueError("Не найдены требуемые скобки { }")
+            
+        clean_content = content[start:end]
+        
+        # Проверяем валидность JSON
+        json.loads(clean_content)
+        
+        # Перезаписываем исправленный файл
+        path.write_text(clean_content, encoding='utf-8')
+        return True
+        
+    except Exception as e:
+        print(f"Ошибка при исправлении JSON: {e}")
+        return False
+
+
+
 try:
     from config import API_KEY, API_URL
 except ImportError:
@@ -62,96 +104,80 @@ class BM25SearchEngine:
         self.is_index_loaded = False
         self.cache_path = os.path.join(DATA_DIR, "bm25_index.json")
         
-        # Безопасная загрузка с обработкой ошибок
-        self._safe_load_index()
+        # Попытка восстановить файл при первой загрузке
+        if not self._try_load_index():
+            st.error("Не удалось загрузить индекс. Проверьте файл bm25_index.json")
 
-    def _safe_load_index(self) -> bool:
-        """Загружает индекс с максимальной обработкой ошибок"""
+    def _try_load_index(self) -> bool:
+        """Пытается загрузить индекс с автоматическим исправлением файла"""
         try:
-            # Проверка существования файла
-            if not os.path.exists(self.cache_path):
-                st.error(f"Файл индекса не найден: {self.cache_path}")
-                return False
-
-            # Чтение файла с обработкой кодировки
-            try:
-                with open(self.cache_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-            except UnicodeDecodeError:
-                with open(self.cache_path, 'r', encoding='utf-8-sig') as f:
-                    content = f.read()
-
-            # Удаление непечатаемых символов
-            content = self._remove_non_printable(content)
-
-            # Проверка базовой структуры
-            if not content.strip().startswith('{') or not content.strip().endswith('}'):
-                st.error("JSON должен начинаться с '{' и заканчиваться '}'")
-                return False
-
-            # Парсинг JSON
-            try:
-                data = json.loads(content)
-            except json.JSONDecodeError as e:
-                st.error(f"Ошибка в JSON (строка {e.lineno}): {e.msg}")
-                return False
-
-            # Валидация структуры
-            if not isinstance(data, dict) or 'metadata' not in data:
-                st.error("Ожидается словарь с ключом 'metadata'")
-                return False
-
-            # Подготовка данных
-            processed_texts = []
-            valid_chunks = []
-            
-            for item in data.get('metadata', []):
-                try:
-                    processed = self._normalize_processed(item.get('processed', ''))
-                    if processed:
-                        processed_texts.append(processed.split())
-                        valid_chunks.append(item)
-                except Exception as e:
-                    print(f"Ошибка обработки элемента: {e}")
-                    continue
-
-            if not processed_texts:
-                st.error("Нет валидных данных для индексации")
-                return False
-
-            # Создание индекса
-            self.bm25 = BM25Okapi(processed_texts)
-            self.chunks_info = valid_chunks
-            self.is_index_loaded = True
-            st.success(f"Успешно загружено {len(self.chunks_info)} документов")
-            return True
-
+            # Первая попытка загрузки
+            if self._load_index():
+                return True
+                
+            # Если не получилось, пробуем восстановить файл
+            if repair_json_file(self.cache_path):
+                return self._load_index()
+                
+            return False
         except Exception as e:
-            st.error(f"Критическая ошибка загрузки: {str(e)}")
+            st.error(f"Ошибка загрузки индекса: {str(e)}")
             return False
 
-    def _remove_non_printable(self, text: str) -> str:
-        """Удаляет непечатаемые символы"""
-        return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+    def _load_index(self) -> bool:
+        """Основная логика загрузки индекса"""
+        try:
+            with open(self.cache_path, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                
+                # Дополнительная очистка на случай если repair_json_file не сработал
+                content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
+                content = content[content.find('{'):content.rfind('}')+1]
+                
+                data = json.loads(content)
+                
+                # Проверка структуры
+                if not isinstance(data, dict) or 'metadata' not in data:
+                    st.error("Неверный формат JSON: ожидается словарь с metadata")
+                    return False
+                    
+                # Подготовка данных для BM25
+                processed_texts = []
+                for item in data['metadata']:
+                    processed = self._get_processed_text(item.get('processed', ''))
+                    if processed:
+                        processed_texts.append(processed.split())
+                
+                if not processed_texts:
+                    st.error("Нет данных для индексации")
+                    return False
+                    
+                self.bm25 = BM25Okapi(processed_texts)
+                self.chunks_info = data['metadata']
+                self.is_index_loaded = True
+                return True
+                
+        except Exception as e:
+            st.error(f"Ошибка при загрузке: {str(e)}")
+            return False
 
-    def _normalize_processed(self, processed) -> str:
-        """Приводит поле processed к строке"""
+    def _get_processed_text(self, processed) -> str:
+        """Нормализует поле processed"""
         if isinstance(processed, str):
-            return self._remove_non_printable(processed)
+            return processed
         elif isinstance(processed, list):
-            return ' '.join(self._remove_non_printable(str(x)) for x in processed)
+            return ' '.join(str(x) for x in processed)
         elif isinstance(processed, (int, float)):
             return str(processed)
         return ''
 
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
-        """Безопасный поиск с обработкой ошибок"""
+        """Поиск с обработкой ошибок"""
         if not self.is_index_loaded:
             return []
 
         try:
-            clean_query = self._remove_non_printable(query)
-            tokens = self.preprocessor.preprocess(clean_query)
+            tokens = self.preprocessor.preprocess(query)
             if not tokens:
                 return []
 
