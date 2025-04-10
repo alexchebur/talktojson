@@ -157,7 +157,7 @@ class BM25SearchEngine:
             self.bm25 = BM25Okapi(processed_texts)
             self.chunks_info = data['metadata']
             self.is_index_loaded = True
-            print(f"Инициализирован BM25 с {len(processed_texts)} документами.")
+            st.sidebar.info(f"Инициализирован BM25 с {len(processed_texts)} документами.")
             return True
         
         except Exception as e:
