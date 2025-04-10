@@ -171,7 +171,11 @@ class BM25SearchEngine:
 
     def _create_empty_index(self):
         """Создание пустого индекса"""
-        self.bm25 = BM25Okapi([])
+        # Проверяем, что список документов не пуст
+        if not self.chunks_info:
+            self.bm25 = BM25Okapi([[]])  # Создаем индекс с одним пустым документом
+        else:
+            self.bm25 = BM25Okapi([])
         self.chunks_info = []
         self.is_index_loaded = True
 
