@@ -171,92 +171,6 @@ class BM25SearchEngine:
             print(f"Ошибка загрузки индекса: {e}")
             return False
         
-    def _try_recover_index(self) -> bool:
-        """Попытка восстановления индекса"""
-        try:
-            # Создаем резервную копию поврежденного файла
-            damaged_path = os.path.join("data", "bm25_index.damaged")
-            if os.path.exists(self.cache_path):
-                shutil.move(self.cache_path, damaged_path)
-            
-            # Пробуем прочитать поврежденный файл
-            if os.path.exists(damaged_path):
-                try:
-                    data = safe_read_json(damaged_path)
-                    if self._initialize_from_data(data):
-                        return True
-                except Exception:
-                    pass
-                    
-            # Проверяем наличие резервных копий
-            backup_files = [
-                os.path.join("data", "bm25_index.bak"),
-                os.path.join("data", "bm25_index.json.bak")
-            ]
-            
-            for backup in backup_files:
-                if os.path.exists(backup):
-                    try:
-                        with open(backup, 'rb') as f:
-                            data = json.loads(f.read().decode('utf-8-sig'))
-                        if self._initialize_from_data(data):
-                            shutil.copy2(backup, self.cache_path)
-                            return True
-                    except Exception:
-                        continue
-                        
-            return False
-            
-        except Exception:
-            return False
-
-    def _initialize_from_data(self, data: dict) -> bool:
-        """Инициализация из загруженных данных"""
-        try:
-            if not isinstance(data, dict) or 'metadata' not in data:
-                return False
-            
-            processed_texts = []
-            for item in data.get('metadata', []):
-                processed = self._normalize_processed(item.get('processed', ''))
-                if processed:
-                    tokens = processed.split()
-                    # Фильтрация пустых токенов
-                    if tokens:
-                        processed_texts.append(tokens)
-        
-            # Дополнительная проверка на наличие данных
-            if not processed_texts or all(len(tokens) == 0 for tokens in processed_texts):
-                return False
-            
-            self.bm25 = BM25Okapi(processed_texts)
-            self.chunks_info = data['metadata']
-            self.is_index_loaded = True
-            return True
-        
-        except Exception as e:
-            print(f"Ошибка инициализации из данных: {e}")
-            return False
-
-    def _create_empty_index(self):
-        """Создает новый пустой индекс"""
-        empty_data = {"metadata": []}
-        with open(self.cache_path, 'w', encoding='utf-8') as f:
-            json.dump(empty_data, f)
-        self.bm25 = BM25Okapi([])
-        self.chunks_info = []
-        self.is_index_loaded = True
-
-    def _normalize_processed(self, processed) -> str:
-        """Нормализует поле processed"""
-        if isinstance(processed, str):
-            return processed
-        elif isinstance(processed, list):
-            return ' '.join(str(x) for x in processed)
-        elif isinstance(processed, (int, float)):
-            return str(processed)
-        return ''
-
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
         """Поиск с обработкой ошибок"""
         if not self.is_index_loaded or not self.chunks_info or not self.bm25:
@@ -272,6 +186,9 @@ class BM25SearchEngine:
                 return []
 
             scores = self.bm25.get_scores(tokens)
+            if scores is None or len(scores) == 0:
+                return []
+
             best_indices = np.argsort(scores)[-top_n:][::-1]
 
             return [
