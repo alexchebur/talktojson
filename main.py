@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-import json
 import os
 import re
-import pickle
-import io  # Добавлен отсутствующий импорт
+import json  # Добавлен импорт json
+import io
 from docx import Document
 from rank_bm25 import BM25Okapi
 import numpy as np
@@ -14,6 +13,53 @@ from typing import List, Dict, Any
 from rake_nltk import Rake
 from pymorphy2 import MorphAnalyzer
 
+from pathlib import Path
+
+import json
+import os
+import re
+from pathlib import Path
+
+import json
+import os
+import re
+
+import shutil
+
+def safe_read_json(file_path: str) -> dict:
+    """Безопасное чтение JSON с восстановлением"""
+    try:
+        # Создаем резервную копию
+        backup_path = str(Path(file_path).with_suffix('.bak'))
+        shutil.copy2(file_path, backup_path)
+        
+        # Чтение с обработкой BOM
+        with open(file_path, 'rb') as f:
+            content = f.read().decode('utf-8-sig')
+        
+        # Удаление непечатаемых символов
+        content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
+        content = content.replace('\\u0002', '')
+        # Извлечение JSON части
+        start = content.find('{')
+        end = content.rfind('}') + 1
+        
+        if start == -1 or end == 0:
+            raise ValueError("Не найдены JSON-скобки")
+            
+        return json.loads(content[start:end])
+        
+    except Exception as e:
+        st.sidebar.error(f"Ошибка чтения JSON:")
+        # Пробуем прочитать резервную копию
+        if os.path.exists(backup_path):
+            try:
+                with open(backup_path, 'rb') as f:
+                    return json.loads(f.read().decode('utf-8-sig'))
+            except Exception:
+                pass
+        raise
+
 try:
     from config import API_KEY, API_URL
 except ImportError:
@@ -21,7 +67,7 @@ except ImportError:
     API_KEY = ""
     API_URL = "https://api.vsegpt.ru/v1/chat/completions"
 
-#конфигурация
+# Конфигурация
 DATA_DIR = "data"
 MAX_CONTEXT_LENGTH = 15000
 MAX_ANSWER_LENGTH = 15000
@@ -57,78 +103,134 @@ class TextPreprocessor:
 
 class BM25SearchEngine:
     def __init__(self, preprocessor: TextPreprocessor):
+        st.sidebar.info("Запуск класса BM2SearchEngine")
+        st.sidebar.error("Запуск класса BM2SearchEngine")
+        st.sidebar.warning("Запуск класса BM2SearchEngine")
         self.preprocessor = preprocessor
         self.bm25 = None
         self.chunks_info = []
-        self.doc_index = defaultdict(list)
         self.is_index_loaded = False
-        self.cache_path = os.path.join(DATA_DIR, "bm25_index.pkl")  # Добавим путь к кешу
+        self.cache_path = os.path.join("data", "bm25_index.json")
+        self._load_index()  # Добавьте эту строку
+        
+    def _normalize_processed(self, processed_data: Any) -> List[str]:
+        """Нормализует поле processed в единый формат списка токенов"""
+        if processed_data is None:
+            return []
+    
+        if isinstance(processed_data, str):
+            # Если это строка, разбиваем по пробелам и фильтруем пустые значения
+            return [token for token in processed_data.split() if token]
+        elif isinstance(processed_data, list):
+            # Если это список, преобразуем все элементы в строки
+            result = []
+            for item in processed_data:
+                if isinstance(item, str):
+                    result.extend(item.split())
+                elif isinstance(item, (int, float)):
+                    result.append(str(item))
+            return result
+        else:
+            # Для других типов (числа и т.д.) преобразуем в строку
+            return [str(processed_data)]
 
-    def build_index(self, documents: List[Dict]) -> None:
-        """Строит индекс BM25, обрабатывая пустые документы"""
-        corpus = []
-        self.chunks_info = []
 
-        for doc_idx, doc in enumerate(documents):
-            content = doc.get("content", "").strip()
-            if not content:  # Пропускаем пустые документы
-                continue
 
-            self.chunks_info.append({
-                'doc_id': doc.get("name", f"doc_{doc_idx}"),
-                'doc_name': doc.get("name", "Без названия"),
-                'chunk_text': content
-            })
-            corpus.append(content)
-
-        if not corpus:  # Если все документы пустые
-            st.warning("Нет текста для индексации")
-            return
-
-        tokenized_corpus = [self.preprocessor.preprocess(doc) for doc in corpus]
-        self.bm25 = BM25Okapi(tokenized_corpus)
-        self.is_index_loaded = True
-        self.save_to_cache()
-
-    def load_from_cache(self) -> bool:
-        try:
-            if not os.path.exists(self.cache_path):
-                return False
-
-            with open(self.cache_path, 'rb') as f:
-                data = pickle.load(f)
-                self.bm25, self.chunks_info, self.doc_index = data
-                self.is_index_loaded = True
-                return True
-        except Exception as e:
-            print(f"Ошибка загрузки кеша: {e}")
+    def _load_index(self) -> bool:
+        """Загрузка индекса с проверкой"""
+        if not os.path.exists(self.cache_path):
+            st.sidebar.warning(f"Файл индекса не найден: {self.cache_path}")
             return False
 
-    def save_to_cache(self) -> None:
         try:
-            with open(self.cache_path, 'wb') as f:
-                pickle.dump((self.bm25, self.chunks_info, self.doc_index), f)
+            data = safe_read_json(self.cache_path)
+        
+            # Проверка структуры
+            if not isinstance(data, dict):
+                st.sidebar.error("Индекс должен быть словарем")
+                return False
+            
+            if 'metadata' not in data:
+                st.sidebar.error("Отсутствует ключ 'metadata' в индексе")
+                return False
+            
+            # Подготовка данных
+            processed_texts = []
+            valid_metadata = []
+        
+            for i, item in enumerate(data.get('metadata', [])):
+                if not isinstance(item, dict):
+                    st.sidebar.warning(f"Пропущен элемент {i} - не является словарем")
+                    continue
+                
+                original_text = item.get('original', '')
+                processed = self._normalize_processed(item.get('processed', []))
+            
+                # Если processed пустое, обрабатываем original текст
+                if not processed and original_text:
+                    processed = self.preprocessor.preprocess(original_text)
+                
+                if processed:  # Только если есть токены
+                    processed_texts.append(processed)
+                    valid_metadata.append(item)
+        
+            if not processed_texts:
+                st.sidebar.error("Индекс не содержит валидных документов")
+                return False
+        
+            # Инициализация BM25
+            self.bm25 = BM25Okapi(processed_texts)
+            self.chunks_info = valid_metadata
+            self.is_index_loaded = True
+        
+            st.sidebar.success(f"Загружен индекс с {len(processed_texts)} документами")
+            return True
+        
         except Exception as e:
-            print(f"Ошибка сохранения кеша: {e}")
+            st.sidebar.error(f"Ошибка загрузки индекса: {str(e)}")
+            return False
+
+
 
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
+        """Поиск с обработкой ошибок"""
+        print(f"Поисковый запрос: {query}")  # Debug
         if not self.is_index_loaded:
-            if not self.load_from_cache():  # Попробуем загрузить из кеша
-                return []
-
-        tokens = self.preprocessor.preprocess(query)
-        if not tokens:
+            print("Индекс не загружен!")  # Debug
             return []
 
-        scores = self.bm25.get_scores(tokens)
-        best_indices = np.argsort(scores)[-top_n:][::-1]
+        try:
+            tokens = self.preprocessor.preprocess(query)
+            if not tokens:
+                return []
 
-        results = []
-        for idx in best_indices:
-            result = {**self.chunks_info[idx], 'score': float(scores[idx])}
-            results.append(result)
-        return results
-        
+            # Проверка, что индекс не пуст
+            if not hasattr(self.bm25, 'doc_freqs') or len(self.bm25.doc_freqs) == 0:
+                return []
+
+            # Проверка, что есть документы для поиска
+            if len(self.bm25.doc_len) == 0:
+                return []
+
+            scores = self.bm25.get_scores(tokens)
+            if scores is None or len(scores) == 0:
+                return []
+
+            best_indices = np.argsort(scores)[-top_n:][::-1]
+
+            return [
+                {
+                    'doc_id': self.chunks_info[idx].get('file_id', ''),
+                    'doc_name': self.chunks_info[idx].get('doc_name', 'Документ'),
+                    'chunk_text': self.chunks_info[idx].get('original', '')[:2000],
+                    'score': round(float(scores[idx]), 4)
+                }
+                for idx in best_indices
+                if idx < len(self.chunks_info)
+            ]
+        except Exception as e:
+            print(f"Ошибка поиска: {e}")
+            return []            
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
         self.api_url = api_url
@@ -142,7 +244,7 @@ class LLMClient:
     def query(self, messages: List[Dict], temperature: float, max_tokens: int) -> str:
         try:
             payload = {
-                "model": "google/gemini-2.0-flash-lite-001", #"qwen/qwq-32b",
+                "model": "google/gemini-2.0-flash-lite-001",
                 "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
@@ -172,21 +274,16 @@ class LLMClient:
         except Exception as e:
             raise Exception(f"Ошибка обработки ответа: {str(e)}")
 
-
 class DocumentAnalyzer:
     def __init__(self, api_url: str = None, api_key: str = None):
         self.preprocessor = TextPreprocessor()
         self.search_engine = BM25SearchEngine(self.preprocessor)
-        self.knowledge_base = []  # Документы из knowledge_base.json для поиска BM25
         self.current_docx = None  # Текущий загруженный DOCX-документ
         self.llm_client = None
         self.llm_initialized = False
         
-        # Загружаем базу знаний при инициализации
-        self._load_knowledge_base()
-        
         # Инициализируем LLM
-        self._initialize_llm(api_url, api_key)  # Убрали условие, так как проверка внутри метода
+        self._initialize_llm(api_url, api_key)
 
     def _initialize_llm(self, api_url: str, api_key: str) -> None:
         """Инициализирует клиент LLM"""
@@ -206,26 +303,19 @@ class DocumentAnalyzer:
         if not self.current_docx:
             return "Пожалуйста, загрузите DOCX файл"
             
-        if not self.knowledge_base:
-            return "База знаний пуста (добавьте документы в knowledge_base.json)"
-        
         # 1. Получаем текст из загруженного DOCX
         docx_text = self.current_docx["content"]
         
         # 2. Формируем запрос для BM25 на основе текста DOCX
         query = self._generate_search_query(prompt_type, docx_text)
         
-        # 3. Ищем релевантные фрагменты в базе знаний
+        # 3. Ищем релевантные фрагменты в индексе BM25
         chunks = self.search_engine.search(query)
         
         # 4. Формируем контекст для LLM
         context = self._build_context(docx_text, chunks)
         
         # 5. Формируем и выполняем запрос к LLM
-        #messages = [
-        #    {"role": "system", "content": SYSTEM_PROMPT},
-        #    {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + "\n\nКОНТЕКСТ:\n" + context}
-        #]
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + f"\n\nВес контента: {st.session_state.doc_weight_slider:.1f}\n\nКОНТЕКСТ:\n" + context}
@@ -238,89 +328,12 @@ class DocumentAnalyzer:
         
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
-    def _load_knowledge_base(self) -> None:
-        """Загружает базу знаний из JSON с учетом сложной структуры"""
-        json_path = os.path.join(DATA_DIR, "knowledge_base.json")
-
-        if not os.path.exists(json_path):
-            st.error(f"Файл {json_path} не найден")
-            return
-
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            # Проверяем разные возможные структуры
-            if isinstance(data, dict) and "object" in data and "documents" in data["object"]:
-                # Структура: { "object": { "documents": [...] } }
-                raw_docs = data["object"]["documents"]
-            elif isinstance(data, dict) and "documents" in data:
-                # Структура: { "documents": [...] }
-                raw_docs = data["documents"]
-            elif isinstance(data, list):
-                # Структура: [ ... ] (прямой массив документов)
-                raw_docs = data
-            else:
-                st.error("Неверная структура JSON: ожидается 'documents' или массив документов")
-                return
-
-            self.knowledge_base = []
-
-            # Обрабатываем каждый документ
-            for doc in raw_docs:
-                if not isinstance(doc, dict):
-                    continue
-
-                # Извлекаем название документа
-                doc_name = doc.get("source_file", "Без названия")
-        
-                # Обрабатываем chunks (основное содержимое)
-                chunks = doc.get("chunks", [])
-                for chunk in chunks:
-                    if not isinstance(chunk, dict):
-                        continue
-            
-                    # Используем chunk_text как основной контент
-                    chunk_text = chunk.get("chunk_text", "")
-                    if chunk_text.strip():
-                        self.knowledge_base.append({
-                            "name": f"{doc_name} [chunk]",
-                            "content": chunk_text.strip()
-                        })
-
-                # Добавляем doc_summary как отдельный документ
-                doc_summary = doc.get("doc_summary", "")
-                if doc_summary.strip():
-                    self.knowledge_base.append({
-                        "name": f"{doc_name} [summary]",
-                        "content": doc_summary.strip()
-                    })
-
-            # Проверяем результат
-            if not self.knowledge_base:
-                st.error("""
-                Не удалось извлечь данные. Проверьте:
-                1. Наличие 'chunk_text' в chunks
-                2. Что поля не пустые
-                """)
-                return
-
-            # Индексируем документы
-            self.search_engine.build_index(self.knowledge_base)
-            st.success(f"Успешно загружено {len(self.knowledge_base)} фрагментов базы данных")
-
-        except json.JSONDecodeError:
-            st.error("Ошибка: Файл JSON поврежден")
-        except Exception as e:
-            st.error(f"Неизвестная ошибка: {str(e)}")
-
     def load_documents(self, uploaded_files) -> None:
-        """Загружает DOCX файлы, но НЕ добавляет их в индекс BM25"""
+        """Загружает DOCX файлы"""
         if not uploaded_files:
             return
 
         try:
-            documents = []
             for uploaded_file in uploaded_files:
                 try:
                     if uploaded_file.size == 0:
@@ -354,8 +367,6 @@ class DocumentAnalyzer:
         except Exception as e:
             st.error(f"Общая ошибка при загрузке документов: {str(e)}")
 
-    
-
     def _generate_search_query(self, prompt_type: str, docx_text: str) -> str:
         """Генерирует поисковый запрос для BM25"""
         base_queries = {
@@ -365,7 +376,7 @@ class DocumentAnalyzer:
         }
         
         # Комбинируем базовый запрос с текстом DOCX
-        return f"{base_queries[prompt_type]} {docx_text[:1000]}"
+        return f"{base_queries[prompt_type]} {docx_text[:10000]}"
 
     def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
         """Строит контекст для LLM из DOCX и найденных фрагментов"""
@@ -383,14 +394,13 @@ class DocumentAnalyzer:
 
 def main():
     st.set_page_config(page_title="El Documente", layout="wide")
-    gif_path = "data/maracas-sombrero-hat.gif"  # Укажите путь к вашему GIF
-    #st.image(gif_path, caption="Hola!", width=64, height=64)
+    gif_path = "data/maracas-sombrero-hat.gif"
     st.image(gif_path, caption="Hola!", width=64)
     st.title("El Documente: проверьте свой процессуальный документ")
     
     # Инициализация анализатора
     if 'analyzer' not in st.session_state:
-        st.session_state.analyzer = DocumentAnalyzer(API_URL, API_KEY)  # Передаем параметры при создании
+        st.session_state.analyzer = DocumentAnalyzer(API_URL, API_KEY)
     
     analyzer = st.session_state.analyzer
     
@@ -399,7 +409,7 @@ def main():
     with col1:
         weight = st.slider(
             "Вес контента документа",
-            0.1, 1.0, 0.7, 0.1,  # Изменено максимальное значение на 1.0
+            0.1, 1.0, 0.7, 0.1,
             key="doc_weight_slider",
             help="Регулирует влияние текста документа на результаты поиска"
         )
@@ -407,7 +417,6 @@ def main():
     with col2:
         st.metric("Текущее значение", f"{weight:.1f}")
 
-    # Для отладки (можно убрать в продакшене)
     st.sidebar.write(f"Выбрано значение: {weight}")
     
     # Проверка инициализации LLM
@@ -427,68 +436,52 @@ def main():
             analyzer.load_documents(uploaded_files)
         st.success(f"Загружено документов: {len(uploaded_files)}")
 
-    # Добавьте новую переменную для температуры LLM для чата
-    CHAT_TEMPERATURE = 0.6  # Вы можете настроить это значение по своему усмотрению
-
-    # Новый промпт для чата
+    # Настройки чата
+    CHAT_TEMPERATURE = 0.6
     CHAT_SYSTEM_PROMPT = """Ты - опытный дружелюбный юрист энергетической компании, отвечающий на правовые вопросы. ЗАПРЕЩЕНО:  1. ссылаться на выдуманные законы и судебную практику. 2. указывать в ответе, что ты ознакомился с документом, просто поддерживай диалог. Ответы излагай в деловом стиле, без категорических мнений."""
 
     # Чат с наставником Карлосом
     st.header("Чат")
 
-    # Поле для ввода текста
     user_input = st.text_area(
         "Обсудить с наставником Карлосом",
         max_chars=500,
         height=100
     )
 
-    # Кнопка "Спросить"
     ask_button = st.button("Спросить", disabled=not (uploaded_files and user_input))
 
-    # Создаем переменную для отслеживания, добавлено ли содержимое DOCX
     if 'docx_added' not in st.session_state:
         st.session_state.docx_added = False
 
     if ask_button:
-        # Обработка введенного текста
-        conversation_log = []  # Начинаем с пустого лога
+        conversation_log = []
 
-        # Добавляем содержимое DOCX только один раз
         if not st.session_state.docx_added and analyzer.current_docx:
-            conversation_log.append(analyzer.current_docx["content"])  # Добавляем текст загруженного файла
-            st.session_state.docx_added = True  # Устанавливаем флаг, что содержимое добавлено
+            conversation_log.append(analyzer.current_docx["content"])
+            st.session_state.docx_added = True
 
-        conversation_log.append(user_input)  # Добавляем пользовательский ввод
+        conversation_log.append(user_input)
 
-        # Поиск релевантных данных в JSON
         relevant_chunks = analyzer.search_engine.search(user_input)
 
-        # Добавляем результаты поиска в лог
         for chunk in relevant_chunks:
             conversation_log.append(chunk['chunk_text'])
 
-        # Формируем запрос к LLM
         messages = [
             {"role": "system", "content": CHAT_SYSTEM_PROMPT},
             {"role": "user", "content": "\n".join(conversation_log)}
         ]
 
-        # Получаем ответ от LLM
         response = analyzer.llm_client.query(messages, CHAT_TEMPERATURE, MAX_ANSWER_LENGTH)
 
-        # Создаем контейнер для вывода ответа
-        response_container = st.empty()  # Создаем пустой контейнер
-
-        # Выводим ответ в текстовое окно с фиксированным размером и прокруткой
+        response_container = st.empty()
         response_container.text_area("Ответ от Карлоса", value=response, height=200, disabled=True)
-
 
     # Кнопки анализа
     st.header("Анализ документа")
     col1, col2, col3 = st.columns(3)
 
-    # Проверка инициализации LLM и загрузки документов
     buttons_disabled = not (uploaded_files and analyzer.llm_initialized)
     
     with col1:
