@@ -39,7 +39,7 @@ def safe_read_json(file_path: str) -> dict:
         
         # Удаление непечатаемых символов
         content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
-        
+        content = content.replace('\\u0002', '')
         # Извлечение JSON части
         start = content.find('{')
         end = content.rfind('}') + 1
