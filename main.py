@@ -2,7 +2,7 @@
 import streamlit as st
 import os
 import re
-import pickle
+import json  # Добавлен импорт json
 import io
 from docx import Document
 from rank_bm25 import BM25Okapi
@@ -60,27 +60,27 @@ class BM25SearchEngine:
         self.bm25 = None
         self.chunks_info = []
         self.is_index_loaded = False
-        self.cache_path = os.path.join(DATA_DIR, "bm25_index.pkl")
+        self.cache_path = os.path.join(DATA_DIR, "bm25_index.json")  # Изменено на .json
         
         # Пытаемся загрузить индекс сразу при инициализации
         self._load_index()
 
     def _load_index(self) -> bool:
-        """Загружает индекс из файла bm25_index.pkl"""
+        """Загружает индекс из файла bm25_index.json"""
         try:
             if not os.path.exists(self.cache_path):
                 st.error(f"Файл индекса {self.cache_path} не найден")
                 return False
 
-            with open(self.cache_path, 'rb') as f:
-                data = pickle.load(f)
+            with open(self.cache_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
                 
                 if isinstance(data, dict):
                     self.bm25 = BM25Okapi([item['processed'] for item in data.get('metadata', [])])
                     self.chunks_info = data.get('metadata', [])
-                    self.doc_index = defaultdict(list)  # Если у вас нет doc_index, просто инициализируйте его
+                    self.doc_index = defaultdict(list)
                     self.is_index_loaded = True
-                    st.success("Индекс успешно загружен")
+                    st.success("Индекс успешно загружен из JSON")
                     return True
                 else:
                     st.error("Неправильный формат файла индекса")
@@ -118,7 +118,7 @@ class BM25SearchEngine:
                     result = {
                         'doc_id': self.chunks_info[idx].get('file_id', ''),
                         'doc_name': self.chunks_info[idx].get('file_id', 'Без названия'),
-                        'chunk_text': self.chunks_info[idx].get('original', '')[:1000],  # Измените на 'original'
+                        'chunk_text': self.chunks_info[idx].get('original', '')[:1000],
                         'score': float(scores[idx])
                     }
                     results.append(result)
