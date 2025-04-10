@@ -108,6 +108,7 @@ class BM25SearchEngine:
         self.chunks_info = []
         self.is_index_loaded = False
         self.cache_path = os.path.join("data", "bm25_index.json")
+        self._load_index()  # Добавьте эту строку
         
        
 
