@@ -130,39 +130,43 @@ class BM25SearchEngine:
         """Загрузка индекса с проверкой"""
         if not os.path.exists(self.cache_path):
             return False
-        
+    
         try:
             with open(self.cache_path, 'rb') as f:
                 content = f.read().decode('utf-8-sig')
-            
+        
             # Проверка минимальной валидности
             if not content.strip().startswith('{'):
                 return False
-            
+        
             data = json.loads(content)
         
             # Проверка структуры
             if not isinstance(data, dict) or 'metadata' not in data:
                 return False
-            
+        
+            # Подготовка данных
+            processed_texts = []
             for item in data.get('metadata', []):
                 processed = item.get('processed', [])
                 if isinstance(processed, list):
                     processed = ' '.join(processed)  # Объединяем массив в строку
-            processed = self._normalize_processed(processed)
-            if processed:
-                tokens = processed.split()
-                if tokens:
-                    processed_texts.append(tokens)
+                processed = self._normalize_processed(processed)
+                if processed:
+                    tokens = processed.split()
+                    if tokens:
+                        processed_texts.append(tokens)
         
             # Дополнительная проверка на наличие данных
             if not processed_texts or all(len(tokens) == 0 for tokens in processed_texts):
+                print("Ошибка: нет обработанных текстов для индекса.")
                 return False
-            
+        
             # Инициализация BM25 с непустым списком токенов
             self.bm25 = BM25Okapi(processed_texts)
             self.chunks_info = data['metadata']
             self.is_index_loaded = True
+            print(f"Инициализирован BM25 с {len(processed_texts)} документами.")
             return True
         
         except Exception as e:
