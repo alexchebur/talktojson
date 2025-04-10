@@ -139,6 +139,7 @@ class BM25SearchEngine:
             processed_texts = []
             for item in data.get('metadata', []):
                 processed = item.get('processed', [])
+                st.sidebar.info('metadata')
                 if isinstance(processed, list):
                     processed = ' '.join(processed)  # Объединяем массив в строку
                 processed = self._normalize_processed(processed)
@@ -146,7 +147,7 @@ class BM25SearchEngine:
                     tokens = processed.split()
                     if tokens:
                         processed_texts.append(tokens)
-                        st.sidebar.info(tokens)
+                        #st.sidebar.info(tokens)
             if not self.chunks_info:
                 st.sidebar.info("Индекс поиска пуст. Пожалуйста, загрузите документы для индексации.")
                 return []
