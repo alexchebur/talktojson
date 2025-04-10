@@ -104,6 +104,8 @@ class TextPreprocessor:
 class BM25SearchEngine:
     def __init__(self, preprocessor: TextPreprocessor):
         st.sidebar.info("Запуск класса BM2SearchEngine")
+        st.sidebar.error("Запуск класса BM2SearchEngine")
+        st.sidebar.warning("Запуск класса BM2SearchEngine")
         self.preprocessor = preprocessor
         self.bm25 = None
         self.chunks_info = []
