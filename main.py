@@ -139,7 +139,7 @@ class BM25SearchEngine:
             processed_texts = []
             for item in data.get('metadata', []):
                 processed = item.get('processed', [])
-                st.sidebar.info('metadata')
+                st.sidebar.info("Текст обрабатывается")
                 if isinstance(processed, list):
                     processed = ' '.join(processed)  # Объединяем массив в строку
                 processed = self._normalize_processed(processed)
