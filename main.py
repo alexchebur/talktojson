@@ -133,39 +133,44 @@ class BM25SearchEngine:
         """Загрузка индекса с проверкой"""
         if not os.path.exists(self.cache_path):
             return False
-            
+        
         try:
             with open(self.cache_path, 'rb') as f:
                 content = f.read().decode('utf-8-sig')
-                
+            
             # Проверка минимальной валидности
             if not content.strip().startswith('{'):
                 return False
-                
-            data = json.loads(content)
             
+            data = json.loads(content)
+        
             # Проверка структуры
             if not isinstance(data, dict) or 'metadata' not in data:
                 return False
-                
+            
             # Подготовка данных
             processed_texts = []
             for item in data.get('metadata', []):
                 processed = self._normalize_processed(item.get('processed', ''))
                 if processed:
-                    processed_texts.append(processed.split())
-            
-            if not processed_texts:
+                    tokens = processed.split()
+                    # Фильтрация пустых токенов
+                    if tokens:
+                        processed_texts.append(tokens)
+        
+            # Дополнительная проверка на наличие данных
+            if not processed_texts or all(len(tokens) == 0 for tokens in processed_texts):
                 return False
-                
+            
             self.bm25 = BM25Okapi(processed_texts)
             self.chunks_info = data['metadata']
             self.is_index_loaded = True
             return True
-            
-        except Exception:
+        
+        except Exception as e:
+            print(f"Ошибка загрузки индекса: {e}")
             return False
-
+        
     def _try_recover_index(self) -> bool:
         """Попытка восстановления индекса"""
         try:
@@ -210,22 +215,27 @@ class BM25SearchEngine:
         try:
             if not isinstance(data, dict) or 'metadata' not in data:
                 return False
-                
+            
             processed_texts = []
             for item in data.get('metadata', []):
                 processed = self._normalize_processed(item.get('processed', ''))
                 if processed:
-                    processed_texts.append(processed.split())
-            
-            if not processed_texts:
+                    tokens = processed.split()
+                    # Фильтрация пустых токенов
+                    if tokens:
+                        processed_texts.append(tokens)
+        
+            # Дополнительная проверка на наличие данных
+            if not processed_texts or all(len(tokens) == 0 for tokens in processed_texts):
                 return False
-                
+            
             self.bm25 = BM25Okapi(processed_texts)
             self.chunks_info = data['metadata']
             self.is_index_loaded = True
             return True
-            
-        except Exception:
+        
+        except Exception as e:
+            print(f"Ошибка инициализации из данных: {e}")
             return False
 
     def _create_empty_index(self):
