@@ -124,7 +124,7 @@ class BM25SearchEngine:
             
         except Exception as e:
             st.error(f"Критическая ошибка инициализации: {str(e)}")
-            self._create_empty_index()  # Создаем пустой индекс в случае ошибки
+            #self._create_empty_index()  # Создаем пустой индекс в случае ошибки
 
     def _load_index(self) -> bool:
         """Загрузка индекса с проверкой"""
@@ -173,12 +173,12 @@ class BM25SearchEngine:
             print(f"Ошибка загрузки индекса: {e}")
             return False
 
-    def _create_empty_index(self):
-        """Создание пустого индекса"""
-        # Инициализируем BM25 с пустым списком, если нет документов
-        self.bm25 = BM25Okapi([])  # Инициализация с пустым списком
-        self.chunks_info = []
-        self.is_index_loaded = True
+#    def _create_empty_index(self):
+#        """Создание пустого индекса"""
+#        # Инициализируем BM25 с пустым списком, если нет документов
+#        self.bm25 = BM25Okapi([])  # Инициализация с пустым списком
+#        self.chunks_info = []
+#        self.is_index_loaded = True
 
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
         """Поиск с обработкой ошибок"""
