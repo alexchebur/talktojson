@@ -117,11 +117,7 @@ class BM25SearchEngine:
             # Попытка обычной загрузки
             if self._load_index():
                 return
-                
-            # Попытка восстановления
-            if self._try_recover_index():
-                return
-                
+            
             # Создание нового пустого индекса
             self._create_empty_index()
             st.warning("Создан новый пустой индекс")
@@ -173,6 +169,12 @@ class BM25SearchEngine:
             print(f"Ошибка загрузки индекса: {e}")
             return False
 
+    def _create_empty_index(self):
+        """Создание пустого индекса"""
+        self.bm25 = BM25Okapi([])
+        self.chunks_info = []
+        self.is_index_loaded = True
+
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
         """Поиск с обработкой ошибок"""
         if not self.is_index_loaded or not self.chunks_info or not self.bm25:
@@ -209,8 +211,7 @@ class BM25SearchEngine:
             ]
         except Exception as e:
             print(f"Ошибка поиска: {e}")
-            return []
-            
+            return []            
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
         self.api_url = api_url
