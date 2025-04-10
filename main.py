@@ -130,6 +130,7 @@ class BM25SearchEngine:
         
             # Проверка минимальной валидности
             if not content.strip().startswith('{'):
+                st.sidebar.info("Индекс минимально невалиден")
                 return False
         
             data = json.loads(content)
