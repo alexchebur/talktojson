@@ -54,7 +54,7 @@ class TextPreprocessor:
         text = self.regex.sub(' ', text.lower())
         return text.split()
 
-class RobustBM25SearchEngine:
+class BM25SearchEngine:
     def __init__(self, preprocessor: TextPreprocessor):
         self.preprocessor = preprocessor
         self.bm25 = None
@@ -62,94 +62,95 @@ class RobustBM25SearchEngine:
         self.is_index_loaded = False
         self.cache_path = os.path.join(DATA_DIR, "bm25_index.json")
         
-        self._load_with_cleanup()
+        # Безопасная загрузка с обработкой ошибок
+        self._safe_load_index()
 
-    def _load_with_cleanup(self):
-        """Загружает индекс с предварительной очисткой данных"""
+    def _safe_load_index(self) -> bool:
+        """Загружает индекс с максимальной обработкой ошибок"""
         try:
-            # Чтение и очистка файла
-            with open(self.cache_path, 'r', encoding='utf-8') as f:
-                dirty_content = f.read()
-            
-            # Очистка от непечатаемых символов
-            clean_content = self._sanitize_json(dirty_content)
-            
-            # Парсинг JSON
-            data = json.loads(clean_content)
-            
-            # Загрузка данных
-            self._initialize_index(data)
-            
-        except Exception as e:
-            st.error(f"Ошибка загрузки индекса: {str(e)}")
+            # Проверка существования файла
+            if not os.path.exists(self.cache_path):
+                st.error(f"Файл индекса не найден: {self.cache_path}")
+                return False
 
-    def _sanitize_json(self, content: str) -> str:
-        """Очищает JSON от проблемных символов"""
-        # Удаляем непечатаемые символы
-        clean = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', content)
-        
-        # Удаляем BOM если есть
-        if clean.startswith('\ufeff'):
-            clean = clean[1:]
-            
-        return clean.strip()
-
-    def _initialize_index(self, data: dict):
-        """Инициализирует индекс из очищенных данных"""
-        if not isinstance(data, dict) or 'metadata' not in data:
-            raise ValueError("Invalid JSON structure")
-            
-        processed_texts = []
-        valid_chunks = []
-        
-        for item in data['metadata']:
+            # Чтение файла с обработкой кодировки
             try:
-                # Очищаем каждый текст в документе
-                clean_item = {
-                    'file_id': self._clean_text(item.get('file_id', '')),
-                    'original': self._clean_text(item.get('original', '')),
-                    'processed': self._normalize_processed(item.get('processed', ''))
-                }
-                
-                if clean_item['processed']:
-                    processed_texts.append(clean_item['processed'].split())
-                    valid_chunks.append(clean_item)
-                    
-            except Exception as e:
-                print(f"Ошибка обработки элемента: {e}")
-                continue
-                
-        if not processed_texts:
-            raise ValueError("No valid documents found")
-            
-        self.bm25 = BM25Okapi(processed_texts)
-        self.chunks_info = valid_chunks
-        self.is_index_loaded = True
-        st.success(f"Loaded {len(self.chunks_info)} documents")
+                with open(self.cache_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except UnicodeDecodeError:
+                with open(self.cache_path, 'r', encoding='utf-8-sig') as f:
+                    content = f.read()
 
-    def _clean_text(self, text: str) -> str:
-        """Очищает текст от непечатаемых символов"""
-        if isinstance(text, str):
-            return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
-        return str(text)
+            # Удаление непечатаемых символов
+            content = self._remove_non_printable(content)
+
+            # Проверка базовой структуры
+            if not content.strip().startswith('{') or not content.strip().endswith('}'):
+                st.error("JSON должен начинаться с '{' и заканчиваться '}'")
+                return False
+
+            # Парсинг JSON
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError as e:
+                st.error(f"Ошибка в JSON (строка {e.lineno}): {e.msg}")
+                return False
+
+            # Валидация структуры
+            if not isinstance(data, dict) or 'metadata' not in data:
+                st.error("Ожидается словарь с ключом 'metadata'")
+                return False
+
+            # Подготовка данных
+            processed_texts = []
+            valid_chunks = []
+            
+            for item in data.get('metadata', []):
+                try:
+                    processed = self._normalize_processed(item.get('processed', ''))
+                    if processed:
+                        processed_texts.append(processed.split())
+                        valid_chunks.append(item)
+                except Exception as e:
+                    print(f"Ошибка обработки элемента: {e}")
+                    continue
+
+            if not processed_texts:
+                st.error("Нет валидных данных для индексации")
+                return False
+
+            # Создание индекса
+            self.bm25 = BM25Okapi(processed_texts)
+            self.chunks_info = valid_chunks
+            self.is_index_loaded = True
+            st.success(f"Успешно загружено {len(self.chunks_info)} документов")
+            return True
+
+        except Exception as e:
+            st.error(f"Критическая ошибка загрузки: {str(e)}")
+            return False
+
+    def _remove_non_printable(self, text: str) -> str:
+        """Удаляет непечатаемые символы"""
+        return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
 
     def _normalize_processed(self, processed) -> str:
-        """Нормализует поле processed"""
+        """Приводит поле processed к строке"""
         if isinstance(processed, str):
-            return self._clean_text(processed)
+            return self._remove_non_printable(processed)
         elif isinstance(processed, list):
-            return ' '.join(self._clean_text(str(x)) for x in processed)
+            return ' '.join(self._remove_non_printable(str(x)) for x in processed)
         elif isinstance(processed, (int, float)):
             return str(processed)
         return ''
 
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
-        """Поиск с обработкой ошибок"""
+        """Безопасный поиск с обработкой ошибок"""
         if not self.is_index_loaded:
             return []
 
         try:
-            clean_query = self._clean_text(query)
+            clean_query = self._remove_non_printable(query)
             tokens = self.preprocessor.preprocess(clean_query)
             if not tokens:
                 return []
@@ -159,10 +160,10 @@ class RobustBM25SearchEngine:
 
             return [
                 {
-                    'doc_id': self.chunks_info[idx]['file_id'],
-                    'doc_name': self.chunks_info[idx].get('doc_name', self.chunks_info[idx]['file_id']),
-                    'chunk_text': self.chunks_info[idx]['original'][:1000],
-                    'score': round(scores[idx], 4)
+                    'doc_id': self.chunks_info[idx].get('file_id', ''),
+                    'doc_name': self.chunks_info[idx].get('doc_name', 'Документ'),
+                    'chunk_text': self.chunks_info[idx].get('original', '')[:1000],
+                    'score': round(float(scores[idx]), 4)
                 }
                 for idx in best_indices
                 if idx < len(self.chunks_info)
