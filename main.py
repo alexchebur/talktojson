@@ -145,15 +145,15 @@ class BM25SearchEngine:
             if not isinstance(data, dict) or 'metadata' not in data:
                 return False
             
-            # Подготовка данных
-            processed_texts = []
             for item in data.get('metadata', []):
-                processed = self._normalize_processed(item.get('processed', ''))
-                if processed:
-                    tokens = processed.split()
-                    # Фильтрация пустых токенов
-                    if tokens:
-                        processed_texts.append(tokens)
+                processed = item.get('processed', [])
+                if isinstance(processed, list):
+                    processed = ' '.join(processed)  # Объединяем массив в строку
+            processed = self._normalize_processed(processed)
+            if processed:
+                tokens = processed.split()
+                if tokens:
+                    processed_texts.append(tokens)
         
             # Дополнительная проверка на наличие данных
             if not processed_texts or all(len(tokens) == 0 for tokens in processed_texts):
