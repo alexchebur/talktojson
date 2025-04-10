@@ -161,7 +161,7 @@ class BM25SearchEngine:
             return True
         
         except Exception as e:
-            print(f"Ошибка загрузки индекса: {e}")
+            st.sidebar.info(f"Ошибка загрузки индекса: {e}")
             return False
 
 #    def _create_empty_index(self):
