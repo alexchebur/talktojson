@@ -436,7 +436,7 @@ class DocumentAnalyzer:
         return "\n".join(context_parts)
 
 def main():
-    st.set_page_config(page_title="El Documente", layout="wide")
+    st.set_page_config(page_title="El Documente", layout="wide", initial_sidebar_state="collapsed")
     gif_path = "data/maracas-sombrero-hat.gif"
     st.image(gif_path, caption="Hola!", width=64)
     st.title("El Documente: проверьте свой процессуальный документ")
