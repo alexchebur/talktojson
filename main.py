@@ -24,89 +24,41 @@ import json
 import os
 import re
 
-def check_and_repair_json(file_path):
-    """Проверяет и восстанавливает JSON файл"""
+import shutil
+
+def safe_read_json(file_path: str) -> dict:
+    """Безопасное чтение JSON с восстановлением"""
     try:
-        # Проверка существования файла
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Файл {file_path} не существует")
+        # Создаем резервную копию
+        backup_path = str(Path(file_path).with_suffix('.bak'))
+        shutil.copy2(file_path, backup_path)
         
-        # Проверка что файл не пустой
-        if os.path.getsize(file_path) == 0:
-            raise ValueError("Файл пуст")
-        
-        # Чтение файла с обработкой BOM
+        # Чтение с обработкой BOM
         with open(file_path, 'rb') as f:
-            content = f.read().decode('utf-8-sig').strip()
+            content = f.read().decode('utf-8-sig')
         
         # Удаление непечатаемых символов
         content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
         
-        # Поиск действительного JSON содержимого
+        # Извлечение JSON части
         start = content.find('{')
         end = content.rfind('}') + 1
         
         if start == -1 or end == 0:
-            raise ValueError("Не найдены JSON-скобки { }")
-        
-        json_content = content[start:end]
-        
-        # Проверка валидности JSON
-        try:
-            data = json.loads(json_content)
-            return True
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Невалидный JSON: {str(e)}")
+            raise ValueError("Не найдены JSON-скобки")
             
+        return json.loads(content[start:end])
+        
     except Exception as e:
-        print(f"Ошибка при проверке файла: {str(e)}")
-        return False
-
-def repair_json_file(file_path):
-    """Пытается автоматически исправить JSON файл"""
-    try:
-        # Создаем резервную копию
-        backup_path = file_path + '.bak'
-        os.replace(file_path, backup_path)
-        
-        # Читаем исходный файл
-        with open(backup_path, 'rb') as f:
-            content = f.read().decode('utf-8-sig').strip()
-        
-        # Удаляем все до первой {
-        start = content.find('{')
-        if start == -1:
-            return False
-        content = content[start:]
-        
-        # Удаляем все после последней }
-        end = content.rfind('}')
-        if end == -1:
-            return False
-        content = content[:end+1]
-        
-        # Удаляем непечатаемые символы
-        content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
-        
-        # Записываем исправленный файл
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        return True
-    
-    except Exception:
-        return False
-
-# Проверка и восстановление файла перед созданием движка
-json_path = os.path.join("data", "bm25_index.json")
-if not check_and_repair_json(json_path):
-    st.warning("Файл индекса поврежден. Пытаемся восстановить...")
-    if repair_json_file(json_path):
-        st.success("Файл успешно восстановлен!")
-    else:
-        st.error("Не удалось восстановить файл индекса")
-        st.stop()  # Останавливаем приложение если файл не восстановлен
-
+        print(f"Ошибка чтения JSON: {e}")
+        # Пробуем прочитать резервную копию
+        if os.path.exists(backup_path):
+            try:
+                with open(backup_path, 'rb') as f:
+                    return json.loads(f.read().decode('utf-8-sig'))
+            except Exception:
+                pass
+        raise
 
 try:
     from config import API_KEY, API_URL
@@ -155,109 +107,135 @@ class BM25SearchEngine:
         self.bm25 = None
         self.chunks_info = []
         self.is_index_loaded = False
-        self.cache_path = os.path.join(DATA_DIR, "bm25_index.json")
+        self.cache_path = os.path.join("data", "bm25_index.json")
         
-        # Попытка восстановить и загрузить индекс
-        self._initialize_engine()
+        self._initialize_with_recovery()
 
-    def _initialize_engine(self):
-        """Инициализация с несколькими попытками восстановления"""
-        max_attempts = 3
-        for attempt in range(max_attempts):
-            try:
-                if self._try_load_index():
-                    return
-                
-                # Попытка восстановить файл
-                if attempt < max_attempts - 1:
-                    if repair_json_file(self.cache_path):
-                        continue
-                
-            except Exception as e:
-                print(f"Попытка {attempt + 1} не удалась: {str(e)}")
-        
-        st.error("Не удалось загрузить индекс после нескольких попыток")
-
-    def _try_load_index(self) -> bool:
-        """Попытка загрузки индекса с обработкой ошибок"""
+    def _initialize_with_recovery(self):
+        """Инициализация с восстановлением при необходимости"""
         try:
-            # Проверка существования файла
-            if not os.path.exists(self.cache_path):
-                st.error(f"Файл {self.cache_path} не найден")
-                return False
-            
-            # Проверка размера файла
-            if os.path.getsize(self.cache_path) == 0:
-                st.error("Файл индекса пуст")
-                return False
-            
-            # Чтение файла
-            with open(self.cache_path, 'rb') as f:
-                raw_content = f.read()
-            
-            # Декодирование с обработкой BOM
-            for encoding in ['utf-8-sig', 'utf-8', 'windows-1251']:
-                try:
-                    content = raw_content.decode(encoding).strip()
-                    break
-                except UnicodeDecodeError:
-                    continue
-            else:
-                st.error("Не удалось декодировать файл")
-                return False
-            
-            # Удаление непечатаемых символов
-            content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
-            
-            # Извлечение JSON части
-            start = content.find('{')
-            end = content.rfind('}') + 1
-            
-            if start == -1 or end == 0:
-                st.error("Не найдены JSON-скобки { }")
-                return False
-            
-            json_content = content[start:end]
-            
-            # Парсинг JSON
-            try:
-                data = json.loads(json_content)
-            except json.JSONDecodeError as e:
-                st.error(f"Ошибка JSON (строка {e.lineno}): {e.msg}")
-                return False
-            
-            # Валидация структуры
-            if not isinstance(data, dict) or 'metadata' not in data:
-                st.error("Неверная структура JSON: ожидается словарь с 'metadata'")
-                return False
-            
-            # Подготовка данных
-            processed_texts = []
-            valid_chunks = []
-            
-            for item in data.get('metadata', []):
-                try:
-                    processed = self._normalize_processed(item.get('processed', ''))
-                    if processed:
-                        processed_texts.append(processed.split())
-                        valid_chunks.append(item)
-                except Exception:
-                    continue
-            
-            if not processed_texts:
-                st.error("Нет валидных данных для индексации")
-                return False
-            
-            # Создание индекса
-            self.bm25 = BM25Okapi(processed_texts)
-            self.chunks_info = valid_chunks
-            self.is_index_loaded = True
-            st.success(f"Успешно загружено {len(self.chunks_info)} документов")
-            return True
+            # Попытка обычной загрузки
+            if self._load_index():
+                return
+                
+            # Попытка восстановления
+            if self._try_recover_index():
+                return
+                
+            # Создание нового пустого индекса
+            self._create_empty_index()
+            st.warning("Создан новый пустой индекс")
             
         except Exception as e:
-            st.error(f"Критическая ошибка: {str(e)}")
+            st.error(f"Критическая ошибка инициализации: {str(e)}")
+
+    def _load_index(self) -> bool:
+        """Загрузка индекса с проверкой"""
+        if not os.path.exists(self.cache_path):
             return False
+            
+        try:
+            with open(self.cache_path, 'rb') as f:
+                content = f.read().decode('utf-8-sig')
+                
+            # Проверка минимальной валидности
+            if not content.strip().startswith('{'):
+                return False
+                
+            data = json.loads(content)
+            
+            # Проверка структуры
+            if not isinstance(data, dict) or 'metadata' not in data:
+                return False
+                
+            # Подготовка данных
+            processed_texts = []
+            for item in data.get('metadata', []):
+                processed = self._normalize_processed(item.get('processed', ''))
+                if processed:
+                    processed_texts.append(processed.split())
+            
+            if not processed_texts:
+                return False
+                
+            self.bm25 = BM25Okapi(processed_texts)
+            self.chunks_info = data['metadata']
+            self.is_index_loaded = True
+            return True
+            
+        except Exception:
+            return False
+
+    def _try_recover_index(self) -> bool:
+        """Попытка восстановления индекса"""
+        try:
+            # Создаем резервную копию поврежденного файла
+            damaged_path = os.path.join("data", "bm25_index.damaged")
+            if os.path.exists(self.cache_path):
+                shutil.move(self.cache_path, damaged_path)
+            
+            # Пробуем прочитать поврежденный файл
+            if os.path.exists(damaged_path):
+                try:
+                    data = safe_read_json(damaged_path)
+                    if self._initialize_from_data(data):
+                        return True
+                except Exception:
+                    pass
+                    
+            # Проверяем наличие резервных копий
+            backup_files = [
+                os.path.join("data", "bm25_index.bak"),
+                os.path.join("data", "bm25_index.json.bak")
+            ]
+            
+            for backup in backup_files:
+                if os.path.exists(backup):
+                    try:
+                        with open(backup, 'rb') as f:
+                            data = json.loads(f.read().decode('utf-8-sig'))
+                        if self._initialize_from_data(data):
+                            shutil.copy2(backup, self.cache_path)
+                            return True
+                    except Exception:
+                        continue
+                        
+            return False
+            
+        except Exception:
+            return False
+
+    def _initialize_from_data(self, data: dict) -> bool:
+        """Инициализация из загруженных данных"""
+        try:
+            if not isinstance(data, dict) or 'metadata' not in data:
+                return False
+                
+            processed_texts = []
+            for item in data.get('metadata', []):
+                processed = self._normalize_processed(item.get('processed', ''))
+                if processed:
+                    processed_texts.append(processed.split())
+            
+            if not processed_texts:
+                return False
+                
+            self.bm25 = BM25Okapi(processed_texts)
+            self.chunks_info = data['metadata']
+            self.is_index_loaded = True
+            return True
+            
+        except Exception:
+            return False
+
+    def _create_empty_index(self):
+        """Создает новый пустой индекс"""
+        empty_data = {"metadata": []}
+        with open(self.cache_path, 'w', encoding='utf-8') as f:
+            json.dump(empty_data, f)
+        self.bm25 = BM25Okapi([])
+        self.chunks_info = []
+        self.is_index_loaded = True
 
     def _normalize_processed(self, processed) -> str:
         """Нормализует поле processed"""
@@ -271,7 +249,7 @@ class BM25SearchEngine:
 
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
         """Поиск с обработкой ошибок"""
-        if not self.is_index_loaded:
+        if not self.is_index_loaded or not self.chunks_info:
             return []
 
         try:
