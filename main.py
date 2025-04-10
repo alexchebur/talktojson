@@ -206,7 +206,7 @@ class BM25SearchEngine:
                     
             return False
         except Exception:
-        return False
+            return False
 
     
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
