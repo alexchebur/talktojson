@@ -170,6 +170,7 @@ class BM25SearchEngine:
         except Exception as e:
             print(f"Ошибка загрузки индекса: {e}")
             return False
+
     def _try_recover_index(self) -> bool:
         """Попытка восстановления индекса"""
         try:
@@ -177,7 +178,7 @@ class BM25SearchEngine:
             damaged_path = os.path.join("data", "bm25_index.damaged")
             if os.path.exists(self.cache_path):
                 shutil.move(self.cache_path, damaged_path)
-        
+            
             # Пробуем прочитать поврежденный файл
             if os.path.exists(damaged_path):
                 try:
@@ -192,7 +193,7 @@ class BM25SearchEngine:
                 os.path.join("data", "bm25_index.bak"),
                 os.path.join("data", "bm25_index.json.bak")
             ]
-        
+            
             for backup in backup_files:
                 if os.path.exists(backup):
                     try:
@@ -205,9 +206,18 @@ class BM25SearchEngine:
                         continue
                     
             return False
+            
         except Exception:
             return False
 
+    def _create_empty_index(self):
+        """Создает новый пустой индекс"""
+        empty_data = {"metadata": []}
+        with open(self.cache_path, 'w', encoding='utf-8') as f:
+            json.dump(empty_data, f)
+        self.bm25 = BM25Okapi([])
+        self.chunks_info = []
+       
     
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
         """Поиск с обработкой ошибок"""
