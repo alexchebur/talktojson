@@ -259,12 +259,16 @@ class BM25SearchEngine:
 
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
         """Поиск с обработкой ошибок"""
-        if not self.is_index_loaded or not self.chunks_info:
+        if not self.is_index_loaded or not self.chunks_info or not self.bm25:
             return []
 
         try:
             tokens = self.preprocessor.preprocess(query)
             if not tokens:
+                return []
+
+            # Дополнительная проверка перед расчетом scores
+            if not hasattr(self.bm25, 'doc_freqs') or len(self.bm25.doc_freqs) == 0:
                 return []
 
             scores = self.bm25.get_scores(tokens)
@@ -280,7 +284,8 @@ class BM25SearchEngine:
                 for idx in best_indices
                 if idx < len(self.chunks_info)
             ]
-        except Exception:
+        except Exception as e:
+            print(f"Ошибка поиска: {e}")
             return []
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
