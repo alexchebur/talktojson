@@ -166,64 +166,109 @@ class BM25SearchEngine:
         self.is_index_loaded = False
         self.cache_path = os.path.join(DATA_DIR, "bm25_index.json")
         
-        # Попытка восстановить файл при первой загрузке
-        if not self._try_load_index():
-            st.error("Не удалось загрузить индекс. Проверьте файл bm25_index.json")
+        # Попытка восстановить и загрузить индекс
+        self._initialize_engine()
+
+    def _initialize_engine(self):
+        """Инициализация с несколькими попытками восстановления"""
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                if self._try_load_index():
+                    return
+                
+                # Попытка восстановить файл
+                if attempt < max_attempts - 1:
+                    if repair_json_file(self.cache_path):
+                        continue
+                
+            except Exception as e:
+                print(f"Попытка {attempt + 1} не удалась: {str(e)}")
+        
+        st.error("Не удалось загрузить индекс после нескольких попыток")
 
     def _try_load_index(self) -> bool:
-        """Пытается загрузить индекс с автоматическим исправлением файла"""
+        """Попытка загрузки индекса с обработкой ошибок"""
         try:
-            # Первая попытка загрузки
-            if self._load_index():
-                return True
-                
-            # Если не получилось, пробуем восстановить файл
-            if repair_json_file(self.cache_path):
-                return self._load_index()
-                
-            return False
-        except Exception as e:
-            st.error(f"Ошибка загрузки индекса: {str(e)}")
-            return False
-
-    def _load_index(self) -> bool:
-        """Основная логика загрузки индекса"""
-        try:
-            with open(self.cache_path, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                
-                # Дополнительная очистка на случай если repair_json_file не сработал
-                content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
-                content = content[content.find('{'):content.rfind('}')+1]
-                
-                data = json.loads(content)
-                
-                # Проверка структуры
-                if not isinstance(data, dict) or 'metadata' not in data:
-                    st.error("Неверный формат JSON: ожидается словарь с metadata")
-                    return False
-                    
-                # Подготовка данных для BM25
-                processed_texts = []
-                for item in data['metadata']:
-                    processed = self._get_processed_text(item.get('processed', ''))
+            # Проверка существования файла
+            if not os.path.exists(self.cache_path):
+                st.error(f"Файл {self.cache_path} не найден")
+                return False
+            
+            # Проверка размера файла
+            if os.path.getsize(self.cache_path) == 0:
+                st.error("Файл индекса пуст")
+                return False
+            
+            # Чтение файла
+            with open(self.cache_path, 'rb') as f:
+                raw_content = f.read()
+            
+            # Декодирование с обработкой BOM
+            for encoding in ['utf-8-sig', 'utf-8', 'windows-1251']:
+                try:
+                    content = raw_content.decode(encoding).strip()
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                st.error("Не удалось декодировать файл")
+                return False
+            
+            # Удаление непечатаемых символов
+            content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
+            
+            # Извлечение JSON части
+            start = content.find('{')
+            end = content.rfind('}') + 1
+            
+            if start == -1 or end == 0:
+                st.error("Не найдены JSON-скобки { }")
+                return False
+            
+            json_content = content[start:end]
+            
+            # Парсинг JSON
+            try:
+                data = json.loads(json_content)
+            except json.JSONDecodeError as e:
+                st.error(f"Ошибка JSON (строка {e.lineno}): {e.msg}")
+                return False
+            
+            # Валидация структуры
+            if not isinstance(data, dict) or 'metadata' not in data:
+                st.error("Неверная структура JSON: ожидается словарь с 'metadata'")
+                return False
+            
+            # Подготовка данных
+            processed_texts = []
+            valid_chunks = []
+            
+            for item in data.get('metadata', []):
+                try:
+                    processed = self._normalize_processed(item.get('processed', ''))
                     if processed:
                         processed_texts.append(processed.split())
-                
-                if not processed_texts:
-                    st.error("Нет данных для индексации")
-                    return False
-                    
-                self.bm25 = BM25Okapi(processed_texts)
-                self.chunks_info = data['metadata']
-                self.is_index_loaded = True
-                return True
-                
+                        valid_chunks.append(item)
+                except Exception:
+                    continue
+            
+            if not processed_texts:
+                st.error("Нет валидных данных для индексации")
+                return False
+            
+            # Создание индекса
+            self.bm25 = BM25Okapi(processed_texts)
+            self.chunks_info = valid_chunks
+            self.is_index_loaded = True
+            st.success(f"Успешно загружено {len(self.chunks_info)} документов")
+            return True
+            
         except Exception as e:
-            st.error(f"Ошибка при загрузке: {str(e)}")
+            st.error(f"Критическая ошибка: {str(e)}")
             return False
 
-    def _get_processed_text(self, processed) -> str:
+    def _normalize_processed(self, processed) -> str:
         """Нормализует поле processed"""
         if isinstance(processed, str):
             return processed
