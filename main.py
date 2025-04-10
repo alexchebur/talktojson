@@ -113,7 +113,19 @@ class BM25SearchEngine:
         self.cache_path = os.path.join("data", "bm25_index.json")
         self._load_index()  # Добавьте эту строку
         
-       
+    def _normalize_processed(self, processed_data: Any) -> List[str]:
+        """Нормализует поле processed в единый формат списка токенов"""
+        if isinstance(processed_data, str):
+            # Если это строка, разбиваем по пробелам
+            return processed_data.split()
+        elif isinstance(processed_data, list):
+            # Если это список, проверяем элементы
+            if all(isinstance(x, str) for x in processed_data):
+                return processed_data
+            else:
+                return []
+        else:
+            return []  
 
 
 
