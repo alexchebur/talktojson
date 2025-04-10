@@ -170,7 +170,45 @@ class BM25SearchEngine:
         except Exception as e:
             print(f"Ошибка загрузки индекса: {e}")
             return False
+    def _try_recover_index(self) -> bool:
+        """Попытка восстановления индекса"""
+        try:
+            # Создаем резервную копию поврежденного файла
+            damaged_path = os.path.join("data", "bm25_index.damaged")
+            if os.path.exists(self.cache_path):
+                shutil.move(self.cache_path, damaged_path)
         
+            # Пробуем прочитать поврежденный файл
+            if os.path.exists(damaged_path):
+                try:
+                    data = safe_read_json(damaged_path)
+                    if self._initialize_from_data(data):
+                        return True
+                except Exception:
+                    pass
+                
+            # Проверяем наличие резервных копий
+            backup_files = [
+                os.path.join("data", "bm25_index.bak"),
+                os.path.join("data", "bm25_index.json.bak")
+            ]
+        
+            for backup in backup_files:
+                if os.path.exists(backup):
+                    try:
+                        with open(backup, 'rb') as f:
+                            data = json.loads(f.read().decode('utf-8-sig'))
+                        if self._initialize_from_data(data):
+                            shutil.copy2(backup, self.cache_path)
+                            return True
+                    except Exception:
+                        continue
+                    
+            return False
+        except Exception:
+        return False
+
+    
     def search(self, query: str, top_n: int = 5) -> List[Dict]:
         """Поиск с обработкой ошибок"""
         if not self.is_index_loaded or not self.chunks_info or not self.bm25:
