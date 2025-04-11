@@ -23,7 +23,7 @@ except ImportError:
 
 # Конфигурация
 DATA_DIR = "data"
-MAX_CONTEXT_LENGTH = 15000
+MAX_CONTEXT_LENGTH = 20000
 MAX_ANSWER_LENGTH = 15000
 TEMPERATURE = 0.2
 os.makedirs(DATA_DIR, exist_ok=True)
