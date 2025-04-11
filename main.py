@@ -276,24 +276,60 @@ class BM25SearchEngine:
             return []
 
     def _normalize_processed(self, processed_data):
-        """Нормализует processed данные для индексации"""
-        if processed_data is None:
+        """Нормализует processed данные для индексации с фильтрацией организаций"""
+        # Список для фильтрации (можно вынести в константы класса)
+        STOP_ORGANIZATIONS = [
+            "ПАО Т Плюс", "АО ЕТК", "Екатеринбургская теплосетевая компания",
+            "Т Плюс", "ЕТК", "AO ETK"  # разные варианты написания
+        ]
+    
+        # Обработка None и пустых значений
+        if not processed_data:
             return []
-            
+
+        # Если данные в JSON-строке - пробуем распарсить
         if isinstance(processed_data, str):
             try:
-                # Пробуем распарсить строку как JSON
                 processed_data = json.loads(processed_data)
             except json.JSONDecodeError:
-                # Если не JSON, обрабатываем как текст
-                return self.preprocessor.preprocess(processed_data)
-        
+                pass  # продолжим обработку как строку
+
+        # Преобразование в строку (если не строка и не список)
+        if not isinstance(processed_data, (str, list)):
+            processed_data = str(processed_data)
+
+        # Обработка списка
         if isinstance(processed_data, list):
-            # Удаляем пустые элементы и преобразуем к строке
-            return [str(item).strip() for item in processed_data if item and str(item).strip()]
+            # Фильтрация и нормализация элементов списка
+            cleaned_items = []
+            for item in processed_data:
+                if not item:
+                    continue
+                
+                item_str = str(item).strip()
+            
+                # Удаляем названия организаций
+                for org in STOP_ORGANIZATIONS:
+                    item_str = item_str.replace(org, "")
+                
+                if item_str:
+                    cleaned_items.append(item_str)
+                
+            return self.preprocessor.preprocess(" ".join(cleaned_items))
+
+        # Обработка строки
+        if isinstance(processed_data, str):
+            # Удаляем названия организаций
+            for org in STOP_ORGANIZATIONS:
+                processed_data = processed_data.replace(org, "")
+            
+            # Удаляем email-адреса и телефоны (если мешают)
+            processed_data = re.sub(r'\S+@\S+', '', processed_data)  # emails
+            processed_data = re.sub(r'[\+\(\)\d\-]{6,}', '', processed_data)  # телефоны
         
-        # Для других типов преобразуем в строку и обрабатываем
-        return self.preprocessor.preprocess(str(processed_data))
+            return self.preprocessor.preprocess(processed_data)
+
+        return []  # fallback
 
     def _read_json_with_recovery(self, file_path):
         """Чтение JSON с восстановлением при ошибках"""
