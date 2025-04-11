@@ -242,111 +242,91 @@ class BM25SearchEngine:
         self.llm_keywords = []
         self._load_index()
 
+    def _normalize_processed(self, processed_data):
+        """Нормализует processed данные для индексации"""
+        if isinstance(processed_data, str):
+            # Если данные пришли как строка, пробуем распарсить
+            try:
+                processed_data = json.loads(processed_data)
+            except json.JSONDecodeError:
+                # Если не получилось, обрабатываем как текст
+                return self.preprocessor.preprocess(processed_data)
+        
+        if isinstance(processed_data, list):
+            # Убедимся, что все элементы строки
+            return [str(item) for item in processed_data if item]
+        
+        # Если данные другого типа, преобразуем в строку и обрабатываем
+        return self.preprocessor.preprocess(str(processed_data))
+
     def _load_index(self):
-        """Новая версия загрузчика с улучшенной обработкой ошибок"""
-        part_files = self._find_part_files()
-        
-        if not part_files:
-            st.sidebar.error("❌ Не найдены файлы с 'part' в названии")
-            return False
-
-        merged_data = {'metadata': []}
-        success_files = 0
-        
-        for file_path in part_files:
-            try:
-                # Новый метод чтения с восстановлением битых JSON
-                file_data = self._read_json_with_recovery(file_path)
-                
-                if not file_data or 'metadata' not in file_data:
-                    st.sidebar.warning(f"⚠️ Файл {os.path.basename(file_path)} не содержит metadata")
-                    continue
-                    
-                merged_data['metadata'].extend(file_data['metadata'])
-                success_files += 1
-                
-            except Exception as e:
-                st.sidebar.error(f"❌ Ошибка в файле {os.path.basename(file_path)}: {str(e)}")
-
-        if not merged_data['metadata']:
-            st.sidebar.error("❌ Нет данных для загрузки")
-            return False
-
-        # Построение индекса
-        processed_texts = []
-        valid_metadata = []
-        
-        for item in merged_data['metadata']:
-            text = item.get('original', '')
-            processed = self._normalize_processed(item.get('processed', []))
-            
-            if not processed and text:
-                processed = self.preprocessor.preprocess(text)
-                
-            if processed:
-                processed_texts.append(processed)
-                valid_metadata.append(item)
-
-        if not processed_texts:
-            st.sidebar.error("❌ Нет данных для индексации")
-            return False
-
-        self.bm25 = BM25Okapi(processed_texts)
-        self.chunks_info = valid_metadata
-        self.is_index_loaded = True
-        
-        st.sidebar.success(f"✅ Загружено {success_files}/{len(part_files)} файлов, {len(processed_texts)} фрагментов")
-        return True
-
-    def _read_json_with_recovery(self, file_path: str) -> Dict:
-        """Чтение JSON с восстановлением при ошибках"""
+        """Загрузка индекса с улучшенной обработкой ошибок"""
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                
-            # Попытка 1: стандартное чтение
-            try:
-                return json.loads(content)
-            except JSONDecodeError:
-                pass
-                
-            # Попытка 2: удаление битых символов
-            content = self._clean_json_content(content)
-            try:
-                return json.loads(content)
-            except JSONDecodeError as e:
-                st.error(f"Не удалось восстановить файл {os.path.basename(file_path)}")
-                raise e
-                
-        except Exception as e:
-            raise Exception(f"Ошибка чтения файла: {str(e)}")
-
-    def _clean_json_content(self, content: str) -> str:
-        """Очистка содержимого JSON"""
-        # Удаление BOM
-        if content.startswith('\ufeff'):
-            content = content[1:]
+            part_files = self._find_part_files()
             
-        # Удаление непечатаемых символов
-        content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
-        
-        # Удаление завершающих запятых
-        content = re.sub(r',\s*([}\]])', r'\1', content)
-        
-        return content
+            if not part_files:
+                st.sidebar.warning("Не найдены файлы индекса для загрузки")
+                return False
 
-    def _find_part_files(self) -> List[str]:
-        """Поиск файлов с part в названии"""
-        data_dir = "data"
-        part_files = []
-        
-        if os.path.exists(data_dir):
-            for filename in os.listdir(data_dir):
-                if "part" in filename.lower() and filename.endswith(".json"):
-                    full_path = os.path.join(data_dir, filename)
-                    part_files.append(full_path)
-        
-        return sorted(part_files)
+            merged_data = {'metadata': []}
+            success_files = 0
+            
+            for file_path in part_files:
+                try:
+                    file_data = self._read_json_with_recovery(file_path)
+                    
+                    if not file_data or 'metadata' not in file_data:
+                        st.sidebar.warning(f"Файл {os.path.basename(file_path)} не содержит metadata")
+                        continue
+                        
+                    # Нормализуем processed данные перед добавлением
+                    normalized_metadata = []
+                    for item in file_data['metadata']:
+                        if 'processed' in item:
+                            item['processed'] = self._normalize_processed(item['processed'])
+                        normalized_metadata.append(item)
+                    
+                    merged_data['metadata'].extend(normalized_metadata)
+                    success_files += 1
+                    
+                except Exception as e:
+                    st.sidebar.error(f"Ошибка в файле {os.path.basename(file_path)}: {str(e)}")
+                    continue
+
+            if not merged_data['metadata']:
+                st.sidebar.error("Нет данных для загрузки после обработки файлов")
+                return False
+
+            # Строим индекс только с валидными данными
+            processed_texts = []
+            valid_metadata = []
+            
+            for item in merged_data['metadata']:
+                processed = item.get('processed', [])
+                if not processed:
+                    # Если processed нет, обрабатываем original текст
+                    original_text = item.get('original', '')
+                    if original_text:
+                        processed = self.preprocessor.preprocess(original_text)
+                
+                if processed:
+                    processed_texts.append(processed)
+                    valid_metadata.append(item)
+
+            if not processed_texts:
+                st.sidebar.error("Нет данных для индексации после нормализации")
+                return False
+
+            self.bm25 = BM25Okapi(processed_texts)
+            self.chunks_info = valid_metadata
+            self.is_index_loaded = True
+            
+            st.sidebar.success(f"Успешно загружено {success_files}/{len(part_files)} файлов, {len(processed_texts)} фрагментов")
+            return True
+            
+        except Exception as e:
+            st.sidebar.error(f"Критическая ошибка загрузки индекса: {str(e)}")
+            return False
 
     def search(self, query: str, top_n: int = 5, min_score: float = 0.1) -> List[Dict]:
         """Поиск с обработкой ошибок"""
