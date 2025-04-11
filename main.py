@@ -303,11 +303,11 @@ class BM25SearchEngine:
                         merged_data['processed_files'].update(file_data['processed_files'])
 
                 except Exception as e:
-                    print(f"Ошибка обработки файла {file_path}: {str(e)}")
+                    st.sidebar.error(f"Ошибка обработки файла {file_path}: {str(e)}")
                     continue
 
             if not merged_data['metadata']:
-                print("Нет данных для построения индекса")
+                st.sidebar.error("Нет данных для построения индекса")
                 return False
 
             corpus = []
