@@ -13,6 +13,7 @@ from typing import List, Dict, Any
 import shutil
 from pathlib import Path
 import glob
+from json import JSONDecodeError
 
 try:
     from config import API_KEY, API_URL
@@ -170,106 +171,119 @@ class TextPreprocessor:
         return text.split()
 
 class BM25SearchEngine:
-    def __init__(self, preprocessor: TextPreprocessor):
+    def __init__(self, preprocessor):
         self.preprocessor = preprocessor
         self.bm25 = None
         self.chunks_info = []
         self.is_index_loaded = False
         self.llm_keywords = []
-        self._load_index()  # Убрали жесткое указание cache_path
+        self._load_index()
+
+    def _load_index(self):
+        """Новая версия загрузчика с улучшенной обработкой ошибок"""
+        part_files = self._find_part_files()
         
-    def _normalize_processed(self, processed_data: Any) -> List[str]:
-        """Нормализует поле processed в единый формат списка токенов"""
-        if processed_data is None:
-            return []
-    
-        if isinstance(processed_data, str):
-            return [token for token in processed_data.split() if token]
-        elif isinstance(processed_data, list):
-            result = []
-            for item in processed_data:
-                if isinstance(item, str):
-                    result.extend(item.split())
-                elif isinstance(item, (int, float)):
-                    result.append(str(item))
-            return result
-        else:
-            return [str(processed_data)]
+        if not part_files:
+            st.sidebar.error("❌ Не найдены файлы с 'part' в названии")
+            return False
+
+        merged_data = {'metadata': []}
+        success_files = 0
+        
+        for file_path in part_files:
+            try:
+                # Новый метод чтения с восстановлением битых JSON
+                file_data = self._read_json_with_recovery(file_path)
+                
+                if not file_data or 'metadata' not in file_data:
+                    st.sidebar.warning(f"⚠️ Файл {os.path.basename(file_path)} не содержит metadata")
+                    continue
+                    
+                merged_data['metadata'].extend(file_data['metadata'])
+                success_files += 1
+                
+            except Exception as e:
+                st.sidebar.error(f"❌ Ошибка в файле {os.path.basename(file_path)}: {str(e)}")
+
+        if not merged_data['metadata']:
+            st.sidebar.error("❌ Нет данных для загрузки")
+            return False
+
+        # Построение индекса
+        processed_texts = []
+        valid_metadata = []
+        
+        for item in merged_data['metadata']:
+            text = item.get('original', '')
+            processed = self._normalize_processed(item.get('processed', []))
+            
+            if not processed and text:
+                processed = self.preprocessor.preprocess(text)
+                
+            if processed:
+                processed_texts.append(processed)
+                valid_metadata.append(item)
+
+        if not processed_texts:
+            st.sidebar.error("❌ Нет данных для индексации")
+            return False
+
+        self.bm25 = BM25Okapi(processed_texts)
+        self.chunks_info = valid_metadata
+        self.is_index_loaded = True
+        
+        st.sidebar.success(f"✅ Загружено {success_files}/{len(part_files)} файлов, {len(processed_texts)} фрагментов")
+        return True
+
+    def _read_json_with_recovery(self, file_path: str) -> Dict:
+        """Чтение JSON с восстановлением при ошибках"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Попытка 1: стандартное чтение
+            try:
+                return json.loads(content)
+            except JSONDecodeError:
+                pass
+                
+            # Попытка 2: удаление битых символов
+            content = self._clean_json_content(content)
+            try:
+                return json.loads(content)
+            except JSONDecodeError as e:
+                st.error(f"Не удалось восстановить файл {os.path.basename(file_path)}")
+                raise e
+                
+        except Exception as e:
+            raise Exception(f"Ошибка чтения файла: {str(e)}")
+
+    def _clean_json_content(self, content: str) -> str:
+        """Очистка содержимого JSON"""
+        # Удаление BOM
+        if content.startswith('\ufeff'):
+            content = content[1:]
+            
+        # Удаление непечатаемых символов
+        content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
+        
+        # Удаление завершающих запятых
+        content = re.sub(r',\s*([}\]])', r'\1', content)
+        
+        return content
 
     def _find_part_files(self) -> List[str]:
-        """Находит все файлы с 'part' в названии в папке data"""
+        """Поиск файлов с part в названии"""
         data_dir = "data"
         part_files = []
         
         if os.path.exists(data_dir):
             for filename in os.listdir(data_dir):
                 if "part" in filename.lower() and filename.endswith(".json"):
-                    part_files.append(os.path.join(data_dir, filename))
+                    full_path = os.path.join(data_dir, filename)
+                    part_files.append(full_path)
         
-        return sorted(part_files)  # Сортируем для предсказуемости
-
-    def _load_index(self) -> bool:
-        """Загрузка индекса только из файлов с 'part' в названии"""
-        part_files = self._find_part_files()
-        
-        if not part_files:
-            st.sidebar.error("Не найдены файлы с 'part' в названии в папке data")
-            return False
-        
-        try:
-            # Объединяем все части в памяти
-            merged_data = {'metadata': [], 'processed_files': []}
-            
-            for part_file in part_files:
-                try:
-                    with open(part_file, 'r', encoding='utf-8') as f:
-                        part_data = json.load(f)
-                        
-                    if 'metadata' in part_data:
-                        merged_data['metadata'].extend(part_data['metadata'])
-                    if 'processed_files' in part_data:
-                        merged_data['processed_files'].extend(part_data['processed_files'])
-                        
-                except Exception as e:
-                    st.sidebar.warning(f"Ошибка чтения файла {part_file}: {str(e)}")
-                    continue
-            
-            if not merged_data['metadata']:
-                st.sidebar.error("Объединенные данные не содержат метаданных")
-                return False
-            
-            # Обрабатываем данные
-            processed_texts = []
-            valid_metadata = []
-            
-            for item in merged_data['metadata']:
-                original_text = item.get('original', '')
-                processed = self._normalize_processed(item.get('processed', []))
-                
-                if not processed and original_text:
-                    processed = self.preprocessor.preprocess(original_text)
-                
-                if processed:
-                    processed_texts.append(processed)
-                    valid_metadata.append(item)
-            
-            if not processed_texts:
-                st.sidebar.error("Нет данных для индексации")
-                return False
-            
-            self.bm25 = BM25Okapi(processed_texts)
-            self.chunks_info = valid_metadata
-            self.is_index_loaded = True
-            
-            st.sidebar.success(
-                f"Загружен индекс из {len(part_files)} файлов, "
-                f"{len(processed_texts)} фрагментов"
-            )
-            return True
-            
-        except Exception as e:
-            st.sidebar.error(f"Критическая ошибка загрузки индекса: {str(e)}")
-            return False
+        return sorted(part_files)
 
     def search(self, query: str, top_n: int = 5, min_score: float = 0.1) -> List[Dict]:
         """Поиск с обработкой ошибок"""
