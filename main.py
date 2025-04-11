@@ -635,11 +635,16 @@ class DocumentAnalyzer:
             docx_text,
             "\n=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ ИЗ БАЗЫ ЗНАНИЙ ==="
         ]
-        
+    
         for chunk in chunks:
-            context_parts.append(f"\n📄 {chunk['doc_name']} (релевантность: {chunk['score']:.2f}):")
-            context_parts.append(chunk['chunk_text'][:3000])
+            # Безопасное извлечение данных с fallback-значениями
+            doc_name = chunk.get('doc_name', 'Без названия')
+            score = chunk.get('score', 0.0)
+            chunk_text = chunk.get('chunk_text', '')[:3000]  # Обрезаем слишком длинные фрагменты
         
+            context_parts.append(f"\n📄 {doc_name} (релевантность: {score:.2f}):")
+            context_parts.append(chunk_text)
+    
         return "\n".join(context_parts)
 
 def main():
