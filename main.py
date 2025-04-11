@@ -255,14 +255,17 @@ class BM25SearchEngine:
         st.sidebar.success(f"Загружен индекс с {len(processed_texts)} фрагментами данных")
         return True
 
-    def search(self, query: str, top_n: int = 5) -> List[Dict]:
+    def search(self, query: str, top_n: int = 5, min_score: float = 0.1) -> List[Dict]:
         """Поиск с обработкой ошибок"""
         if not self.is_index_loaded:
             return []
 
+
+        
         try:
-            # Добавляем ключевые слова от LLM к запросу
-            enhanced_query = f"{query} {' '.join(self.llm_keywords)}"
+            # Добавляем дважды ключевые слова от LLM к запросу
+
+            enhanced_query = f"{query} {' '.join(self.llm_keywords * 2)}"
             tokens = self.preprocessor.preprocess(enhanced_query)
             
             if not tokens:
@@ -278,8 +281,11 @@ class BM25SearchEngine:
             if scores is None or len(scores) == 0:
                 return []
 
-            best_indices = np.argsort(scores)[-top_n:][::-1]
+            #best_indices = np.argsort(scores)[-top_n:][::-1]
 
+            best_indices = [idx for idx in np.argsort(scores)[-top_n:][::-1] 
+                           if scores[idx] >= min_score]
+            
             return [
                 {
                     'doc_id': self.chunks_info[idx].get('file_id', ''),
