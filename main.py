@@ -327,7 +327,8 @@ class DocumentAnalyzer:
         context_parts = [
             "=== ЗАГРУЖЕННЫЙ ДОКУМЕНТ ===",
             docx_text,
-            "\n=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ ИЗ БАЗЫ ЗНАНИЙ ==="
+            "\n=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ ИЗ БАЗЫ ЗНАНИЙ ===",
+            chunk_text,
         ]
         
         for chunk in chunks:
