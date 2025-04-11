@@ -628,22 +628,35 @@ class DocumentAnalyzer:
         
         return f"{base_queries[prompt_type]} {docx_text[:10000]}"
 
-    def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
+        def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
         """Строит контекст для LLM из DOCX и найденных фрагментов"""
         context_parts = [
             "=== ЗАГРУЖЕННЫЙ ДОКУМЕНТ ===",
-            docx_text,
-            "\n=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ ИЗ БАЗЫ ЗНАНИЙ ==="
+            docx_text.strip(),
         ]
     
-        for chunk in chunks:
-            # Безопасное извлечение данных с fallback-значениями
-            doc_name = chunk.get('doc_name', 'Без названия')
-            score = chunk.get('score', 0.0)
-            chunk_text = chunk.get('chunk_text', '')[:3000]  # Обрезаем слишком длинные фрагменты
-        
-            context_parts.append(f"\n📄 {doc_name} (релевантность: {score:.2f}):")
-            context_parts.append(chunk_text)
+        # Фильтруем и сортируем чанки
+        relevant_chunks = sorted(
+            [chunk for chunk in chunks if chunk.get('score', 0) > 0.1],  # Фильтр по релевантности
+            key=lambda x: x.get('score', 0),
+            reverse=True
+        )[:5]  # Берем только топ-5 результатов
+    
+        if relevant_chunks:
+            context_parts.append("\n=== ТОП-5 РЕЛЕВАНТНЫХ ФРАГМЕНТОВ ===")
+            for i, chunk in enumerate(relevant_chunks, 1):
+                doc_name = chunk.get('doc_name', 'Документ').strip()
+                score = chunk.get('score', 0)
+                chunk_text = chunk.get('chunk_text', '').strip()[:2000]  # Более строгое ограничение
+            
+                if not chunk_text:  # Пропускаем пустые фрагменты
+                    continue
+                
+                context_parts.append(
+                    f"\n{i}. 📄 {doc_name} (релевантность: {score:.2f}):\n"
+                    f"{chunk_text}\n"
+                    f"{'-'*50}"  # Разделитель для читаемости
+                )
     
         return "\n".join(context_parts)
 
