@@ -579,7 +579,17 @@ def main():
     gif_path = "data/maracas-sombrero-hat.gif"
     st.image(gif_path, caption="Hola!", width=64)
     st.title("El Documente: проверьте свой процессуальный документ")
-    
+    # Добавьте в main()
+    if st.button("Показать примеры из индекса"):
+        if analyzer.search_engine.chunks_info:
+            sample = analyzer.search_engine.chunks_info[0]
+            st.json({
+                "doc_name": sample.get('doc_name'),
+                "original": sample.get('original')[:100] + "...",
+                "processed": sample.get('processed')[:5]
+            })
+        else:
+            st.error("Нет данных в индексе!")
     if 'analyzer' not in st.session_state:
         st.session_state.analyzer = DocumentAnalyzer(API_URL, API_KEY)
     
