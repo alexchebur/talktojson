@@ -333,7 +333,7 @@ class BM25SearchEngine:
             print(f"Критическая ошибка загрузки индекса: {str(e)}")
             return False
 
-    def search(self, query, top_n=10, min_score=0.1):
+    def search(self, query, top_n=10, min_score=0.01):
         if not self.is_index_loaded or not query:
             return []
 
