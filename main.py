@@ -175,9 +175,8 @@ class BM25SearchEngine:
         self.bm25 = None
         self.chunks_info = []
         self.is_index_loaded = False
-        self.cache_path = os.path.join("data", "bm25_index.json")
-        self._load_index()
-        self.llm_keywords = []  # Добавляем список для хранения ключевых слов от LLM
+        self.llm_keywords = []
+        self._load_index()  # Убрали жесткое указание cache_path
         
     def _normalize_processed(self, processed_data: Any) -> List[str]:
         """Нормализует поле processed в единый формат списка токенов"""
@@ -197,89 +196,96 @@ class BM25SearchEngine:
         else:
             return [str(processed_data)]
 
+    def _find_part_files(self) -> List[str]:
+        """Находит все файлы с 'part' в названии в папке data"""
+        data_dir = "data"
+        part_files = []
+        
+        if os.path.exists(data_dir):
+            for filename in os.listdir(data_dir):
+                if "part" in filename.lower() and filename.endswith(".json"):
+                    part_files.append(os.path.join(data_dir, filename))
+        
+        return sorted(part_files)  # Сортируем для предсказуемости
+
     def _load_index(self) -> bool:
-        """Загрузка индекса с проверкой"""
-        # Сначала пробуем загрузить объединенные данные из частей
-        merged_data = merge_json_parts(self.cache_path)
-    
-        if not merged_data:
-            # Если нет разбитых файлов, пробуем загрузить как единый файл
-            if not os.path.exists(self.cache_path):
-                st.sidebar.warning(f"Файл индекса не найден: {self.cache_path}")
+        """Загрузка индекса только из файлов с 'part' в названии"""
+        part_files = self._find_part_files()
+        
+        if not part_files:
+            st.sidebar.error("Не найдены файлы с 'part' в названии в папке data")
+            return False
+        
+        try:
+            # Объединяем все части в памяти
+            merged_data = {'metadata': [], 'processed_files': []}
+            
+            for part_file in part_files:
+                try:
+                    with open(part_file, 'r', encoding='utf-8') as f:
+                        part_data = json.load(f)
+                        
+                    if 'metadata' in part_data:
+                        merged_data['metadata'].extend(part_data['metadata'])
+                    if 'processed_files' in part_data:
+                        merged_data['processed_files'].extend(part_data['processed_files'])
+                        
+                except Exception as e:
+                    st.sidebar.warning(f"Ошибка чтения файла {part_file}: {str(e)}")
+                    continue
+            
+            if not merged_data['metadata']:
+                st.sidebar.error("Объединенные данные не содержат метаданных")
                 return False
-
-            try:
-                merged_data = safe_read_json(self.cache_path)
-            except Exception as e:
-                st.sidebar.error(f"Ошибка загрузки индекса: {str(e)}")
+            
+            # Обрабатываем данные
+            processed_texts = []
+            valid_metadata = []
+            
+            for item in merged_data['metadata']:
+                original_text = item.get('original', '')
+                processed = self._normalize_processed(item.get('processed', []))
+                
+                if not processed and original_text:
+                    processed = self.preprocessor.preprocess(original_text)
+                
+                if processed:
+                    processed_texts.append(processed)
+                    valid_metadata.append(item)
+            
+            if not processed_texts:
+                st.sidebar.error("Нет данных для индексации")
                 return False
-
-     
-        
-        if not isinstance(merged_data, dict):
-            st.sidebar.error("Индекс должен быть словарем")
-            return False
             
-        if 'metadata' not in merged_data:
-            st.sidebar.error("Отсутствует ключ 'metadata' в индексе")
-            return False
-        
-        processed_texts = []
-        valid_metadata = []
-    
-        for i, item in enumerate(merged_data.get('metadata', [])):
-            if not isinstance(item, dict):
-                st.sidebar.warning(f"Пропущен элемент {i} - не является словарем")
-                continue
+            self.bm25 = BM25Okapi(processed_texts)
+            self.chunks_info = valid_metadata
+            self.is_index_loaded = True
             
-            original_text = item.get('original', '')
-            processed = self._normalize_processed(item.get('processed', []))
-        
-            if not processed and original_text:
-                processed = self.preprocessor.preprocess(original_text)
+            st.sidebar.success(
+                f"Загружен индекс из {len(part_files)} файлов, "
+                f"{len(processed_texts)} фрагментов"
+            )
+            return True
             
-            if processed:
-                processed_texts.append(processed)
-                valid_metadata.append(item)
-    
-        if not processed_texts:
-            st.sidebar.error("Индекс не содержит валидных документов")
+        except Exception as e:
+            st.sidebar.error(f"Критическая ошибка загрузки индекса: {str(e)}")
             return False
-    
-        self.bm25 = BM25Okapi(processed_texts)
-        self.chunks_info = valid_metadata
-        self.is_index_loaded = True
-    
-        st.sidebar.success(f"Загружен индекс с {len(processed_texts)} фрагментами данных")
-        return True
 
     def search(self, query: str, top_n: int = 5, min_score: float = 0.1) -> List[Dict]:
         """Поиск с обработкой ошибок"""
         if not self.is_index_loaded:
             return []
 
-
-        
         try:
-            # Добавляем дважды ключевые слова от LLM к запросу
-
             enhanced_query = f"{query} {' '.join(self.llm_keywords * 2)}"
             tokens = self.preprocessor.preprocess(enhanced_query)
             
             if not tokens:
                 return []
 
-            if not hasattr(self.bm25, 'doc_freqs') or len(self.bm25.doc_freqs) == 0:
-                return []
-
-            if len(self.bm25.doc_len) == 0:
-                return []
-
             scores = self.bm25.get_scores(tokens)
             if scores is None or len(scores) == 0:
                 return []
-
-            #best_indices = np.argsort(scores)[-top_n:][::-1]
 
             best_indices = [idx for idx in np.argsort(scores)[-top_n:][::-1] 
                            if scores[idx] >= min_score]
@@ -296,7 +302,7 @@ class BM25SearchEngine:
             ]
         except Exception as e:
             print(f"Ошибка поиска: {e}")
-            return []            
+            return []
 
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
