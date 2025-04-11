@@ -328,7 +328,6 @@ class DocumentAnalyzer:
             "=== ЗАГРУЖЕННЫЙ ДОКУМЕНТ ===",
             docx_text,
             "\n=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ ИЗ БАЗЫ ЗНАНИЙ ===",
-            chunks,
         ]
         
         for chunk in chunks:
