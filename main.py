@@ -628,7 +628,7 @@ class DocumentAnalyzer:
         
         return f"{base_queries[prompt_type]} {docx_text[:10000]}"
 
-        def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
+    def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
         """Строит контекст для LLM из DOCX и найденных фрагментов"""
         context_parts = [
             "=== ЗАГРУЖЕННЫЙ ДОКУМЕНТ ===",
