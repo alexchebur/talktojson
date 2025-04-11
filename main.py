@@ -320,17 +320,17 @@ class BM25SearchEngine:
                     valid_metadata.append(item)
 
             if not corpus:
-                print("Нет данных для индексации после нормализации")
+                st.sidebar.error("Нет данных для индексации после нормализации")
                 return False
 
             self.bm25 = BM25Okapi(corpus, k1=1.2, b=0.6)
             self.chunks_info = valid_metadata
             self.is_index_loaded = True
-            print(f"Индекс успешно загружен. Фрагментов: {len(corpus)}")
+            st.sidebar.info(f"Индекс успешно загружен. Фрагментов: {len(corpus)}")
             return True
 
         except Exception as e:
-            print(f"Критическая ошибка загрузки индекса: {str(e)}")
+            st.sidebar.error(f"Критическая ошибка загрузки индекса: {str(e)}")
             return False
 
     def search(self, query, top_n=10, min_score=0.01):
