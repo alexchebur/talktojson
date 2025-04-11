@@ -28,47 +28,11 @@ MAX_ANSWER_LENGTH = 15000
 TEMPERATURE = 0.2
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# Промпт для генерации ключевых слов
+# Промпт для генерации ключевых слов (упрощенный)
 KEYWORDS_PROMPT = """
-Задача:
-Преобразуй пользовательский запрос в оптимизированную форму для BM25-поиска в базе юридических документов (нормативных документов и образцов процессуальных документов) по ключевым словам и выражениям. Учитывай особенности юридической лексики и следующие требования:
-
-Саммари:
-Сформулируй одним предложением, о чем документ.
-
-Семантическое расширение:
-К десяти самым семантически значимым в запросе словам и выражениям в запросе добавь по 2-3 синонима/близко связанных слова/тождественных по смыслу выражения через ИЛИ:
-"расторжение договора" → "расторжение ИЛИ прекращение ИЛИ аннулирование договора"
-"теплоснабжение" → "поставка тепловой энергии"
-
-Укажи альтернативные формулировки законов:
-"ГК РФ" → "Гражданский кодекс РФ (ГК РФ)"
-
-Контекстуализация:
-Для общих понятий добавь конкретику:
-"нарушение сроков" → "просрочка исполнения обязательств (ст. 395 ГК РФ)"
-Укажи ближайшие смежные правовые аспекты:
-"неустойка" → "неустойка (штраф, пеня)"
-
-Сохранение структуры:
-НЕ ИЗМЕНЯЙ номера статей/документов:
-"ст. 15.25 КоАП" → "статья 15.25 Кодекса об административных правонарушениях (КоАП)"
-Сохраняй специальные обозначения:
-"№ 127-ФЗ" → "Федеральный закон № 127-ФЗ"
-
-Обработка ошибок:
-Исправь очевидные опечатки:
-"Эллектронный документ" → "электронный документ"
-Предложи варианты для неоднозначных терминов:
-"иск" → "исковое заявление (ИСК) ИЛИ индивидуальный инвестиционный счет (ИИС)"
-
-НЕ ПРИДУМЫВАЙ несуществующих нормативных или судебных актов.
-
-Формат вывода:
-Основные термины и выражения (включая исправленные)
-Синонимы через "ИЛИ"
-Уточняющие конструкции в скобках
-Номера документов в полной форме
+Извлеки из текста ключевые юридические термины и выражения, которые точно отражают суть документа.
+Сформируй список из 15-20 наиболее значимых слов и фраз, которые помогут найти релевантные документы в юридической базе.
+Используй только конкретные термины, избегая общих слов.
 """
 
 # Системные промпты
@@ -90,81 +54,6 @@ BUTTON_PROMPTS = {
     "prediction": """Ты - юрист-литигатор в энергетической компании. Оцени правовую ситуацию с точки зрения слабых и сильных мест в позиции энергетической компании, неопределенности каких-либо фактических обстоятельств, недостатков доказательств. Предположи три варианта ответных действий второй стороны после получения процессуального документа энергетической компании, например: [оппонент может пытаться доказывать…], [оппонент может усилить аргументацию в части…], [оппонент попытается опровергать…], с описанием существа действий. Предположи, каков может быть исход дела при неблагоприятном для энергетической компании развитии ситуации."""
 }
 
-def merge_json_parts(base_filename: str) -> dict:
-    """
-    Объединяет части JSON файлов в один словарь в памяти.
-    Возвращает объединенные данные или None в случае ошибки.
-    """
-    try:
-        # Находим все файлы с базовым именем
-        pattern = re.sub(r'_part\d+\.json$', '_part*.json', base_filename)
-        part_files = sorted(glob.glob(pattern))
-        
-        if not part_files:
-            # Если нет разбитых файлов, пробуем загрузить как единый файл
-            single_file = base_filename.replace('_part*.json', '.json')
-            if os.path.exists(single_file):
-                return safe_read_json(single_file)
-            return None
-        
-        merged_data = {'metadata': [], 'processed_files': []}
-        
-        for part_file in part_files:
-            part_data = safe_read_json(part_file)
-            if not part_data:
-                continue
-                
-            # Объединяем метаданные
-            if 'metadata' in part_data and isinstance(part_data['metadata'], list):
-                merged_data['metadata'].extend(part_data['metadata'])
-                
-            # Объединяем processed_files
-            if 'processed_files' in part_data and isinstance(part_data['processed_files'], list):
-                merged_data['processed_files'].extend(part_data['processed_files'])
-        
-        # Удаляем дубликаты
-        merged_data['processed_files'] = list(set(merged_data['processed_files']))
-        
-        return merged_data
-        
-    except Exception as e:
-        print(f"Ошибка при объединении JSON частей: {e}")
-        return None
-
-def safe_read_json(file_path: str) -> dict:
-    """Безопасное чтение JSON с восстановлением"""
-    try:
-        # Создаем резервную копию
-        backup_path = str(Path(file_path).with_suffix('.bak'))
-        shutil.copy2(file_path, backup_path)
-        
-        # Чтение с обработкой BOM
-        with open(file_path, 'rb') as f:
-            content = f.read().decode('utf-8-sig')
-        
-        # Удаление непечатаемых символов
-        content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
-        content = content.replace('\\u0002', '')
-        # Извлечение JSON части
-        start = content.find('{')
-        end = content.rfind('}') + 1
-        
-        if start == -1 or end == 0:
-            raise ValueError("Не найдены JSON-скобки")
-            
-        return json.loads(content[start:end])
-        
-    except Exception as e:
-        st.sidebar.error(f"Ошибка чтения JSON:")
-        # Пробуем прочитать резервную копию
-        if os.path.exists(backup_path):
-            try:
-                with open(backup_path, 'rb') as f:
-                    return json.loads(f.read().decode('utf-8-sig'))
-            except Exception:
-                pass
-        raise
-
 class TextPreprocessor:
     def __init__(self):
         self.regex = re.compile(r'[^\w\s]')
@@ -181,7 +70,7 @@ class BM25SearchEngine:
         self.is_index_loaded = False
         self.cache_path = os.path.join("data", "bm25_index.json")
         self._load_index()
-        self.llm_keywords = []  # Добавляем список для хранения ключевых слов от LLM
+        self.llm_keywords = []
         
     def _normalize_processed(self, processed_data: Any) -> List[str]:
         """Нормализует поле processed в единый формат списка токенов"""
@@ -203,81 +92,62 @@ class BM25SearchEngine:
 
     def _load_index(self) -> bool:
         """Загрузка индекса с проверкой"""
-        # Сначала пробуем загрузить объединенные данные из частей
-        merged_data = merge_json_parts(self.cache_path.replace('.json', '_part*.json'))
-        
-        if not merged_data:
-            # Если нет разбитых файлов, пробуем загрузить как единый файл
-            if not os.path.exists(self.cache_path):
-                st.sidebar.warning(f"Файл индекса не найден: {self.cache_path}")
-                return False
+        if not os.path.exists(self.cache_path):
+            st.sidebar.warning(f"Файл индекса не найден: {self.cache_path}")
+            return False
 
-            try:
-                merged_data = safe_read_json(self.cache_path)
-            except Exception as e:
-                st.sidebar.error(f"Ошибка загрузки индекса: {str(e)}")
+        try:
+            with open(self.cache_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                
+            if not isinstance(data, dict) or 'metadata' not in data:
+                st.sidebar.error("Неверный формат индекса")
                 return False
-        
-        if not isinstance(merged_data, dict):
-            st.sidebar.error("Индекс должен быть словарем")
-            return False
+                
+            processed_texts = []
+            valid_metadata = []
             
-        if 'metadata' not in merged_data:
-            st.sidebar.error("Отсутствует ключ 'metadata' в индексе")
-            return False
-        
-        processed_texts = []
-        valid_metadata = []
-    
-        for i, item in enumerate(merged_data.get('metadata', [])):
-            if not isinstance(item, dict):
-                st.sidebar.warning(f"Пропущен элемент {i} - не является словарем")
-                continue
+            for item in data.get('metadata', []):
+                if not isinstance(item, dict):
+                    continue
+                    
+                original_text = item.get('original', '')
+                processed = self._normalize_processed(item.get('processed', []))
+                
+                if not processed and original_text:
+                    processed = self.preprocessor.preprocess(original_text)
+                
+                if processed:
+                    processed_texts.append(processed)
+                    valid_metadata.append(item)
             
-            original_text = item.get('original', '')
-            processed = self._normalize_processed(item.get('processed', []))
-        
-            if not processed and original_text:
-                processed = self.preprocessor.preprocess(original_text)
+            if not processed_texts:
+                st.sidebar.error("Индекс не содержит валидных документов")
+                return False
             
-            if processed:
-                processed_texts.append(processed)
-                valid_metadata.append(item)
-    
-        if not processed_texts:
-            st.sidebar.error("Индекс не содержит валидных документов")
+            self.bm25 = BM25Okapi(processed_texts)
+            self.chunks_info = valid_metadata
+            self.is_index_loaded = True
+            
+            st.sidebar.success(f"Загружен индекс с {len(processed_texts)} фрагментами данных")
+            return True
+            
+        except Exception as e:
+            st.sidebar.error(f"Ошибка загрузки индекса: {str(e)}")
             return False
-    
-        self.bm25 = BM25Okapi(processed_texts)
-        self.chunks_info = valid_metadata
-        self.is_index_loaded = True
-    
-        st.sidebar.success(f"Загружен индекс с {len(processed_texts)} фрагментами данных")
-        return True
 
-    def search(self, query: str, top_n: int = 5) -> List[Dict]:
-        """Поиск с обработкой ошибок"""
-        if not self.is_index_loaded:
+    def search(self, keywords: List[str], top_n: int = 5) -> List[Dict]:
+        """Поиск только по ключевым словам от LLM"""
+        if not self.is_index_loaded or not keywords:
             return []
 
         try:
-            # Добавляем ключевые слова от LLM к запросу
-            enhanced_query = f"{query} {' '.join(self.llm_keywords)}"
-            tokens = self.preprocessor.preprocess(enhanced_query)
+            tokens = self.preprocessor.preprocess(' '.join(keywords))
             
             if not tokens:
                 return []
 
-            if not hasattr(self.bm25, 'doc_freqs') or len(self.bm25.doc_freqs) == 0:
-                return []
-
-            if len(self.bm25.doc_len) == 0:
-                return []
-
             scores = self.bm25.get_scores(tokens)
-            if scores is None or len(scores) == 0:
-                return []
-
             best_indices = np.argsort(scores)[-top_n:][::-1]
 
             return [
@@ -292,7 +162,7 @@ class BM25SearchEngine:
             ]
         except Exception as e:
             print(f"Ошибка поиска: {e}")
-            return []            
+            return []
 
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
@@ -366,25 +236,25 @@ class DocumentAnalyzer:
             
         try:
             messages = [
-                {"role": "system", "content": "Ты - эксперт по юридической терминологии. Определи существо спора, подготовь но саммари с цитированием правовых актов и составь список из 10 ключевых слов (один синоним на каждое слово) и десяти синонимичных по смыслу коротких выражений по этому саммари."},
+                {"role": "system", "content": "Ты - эксперт по юридической терминологии. Извлеки ключевые слова из текста."},
                 {"role": "user", "content": f"{KEYWORDS_PROMPT}\n\nТекст для анализа:\n{text[:10000]}"}
             ]
             
             response = self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
             
-            # Обработка ответа и извлечение ключевых слов
+            # Обработка ответа - извлекаем только ключевые слова
             keywords = []
             for line in response.split('\n'):
-                if '→' in line:  # Обрабатываем строки с синонимами
-                    parts = line.split('→')
-                    for part in parts:
-                        keywords.extend(re.findall(r'[\w\-]+', part.strip()))
-                else:
-                    keywords.extend(re.findall(r'[\w\-]+', line.strip()))
+                # Удаляем маркеры списка и лишние символы
+                clean_line = re.sub(r'^[\d\-•>*]+', '', line).strip()
+                if clean_line:
+                    # Разбиваем на отдельные слова/фразы
+                    words = re.findall(r'[\w\-]+(?:\s+[\w\-]+)*', clean_line.lower())
+                    keywords.extend(words)
             
-            # Удаляем дубликаты и пустые значения
-            keywords = list(set(k.lower() for k in keywords if k.strip()))
-            return keywords
+            # Удаляем дубликаты и слишком короткие слова
+            keywords = list(set(k for k in keywords if len(k) > 2))
+            return keywords[:20]  # Ограничиваем количество ключевых слов
             
         except Exception as e:
             print(f"Ошибка генерации ключевых слов: {e}")
@@ -403,19 +273,15 @@ class DocumentAnalyzer:
                 self.search_engine.llm_keywords = self._generate_keywords_from_text(docx_text)
                 st.sidebar.info(f"Сгенерированные ключевые слова: {', '.join(self.search_engine.llm_keywords)}")
         
-        query = self._generate_search_query(prompt_type, docx_text)
-        chunks = self.search_engine.search(query)
+        # Поиск ТОЛЬКО по ключевым словам
+        chunks = self.search_engine.search(self.search_engine.llm_keywords)
         context = self._build_context(docx_text, chunks)
         
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + f"\n\nВес контента: {st.session_state.doc_weight_slider:.1f}\n\nКОНТЕКСТ:\n" + context}
+            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + f"\n\nКОНТЕКСТ:\n" + context}
         ]
 
-        st.sidebar.header("Итоговый запрос к LLM")
-        st.sidebar.markdown("### Запрос пользователя:")
-        st.sidebar.markdown(BUTTON_PROMPTS[prompt_type] + f"\n\nВес контента: {st.session_state.doc_weight_slider:.1f}\n\nКОНТЕКСТ:\n" + context)
-        
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
     def load_documents(self, uploaded_files) -> None:
@@ -456,16 +322,6 @@ class DocumentAnalyzer:
         except Exception as e:
             st.error(f"Общая ошибка при загрузке документов: {str(e)}")
 
-    def _generate_search_query(self, prompt_type: str, docx_text: str) -> str:
-        """Генерирует поисковый запрос для BM25"""
-        base_queries = {
-            "quality": "оценка качества документа структура аргументации доказательства нормы права",
-            "strategy": "стратегия спора доказательства процессуальное поведение",
-            "prediction": "позиция второй стороны прогнозирование аргументы оппонента"
-        }
-        
-        return f"{base_queries[prompt_type]} {docx_text[:10000]}"
-
     def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
         """Строит контекст для LLM из DOCX и найденных фрагментов"""
         context_parts = [
@@ -482,29 +338,12 @@ class DocumentAnalyzer:
 
 def main():
     st.set_page_config(page_title="El Documente", layout="wide", initial_sidebar_state="collapsed")
-    gif_path = "data/maracas-sombrero-hat.gif"
-    st.image(gif_path, caption="Hola!", width=64)
     st.title("El Documente: проверьте свой процессуальный документ")
     
     if 'analyzer' not in st.session_state:
         st.session_state.analyzer = DocumentAnalyzer(API_URL, API_KEY)
     
     analyzer = st.session_state.analyzer
-    
-    st.sidebar.header("Настройки поиска")
-    col1, col2 = st.sidebar.columns([3, 1])
-    with col1:
-        weight = st.slider(
-            "Вес контента документа",
-            0.1, 1.0, 0.7, 0.1,
-            key="doc_weight_slider",
-            help="Регулирует влияние текста документа на результаты поиска"
-        )
-
-    with col2:
-        st.metric("Текущее значение", f"{weight:.1f}")
-
-    st.sidebar.write(f"Выбрано значение: {weight}")
     
     if not analyzer.llm_initialized:
         st.sidebar.error("LLM не инициализирован. Проверьте API ключ и URL")
@@ -520,48 +359,6 @@ def main():
         with st.spinner("Обработка документов..."):
             analyzer.load_documents(uploaded_files)
         st.success(f"Загружено документов: {len(uploaded_files)}")
-
-    CHAT_TEMPERATURE = 0.6
-    CHAT_SYSTEM_PROMPT = """Ты - опытный дружелюбный юрист энергетической компании, отвечающий на правовые вопросы. ЗАПРЕЩЕНО:  1. ссылаться на выдуманные законы и судебную практику. 2. указывать в ответе, что ты ознакомился с документ, просто поддерживай диалог. Ответы излагай в деловом стиле, без категорических мнений."""
-
-    st.header("Чат")
-
-    user_input = st.text_area(
-        "Обсудить с наставником Карлосом",
-        max_chars=500,
-        height=100
-    )
-
-    ask_button = st.button("Спросить", disabled=not (uploaded_files))# and user_input))
-
-    if 'docx_added' not in st.session_state:
-        st.session_state.docx_added = False
-
-    if ask_button:
-        # 1. Готовим контекст
-        doc_summary = analyzer.current_docx["content"][:3000]  # или используйте суммаризацию
-        relevant_chunks = analyzer.search_engine.search(user_input)
-    
-        # 2. Формируем сообщения с разделением ролей
-        messages = [
-            {"role": "system", "content": CHAT_SYSTEM_PROMPT},
-            {"role": "assistant", "content": f"Анализируемый документ (сокращённо):\n{doc_summary}"},
-            *[
-                {"role": "assistant", "content": f"Релевантный фрагмент ({chunk['doc_name']}):\n{chunk['chunk_text'][:800]}"}
-                for chunk in relevant_chunks[:2]  # Только топ-2 фрагмента
-            ],
-            {"role": "user", "content": f"Диалог:\n{'\n'.join(st.session_state.get('chat_history', []))[-2:]}"},
-            {"role": "user", "content": user_input}
-        ]
-    
-        # 3. Отправка запроса
-        response = analyzer.llm_client.query(messages, temperature=0.7, max_tokens=1500)
-        response_container = st.empty()
-        response_container.markdown("### Ответ от Карлоса")
-        response_container.markdown(response)
-        # 4. Сохраняем историю
-        st.session_state.setdefault('chat_history', []).extend([user_input, response])
-
 
     st.header("Анализ документа")
     col1, col2, col3 = st.columns(3)
