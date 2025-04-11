@@ -93,31 +93,46 @@ BUTTON_PROMPTS = {
 
 def merge_json_parts(base_filename: str) -> dict:
     """
-    Объединяет части JSON файлов в один словарь в памяти.
+    Объединяет части JSON файлов в один словарь в памяти в порядке номеров частей.
     Возвращает объединенные данные или None в случае ошибки.
     """
     try:
-        # Находим все файлы с базовым именем
-        pattern = re.sub(r'(_part\d+)?\.json$', '_part*.json', base_filename)
-        part_files = sorted(glob.glob(pattern))
+        # Извлекаем базовое имя без номера части
+        base_name = re.sub(r'_part\d+', '', base_filename)
+        base_name = re.sub(r'\.json$', '', base_name)
+        
+        # Находим все соответствующие файлы
+        pattern = os.path.join(DATA_DIR, f"{base_name}_part*.json")
+        part_files = glob.glob(pattern)
         
         if not part_files:
             return None
         
+        # Сортируем файлы по номеру части
+        def get_part_number(filename):
+            match = re.search(r'_part(\d+)\.json$', filename)
+            return int(match.group(1)) if match else 0
+            
+        part_files = sorted(part_files, key=get_part_number)
+        
         merged_data = {'metadata': [], 'processed_files': []}
         
         for part_file in part_files:
-            part_data = safe_read_json(part_file)
-            if not part_data:
+            try:
+                part_data = safe_read_json(part_file)
+                if not part_data:
+                    continue
+                    
+                # Объединяем метаданные
+                if 'metadata' in part_data and isinstance(part_data['metadata'], list):
+                    merged_data['metadata'].extend(part_data['metadata'])
+                    
+                # Объединяем processed_files
+                if 'processed_files' in part_data and isinstance(part_data['processed_files'], list):
+                    merged_data['processed_files'].extend(part_data['processed_files'])
+            except Exception as e:
+                print(f"Ошибка при обработке файла {part_file}: {e}")
                 continue
-                
-            # Объединяем метаданные
-            if 'metadata' in part_data and isinstance(part_data['metadata'], list):
-                merged_data['metadata'].extend(part_data['metadata'])
-                
-            # Объединяем processed_files
-            if 'processed_files' in part_data and isinstance(part_data['processed_files'], list):
-                merged_data['processed_files'].extend(part_data['processed_files'])
         
         # Удаляем дубликаты
         merged_data['processed_files'] = list(set(merged_data['processed_files']))
