@@ -416,27 +416,46 @@ class BM25SearchEngine:
             print(f"Критическая ошибка загрузки индекса: {str(e)}")
             return False
 
-    def search(self, query, top_n=10, min_score=0.2):  # было 0.1
-        """Поиск по индексу"""
+    def search(self, query, top_n=10, min_score=0.1):
         if not self.is_index_loaded or not query:
             return []
 
-        # Улучшаем запрос сгенерированными ключевыми словами
-        enhanced_query = f"{query} {' '.join(self.llm_keywords * 2)}" if self.llm_keywords else query
-        tokens = self.preprocessor.preprocess(enhanced_query)
+        tokens = self.preprocessor.preprocess(query)
         if not tokens:
             return []
 
         scores = self.bm25.get_scores(tokens)
-        best_indices = [idx for idx in np.argsort(scores)[-top_n:][::-1] 
-                       if scores[idx] >= min_score and idx < len(self.chunks_info)]
+    
+        # Сбор всех подходящих результатов
+        results = []
+        for idx, score in enumerate(scores):
+            if score >= min_score and idx < len(self.chunks_info):
+                results.append({
+                    'doc_id': self.chunks_info[idx].get('file_id', ''),
+                    'doc_name': self.chunks_info[idx].get('doc_name', 'Документ'),
+                    'chunk_text': self.chunks_info[idx].get('original', '')[:2000],
+                    'score': round(float(score), 4)
+                })
+    
+        # Группировка по документам
+        grouped = {}
+        for res in sorted(results, key=lambda x: x['score'], reverse=True):
+            doc_id = res['doc_id']
+            if doc_id not in grouped:
+                grouped[doc_id] = {
+                    'doc_id': doc_id,
+                    'doc_name': res['doc_name'],
+                    'chunks': [],
+                    'total_score': 0
+                }
+            if len(grouped[doc_id]['chunks']) < 3:  # Берем топ-3 чанка из документа
+                grouped[doc_id]['chunks'].append(res)
+                grouped[doc_id]['total_score'] += res['score']
+    
+        # Сортировка по total_score и выбор топ-N документов
+        return sorted(grouped.values(), key=lambda x: x['total_score'], reverse=True)[:top_n]
 
-        return [{
-            'doc_id': self.chunks_info[idx].get('file_id', ''),
-            'doc_name': self.chunks_info[idx].get('doc_name', 'Документ'),
-            'chunk_text': self.chunks_info[idx].get('original', '')[:2000],
-            'score': round(float(scores[idx]), 4)
-        } for idx in best_indices]
+
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
         self.api_url = api_url
