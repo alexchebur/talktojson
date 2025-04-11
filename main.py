@@ -97,14 +97,10 @@ def merge_json_parts(base_filename: str) -> dict:
     """
     try:
         # Находим все файлы с базовым именем
-        pattern = re.sub(r'_part\d+\.json$', '_part*.json', base_filename)
+        pattern = re.sub(r'(_part\d+)?\.json$', '_part*.json', base_filename)
         part_files = sorted(glob.glob(pattern))
         
         if not part_files:
-            # Если нет разбитых файлов, пробуем загрузить как единый файл
-            single_file = base_filename.replace('_part*.json', '.json')
-            if os.path.exists(single_file):
-                return safe_read_json(single_file)
             return None
         
         merged_data = {'metadata': [], 'processed_files': []}
@@ -204,8 +200,8 @@ class BM25SearchEngine:
     def _load_index(self) -> bool:
         """Загрузка индекса с проверкой"""
         # Сначала пробуем загрузить объединенные данные из частей
-        merged_data = merge_json_parts(self.cache_path.replace('.json', '_part*.json'))
-        
+        merged_data = merge_json_parts(self.cache_path)
+    
         if not merged_data:
             # Если нет разбитых файлов, пробуем загрузить как единый файл
             if not os.path.exists(self.cache_path):
@@ -217,6 +213,8 @@ class BM25SearchEngine:
             except Exception as e:
                 st.sidebar.error(f"Ошибка загрузки индекса: {str(e)}")
                 return False
+
+     
         
         if not isinstance(merged_data, dict):
             st.sidebar.error("Индекс должен быть словарем")
