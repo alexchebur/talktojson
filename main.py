@@ -538,7 +538,7 @@ class DocumentAnalyzer:
         ]
     
         relevant_chunks = sorted(
-            [chunk for chunk in chunks if chunk.get('score', 0) > 0.05],
+            [chunk for chunk in chunks if chunk.get('score', 0) > 0.01],
             key=lambda x: x.get('score', 0),
             reverse=True
         )[:5]
