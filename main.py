@@ -30,7 +30,6 @@ TEMPERATURE = 0.2
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # Промпт для генерации ключевых слов
-
 KEYWORDS_PROMPT = """
 Извлеки 10-15 ключевых юридических терминов из текста, включая:
 - Названия законов (ГК РФ, КоАП и т.д.).
@@ -38,48 +37,6 @@ KEYWORDS_PROMPT = """
 - Конкретные правовые понятия ("неустойка", "просрочка исполнения").
 Формат: список терминов в нижнем регистре, разделенных запятыми.
 """
-
-#KEYWORDS_PROMPT = """
-#Задача:
-#Преобразуй пользовательский запрос в оптимизированную форму для BM25-поиска в базе юридических документов (нормативных документов и образцов процессуальных документов) по ключевым словам и выражениям. Учитывай особенности юридической лексики и следующие требования:
-
-#Саммари:
-#Сформулируй одним предложением, о чем документ.
-
-#Семантическое расширение:
-#К десяти самым семантически значимым в запросе словам и выражениям в запросе добавь по 2-3 синонима/близко связанных слова/тождественных по смыслу выражения через ИЛИ:
-#"расторжение договора" → "расторжение ИЛИ прекращение ИЛИ аннулирование договора"
-#"теплоснабжение" → "поставка тепловой энергии"
-
-#Укажи альтернативные формулировки законов:
-#"ГК РФ" → "Гражданский кодекс РФ (ГК РФ)"
-
-#Контекстуализация:
-#Для общих понятий добавь конкретику:
-#"нарушение сроков" → "просрочка исполнения обязательств (ст. 395 ГК РФ)"
-#Укажи ближайшие смежные правовые аспекты:
-#"неустойка" → "неустойка (штраф, пеня)"
-
-#Сохранение структуры:
-#НЕ ИЗМЕНЯЙ номера статей/документов:
-#"ст. 15.25 КоАП" → "статья 15.25 Кодекса об административных правонарушениях (КоАП)"
-#Сохраняй специальные обозначения:
-#"№ 127-ФЗ" → "Федеральный закон № 127-ФЗ"
-
-#Обработка ошибок:
-#Исправь очевидные опечатки:
-#"Эллектронный документ" → "электронный документ"
-#Предложи варианты для неоднозначных терминов:
-#"иск" → "исковое заявление (ИСК) ИЛИ индивидуальный инвестиционный счет (ИИС)"
-
-#НЕ ПРИДУМЫВАЙ несуществующих нормативных или судебных актов.
-
-#Формат вывода:
-#Основные термины и выражения (включая исправленные)
-#Синонимы через "ИЛИ"
-#Уточняющие конструкции в скобках
-#Номера документов в полной форме
-#"""
 
 # Системные промпты
 SYSTEM_PROMPT = """Ты - профессиональный опытный юрист-литигатор из энергетической компании. Ты можешь критически оценивать
@@ -106,11 +63,9 @@ def merge_json_parts(base_filename: str) -> dict:
     Возвращает объединенные данные или None в случае ошибки.
     """
     try:
-        # Извлекаем базовое имя без номера части
         base_name = re.sub(r'_part\d+', '', base_filename)
         base_name = re.sub(r'\.json$', '', base_name)
         
-        # Находим все соответствующие файлы
         pattern = os.path.join(DATA_DIR, f"{base_name}_part*.json")
         part_files = glob.glob(pattern)
         
@@ -118,7 +73,6 @@ def merge_json_parts(base_filename: str) -> dict:
             print(f"Не найдены файлы по шаблону: {pattern}")
             return None
         
-        # Сортируем файлы по номеру части
         def get_part_number(filename):
             match = re.search(r'_part(\d+)\.json$', filename)
             return int(match.group(1)) if match else 0
@@ -138,12 +92,10 @@ def merge_json_parts(base_filename: str) -> dict:
                     print(f"Файл {part_file} не содержит данных или не может быть прочитан")
                     continue
                     
-                # Объединяем метаданные
                 if 'metadata' in part_data and isinstance(part_data['metadata'], list):
                     merged_data['metadata'].extend(part_data['metadata'])
                     success_count += 1
                     
-                # Объединяем processed_files
                 if 'processed_files' in part_data and isinstance(part_data['processed_files'], list):
                     merged_data['processed_files'].extend(part_data['processed_files'])
                 
@@ -155,7 +107,6 @@ def merge_json_parts(base_filename: str) -> dict:
             print("Нет данных metadata для объединения")
             return None
             
-        # Удаляем дубликаты
         merged_data['processed_files'] = list(set(merged_data['processed_files']))
         print(f"Успешно объединено {success_count}/{len(part_files)} файлов")
         
@@ -168,32 +119,25 @@ def merge_json_parts(base_filename: str) -> dict:
 def safe_read_json(file_path: str) -> dict:
     """Безопасное чтение JSON с восстановлением и обработкой ошибок"""
     try:
-        # Создаем резервную копию перед любыми изменениями
         backup_path = str(Path(file_path).with_suffix('.bak'))
         shutil.copy2(file_path, backup_path)
         
-        # Чтение файла с обработкой BOM (Byte Order Mark)
         with open(file_path, 'rb') as f:
             content_bytes = f.read()
         
-        # Попробуем декодировать как utf-8-sig (автоматически убирает BOM)
         try:
             content = content_bytes.decode('utf-8-sig')
         except UnicodeDecodeError:
-            # Если не utf-8, пробуем другие кодировки
             try:
                 content = content_bytes.decode('cp1251')
             except UnicodeDecodeError:
                 content = content_bytes.decode('latin-1')
         
-        # Удаляем нулевые байты и другие непечатаемые символы
         content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
         
-        # Удаляем BOM, если остался
         if content.startswith('\ufeff'):
             content = content[1:]
         
-        # Пытаемся найти начало и конец JSON
         start = content.find('{')
         end = content.rfind('}') + 1
         
@@ -201,29 +145,22 @@ def safe_read_json(file_path: str) -> dict:
             raise ValueError("Не найдены JSON-скобки")
         
         json_content = content[start:end]
-        
-        # Удаляем завершающие запятые перед } или ]
         json_content = re.sub(r',\s*([}\]])', r'\1', json_content)
         
-        # Пытаемся загрузить JSON
         try:
             return json.loads(json_content)
         except json.JSONDecodeError as e:
-            # Если не получилось, пробуем восстановить
             try:
-                # Удаляем все, что после последней закрывающей скобки
                 last_brace = json_content.rfind('}')
                 if last_brace != -1:
                     json_content = json_content[:last_brace+1]
                 
-                # Удаляем все, что перед первой открывающей скобкой
                 first_brace = json_content.find('{')
                 if first_brace != -1:
                     json_content = json_content[first_brace:]
                 
                 return json.loads(json_content)
             except json.JSONDecodeError:
-                # Если все еще ошибка, пробуем прочитать резервную копию
                 if os.path.exists(backup_path):
                     with open(backup_path, 'rb') as f:
                         backup_content = f.read().decode('utf-8-sig')
@@ -249,7 +186,7 @@ class BM25SearchEngine:
         self.chunks_info = []
         self.is_index_loaded = False
         self.llm_keywords = []
-        self.data_dir = "data"  # Папка с файлами индекса
+        self.data_dir = "data"
         self._load_index()
 
     def _find_part_files(self):
@@ -265,7 +202,6 @@ class BM25SearchEngine:
                     full_path = os.path.join(self.data_dir, filename)
                     part_files.append(full_path)
 
-            # Сортируем файлы по номеру части
             def extract_part_number(f):
                 match = re.search(r'_part(\d+)\.json$', f, re.IGNORECASE)
                 return int(match.group(1)) if match else 0
@@ -277,30 +213,24 @@ class BM25SearchEngine:
 
     def _normalize_processed(self, processed_data):
         """Нормализует processed данные для индексации с фильтрацией организаций"""
-        # Список для фильтрации (можно вынести в константы класса)
         STOP_ORGANIZATIONS = [
             "ПАО Т Плюс", "АО ЕТК", "Екатеринбургская теплосетевая компания",
-            "Т Плюс", "ЕТК", "AO ETK"  # разные варианты написания
+            "Т Плюс", "ЕТК", "AO ETK"
         ]
     
-        # Обработка None и пустых значений
         if not processed_data:
             return []
 
-        # Если данные в JSON-строке - пробуем распарсить
         if isinstance(processed_data, str):
             try:
                 processed_data = json.loads(processed_data)
             except json.JSONDecodeError:
-                pass  # продолжим обработку как строку
+                pass
 
-        # Преобразование в строку (если не строка и не список)
         if not isinstance(processed_data, (str, list)):
             processed_data = str(processed_data)
 
-        # Обработка списка
         if isinstance(processed_data, list):
-            # Фильтрация и нормализация элементов списка
             cleaned_items = []
             for item in processed_data:
                 if not item:
@@ -308,7 +238,6 @@ class BM25SearchEngine:
                 
                 item_str = str(item).strip()
             
-                # Удаляем названия организаций
                 for org in STOP_ORGANIZATIONS:
                     item_str = item_str.replace(org, "")
                 
@@ -317,35 +246,28 @@ class BM25SearchEngine:
                 
             return self.preprocessor.preprocess(" ".join(cleaned_items))
 
-        # Обработка строки
         if isinstance(processed_data, str):
-            # Удаляем названия организаций
             for org in STOP_ORGANIZATIONS:
                 processed_data = processed_data.replace(org, "")
             
-            # Удаляем email-адреса и телефоны (если мешают)
-            processed_data = re.sub(r'\S+@\S+', '', processed_data)  # emails
-            processed_data = re.sub(r'[\+\(\)\d\-]{6,}', '', processed_data)  # телефоны
+            processed_data = re.sub(r'\S+@\S+', '', processed_data)
+            processed_data = re.sub(r'[\+\(\)\d\-]{6,}', '', processed_data)
         
             return self.preprocessor.preprocess(processed_data)
 
-        return []  # fallback
+        return []
 
     def _read_json_with_recovery(self, file_path):
         """Чтение JSON с восстановлением при ошибках"""
         try:
-            # Чтение с обработкой BOM
             with open(file_path, 'rb') as f:
                 content = f.read().decode('utf-8-sig')
 
-            # Удаление непечатаемых символов
             content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
             
-            # Попытка стандартного чтения
             try:
                 return json.loads(content)
             except json.JSONDecodeError:
-                # Попробуем восстановить структуру
                 start = content.find('{')
                 end = content.rfind('}') + 1
                 if start >= 0 and end > 0:
@@ -371,15 +293,12 @@ class BM25SearchEngine:
                     if not file_data:
                         continue
 
-                    # Обработка metadata
                     if 'metadata' in file_data and isinstance(file_data['metadata'], list):
                         for item in file_data['metadata']:
                             if isinstance(item, dict) and 'original' in item:
-                                # Нормализуем processed данные
                                 item['processed'] = self._normalize_processed(item.get('processed', ''))
                                 merged_data['metadata'].append(item)
 
-                    # Обработка processed_files
                     if 'processed_files' in file_data and isinstance(file_data['processed_files'], list):
                         merged_data['processed_files'].update(file_data['processed_files'])
 
@@ -391,7 +310,6 @@ class BM25SearchEngine:
                 print("Нет данных для построения индекса")
                 return False
 
-            # Построение индекса BM25
             corpus = []
             valid_metadata = []
             
@@ -405,8 +323,7 @@ class BM25SearchEngine:
                 print("Нет данных для индексации после нормализации")
                 return False
 
-            #self.bm25 = BM25Okapi(corpus)
-            self.bm25 = BM25Okapi(corpus, k1=1.2, b=0.6)  # в методе _load_index
+            self.bm25 = BM25Okapi(corpus, k1=1.2, b=0.6)
             self.chunks_info = valid_metadata
             self.is_index_loaded = True
             print(f"Индекс успешно загружен. Фрагментов: {len(corpus)}")
@@ -426,7 +343,6 @@ class BM25SearchEngine:
 
         scores = self.bm25.get_scores(tokens)
     
-        # Сбор всех подходящих результатов
         results = []
         for idx, score in enumerate(scores):
             if score >= min_score and idx < len(self.chunks_info):
@@ -437,7 +353,6 @@ class BM25SearchEngine:
                     'score': round(float(score), 4)
                 })
     
-        # Группировка по документам
         grouped = {}
         for res in sorted(results, key=lambda x: x['score'], reverse=True):
             doc_id = res['doc_id']
@@ -448,13 +363,11 @@ class BM25SearchEngine:
                     'chunks': [],
                     'total_score': 0
                 }
-            if len(grouped[doc_id]['chunks']) < 3:  # Берем топ-3 чанка из документа
+            if len(grouped[doc_id]['chunks']) < 3:
                 grouped[doc_id]['chunks'].append(res)
                 grouped[doc_id]['total_score'] += res['score']
     
-        # Сортировка по total_score и выбор топ-N документов
         return sorted(grouped.values(), key=lambda x: x['total_score'], reverse=True)[:top_n]
-
 
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
@@ -534,17 +447,15 @@ class DocumentAnalyzer:
             
             response = self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
             
-            # Обработка ответа и извлечение ключевых слов
             keywords = []
             for line in response.split('\n'):
-                if '→' in line:  # Обрабатываем строки с синонимами
+                if '→' in line:
                     parts = line.split('→')
                     for part in parts:
                         keywords.extend(re.findall(r'[\w\-]+', part.strip()))
                 else:
                     keywords.extend(re.findall(r'[\w\-]+', line.strip()))
             
-            # Удаляем дубликаты и пустые значения
             keywords = list(set(k.lower() for k in keywords if k.strip()))
             return keywords
             
@@ -565,18 +476,19 @@ class DocumentAnalyzer:
                 self.search_engine.llm_keywords = self._generate_keywords_from_text(docx_text)
                 st.sidebar.info(f"Сгенерированные ключевые слова: {', '.join(self.search_engine.llm_keywords)}")
         
-        query = self._generate_search_query(prompt_type, docx_text)
+        # Используем только ключевые слова для поиска
+        query = " ".join(self.search_engine.llm_keywords)
         chunks = self.search_engine.search(query)
         context = self._build_context(docx_text, chunks)
         
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + f"\n\nВес контента: {st.session_state.doc_weight_slider:.1f}\n\nКОНТЕКСТ:\n" + context}
+            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + f"\n\nКОНТЕКСТ:\n" + context}
         ]
 
         st.sidebar.header("Итоговый запрос к LLM")
         st.sidebar.markdown("### Запрос пользователя:")
-        st.sidebar.markdown(BUTTON_PROMPTS[prompt_type] + f"\n\nВес контента: {st.session_state.doc_weight_slider:.1f}\n\nКОНТЕКСТ:\n" + context)
+        st.sidebar.markdown(BUTTON_PROMPTS[prompt_type] + f"\n\nКОНТЕКСТ:\n" + context)
         
         return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
 
@@ -618,16 +530,6 @@ class DocumentAnalyzer:
         except Exception as e:
             st.error(f"Общая ошибка при загрузке документов: {str(e)}")
 
-    def _generate_search_query(self, prompt_type: str, docx_text: str) -> str:
-        """Генерирует поисковый запрос для BM25"""
-        base_queries = {
-            "quality": "оценка качества документа структура аргументации доказательства нормы права",
-            "strategy": "стратегия спора доказательства процессуальное поведение",
-            "prediction": "позиция второй стороны прогнозирование аргументы оппонента"
-        }
-        
-        return f"{base_queries[prompt_type]} {docx_text[:10000]}"
-
     def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
         """Строит контекст для LLM из DOCX и найденных фрагментов"""
         context_parts = [
@@ -635,27 +537,26 @@ class DocumentAnalyzer:
             docx_text.strip(),
         ]
     
-        # Фильтруем и сортируем чанки
         relevant_chunks = sorted(
-            [chunk for chunk in chunks if chunk.get('score', 0) > 0.05],  # Фильтр по релевантности
+            [chunk for chunk in chunks if chunk.get('score', 0) > 0.05],
             key=lambda x: x.get('score', 0),
             reverse=True
-        )[:5]  # Берем только топ-5 результатов
+        )[:5]
     
         if relevant_chunks:
             context_parts.append("\n=== ТОП-5 РЕЛЕВАНТНЫХ ФРАГМЕНТОВ ===")
             for i, chunk in enumerate(relevant_chunks, 1):
                 doc_name = chunk.get('doc_name', 'Документ').strip()
                 score = chunk.get('score', 0)
-                chunk_text = chunk.get('chunk_text', '').strip()[:2000]  # Более строгое ограничение
+                chunk_text = chunk.get('chunk_text', '').strip()[:2000]
             
-                if not chunk_text:  # Пропускаем пустые фрагменты
+                if not chunk_text:
                     continue
                 
                 context_parts.append(
                     f"\n{i}. 📄 {doc_name} (релевантность: {score:.2f}):\n"
                     f"{chunk_text}\n"
-                    f"{'-'*50}"  # Разделитель для читаемости
+                    f"{'-'*50}"
                 )
     
         return "\n".join(context_parts)
@@ -672,19 +573,6 @@ def main():
     analyzer = st.session_state.analyzer
     
     st.sidebar.header("Настройки поиска")
-    col1, col2 = st.sidebar.columns([3, 1])
-    with col1:
-        weight = st.slider(
-            "Вес контента документа",
-            0.1, 1.0, 0.7, 0.1,
-            key="doc_weight_slider",
-            help="Регулирует влияние текста документа на результаты поиска"
-        )
-
-    with col2:
-        st.metric("Текущее значение", f"{weight:.1f}")
-
-    st.sidebar.write(f"Выбрано значение: {weight}")
     
     if not analyzer.llm_initialized:
         st.sidebar.error("LLM не инициализирован. Проверьте API ключ и URL")
@@ -712,34 +600,30 @@ def main():
         height=100
     )
 
-    ask_button = st.button("Спросить", disabled=not (uploaded_files))# and user_input))
+    ask_button = st.button("Спросить", disabled=not (uploaded_files))
 
     if 'docx_added' not in st.session_state:
         st.session_state.docx_added = False
 
     if ask_button:
-        # 1. Готовим контекст
-        doc_summary = analyzer.current_docx["content"][:3000]  # или используйте суммаризацию
+        doc_summary = analyzer.current_docx["content"][:3000]
         relevant_chunks = analyzer.search_engine.search(user_input)
     
-        # 2. Формируем сообщения с разделением ролей
         messages = [
             {"role": "system", "content": CHAT_SYSTEM_PROMPT},
             {"role": "assistant", "content": f"Анализируемый документ (сокращённо):\n{doc_summary}"},
             *[
                 {"role": "assistant", "content": f"Релевантный фрагмент ({chunk['doc_name']}):\n{chunk['chunk_text'][:800]}"}
-                for chunk in relevant_chunks[:2]  # Только топ-2 фрагмента
+                for chunk in relevant_chunks[:2]
             ],
             {"role": "user", "content": f"Диалог:\n{'\n'.join(st.session_state.get('chat_history', []))[-2:]}"},
             {"role": "user", "content": user_input}
         ]
     
-        # 3. Отправка запроса
         response = analyzer.llm_client.query(messages, temperature=0.7, max_tokens=1500)
         response_container = st.empty()
         response_container.markdown("### Ответ от Карлоса")
         response_container.markdown(response)
-        # 4. Сохраняем историю
         st.session_state.setdefault('chat_history', []).extend([user_input, response])
 
 
