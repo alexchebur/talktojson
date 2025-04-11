@@ -530,6 +530,8 @@ class DocumentAnalyzer:
         except Exception as e:
             st.error(f"Общая ошибка при загрузке документов: {str(e)}")
 
+# ... (предыдущий код остается без изменений до метода _build_context)
+
     def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
         """Строит контекст для LLM из DOCX и найденных фрагментов"""
         context_parts = [
@@ -537,30 +539,41 @@ class DocumentAnalyzer:
             docx_text.strip(),
         ]
     
+        # Извлекаем релевантные чанки для отображения в сайдбаре
         relevant_chunks = sorted(
             [chunk for chunk in chunks if chunk.get('score', 0) > 0.01],
             key=lambda x: x.get('score', 0),
             reverse=True
         )[:5]
-    
+        
+        # Добавляем отображение релевантных чанков в сайдбар
+        st.sidebar.header("Релевантные фрагменты из базы знаний")
         if relevant_chunks:
-            context_parts.append("\n=== ТОП-5 РЕЛЕВАНТНЫХ ФРАГМЕНТОВ ===")
             for i, chunk in enumerate(relevant_chunks, 1):
                 doc_name = chunk.get('doc_name', 'Документ').strip()
                 score = chunk.get('score', 0)
                 chunk_text = chunk.get('chunk_text', '').strip()[:2000]
-            
+                
                 if not chunk_text:
                     continue
                 
+                st.sidebar.markdown(f"**{i}. {doc_name}** (релевантность: {score:.2f})")
+                st.sidebar.markdown(f"> {chunk_text[:500]}...")
+                st.sidebar.markdown("---")
+                
+                # Добавляем в контекст для LLM
                 context_parts.append(
                     f"\n{i}. 📄 {doc_name} (релевантность: {score:.2f}):\n"
                     f"{chunk_text}\n"
                     f"{'-'*50}"
                 )
+        else:
+            st.sidebar.info("Не найдено релевантных фрагментов")
+            context_parts.append("\n=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ НЕ НАЙДЕНЫ ===")
     
         return "\n".join(context_parts)
 
+# ... (остальной код остается без изменений)
 def main():
     st.set_page_config(page_title="El Documente", layout="wide", initial_sidebar_state="collapsed")
     gif_path = "data/maracas-sombrero-hat.gif"
