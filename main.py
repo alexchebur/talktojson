@@ -106,6 +106,7 @@ def merge_json_parts(base_filename: str) -> dict:
         part_files = glob.glob(pattern)
         
         if not part_files:
+            print(f"Не найдены файлы по шаблону: {pattern}")
             return None
         
         # Сортируем файлы по номеру части
@@ -114,68 +115,115 @@ def merge_json_parts(base_filename: str) -> dict:
             return int(match.group(1)) if match else 0
             
         part_files = sorted(part_files, key=get_part_number)
+        print(f"Найдены файлы для объединения (в порядке): {part_files}")
         
         merged_data = {'metadata': [], 'processed_files': []}
+        success_count = 0
         
         for part_file in part_files:
             try:
+                print(f"Обработка файла: {part_file}")
                 part_data = safe_read_json(part_file)
+                
                 if not part_data:
+                    print(f"Файл {part_file} не содержит данных или не может быть прочитан")
                     continue
                     
                 # Объединяем метаданные
                 if 'metadata' in part_data and isinstance(part_data['metadata'], list):
                     merged_data['metadata'].extend(part_data['metadata'])
+                    success_count += 1
                     
                 # Объединяем processed_files
                 if 'processed_files' in part_data and isinstance(part_data['processed_files'], list):
                     merged_data['processed_files'].extend(part_data['processed_files'])
+                
             except Exception as e:
-                print(f"Ошибка при обработке файла {part_file}: {e}")
+                print(f"Ошибка при обработке файла {part_file}: {str(e)}")
                 continue
         
+        if not merged_data['metadata']:
+            print("Нет данных metadata для объединения")
+            return None
+            
         # Удаляем дубликаты
         merged_data['processed_files'] = list(set(merged_data['processed_files']))
+        print(f"Успешно объединено {success_count}/{len(part_files)} файлов")
         
         return merged_data
         
     except Exception as e:
-        print(f"Ошибка при объединении JSON частей: {e}")
+        print(f"Критическая ошибка при объединении JSON частей: {str(e)}")
         return None
 
 def safe_read_json(file_path: str) -> dict:
-    """Безопасное чтение JSON с восстановлением"""
+    """Безопасное чтение JSON с восстановлением и обработкой ошибок"""
     try:
-        # Создаем резервную копию
+        # Создаем резервную копию перед любыми изменениями
         backup_path = str(Path(file_path).with_suffix('.bak'))
         shutil.copy2(file_path, backup_path)
         
-        # Чтение с обработкой BOM
+        # Чтение файла с обработкой BOM (Byte Order Mark)
         with open(file_path, 'rb') as f:
-            content = f.read().decode('utf-8-sig')
+            content_bytes = f.read()
         
-        # Удаление непечатаемых символов
+        # Попробуем декодировать как utf-8-sig (автоматически убирает BOM)
+        try:
+            content = content_bytes.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            # Если не utf-8, пробуем другие кодировки
+            try:
+                content = content_bytes.decode('cp1251')
+            except UnicodeDecodeError:
+                content = content_bytes.decode('latin-1')
+        
+        # Удаляем нулевые байты и другие непечатаемые символы
         content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
-        content = content.replace('\\u0002', '')
-        # Извлечение JSON части
+        
+        # Удаляем BOM, если остался
+        if content.startswith('\ufeff'):
+            content = content[1:]
+        
+        # Пытаемся найти начало и конец JSON
         start = content.find('{')
         end = content.rfind('}') + 1
         
         if start == -1 or end == 0:
             raise ValueError("Не найдены JSON-скобки")
-            
-        return json.loads(content[start:end])
         
-    except Exception as e:
-        st.sidebar.error(f"Ошибка чтения JSON:")
-        # Пробуем прочитать резервную копию
-        if os.path.exists(backup_path):
+        json_content = content[start:end]
+        
+        # Удаляем завершающие запятые перед } или ]
+        json_content = re.sub(r',\s*([}\]])', r'\1', json_content)
+        
+        # Пытаемся загрузить JSON
+        try:
+            return json.loads(json_content)
+        except json.JSONDecodeError as e:
+            # Если не получилось, пробуем восстановить
             try:
-                with open(backup_path, 'rb') as f:
-                    return json.loads(f.read().decode('utf-8-sig'))
-            except Exception:
-                pass
-        raise
+                # Удаляем все, что после последней закрывающей скобки
+                last_brace = json_content.rfind('}')
+                if last_brace != -1:
+                    json_content = json_content[:last_brace+1]
+                
+                # Удаляем все, что перед первой открывающей скобкой
+                first_brace = json_content.find('{')
+                if first_brace != -1:
+                    json_content = json_content[first_brace:]
+                
+                return json.loads(json_content)
+            except json.JSONDecodeError:
+                # Если все еще ошибка, пробуем прочитать резервную копию
+                if os.path.exists(backup_path):
+                    with open(backup_path, 'rb') as f:
+                        backup_content = f.read().decode('utf-8-sig')
+                        return json.loads(backup_content)
+                raise
+                
+    except Exception as e:
+        print(f"Критическая ошибка при чтении файла {file_path}: {str(e)}")
+        return None
 
 class TextPreprocessor:
     def __init__(self):
