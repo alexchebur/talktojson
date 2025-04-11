@@ -493,29 +493,30 @@ def main():
         st.session_state.docx_added = False
 
     if ask_button:
-        conversation_log = []
-
-        if not st.session_state.docx_added and analyzer.current_docx:
-            conversation_log.append(analyzer.current_docx["content"])
-            st.session_state.docx_added = True
-
-        conversation_log.append(user_input)
-
+        # 1. Готовим контекст
+        doc_summary = analyzer.current_docx["content"][:3000]  # или используйте суммаризацию
         relevant_chunks = analyzer.search_engine.search(user_input)
-
-        for chunk in relevant_chunks:
-            conversation_log.append(chunk['chunk_text'])
-
+    
+        # 2. Формируем сообщения с разделением ролей
         messages = [
             {"role": "system", "content": CHAT_SYSTEM_PROMPT},
-            {"role": "user", "content": "\n".join(conversation_log)}
+            {"role": "assistant", "content": f"Анализируемый документ (сокращённо):\n{doc_summary}"},
+            *[
+                {"role": "assistant", "content": f"Релевантный фрагмент ({chunk['doc_name']}):\n{chunk['chunk_text'][:800]}"}
+                for chunk in relevant_chunks[:2]  # Только топ-2 фрагмента
+            ],
+            {"role": "user", "content": f"Диалог:\n{'\n'.join(st.session_state.get('chat_history', []))[-2:]}"},
+            {"role": "user", "content": user_input}
         ]
-
-        response = analyzer.llm_client.query(messages, CHAT_TEMPERATURE, MAX_ANSWER_LENGTH)
-
+    
+        # 3. Отправка запроса
+        response = analyzer.llm_client.query(messages, temperature=0.7, max_tokens=1500)
         response_container = st.empty()
         response_container.markdown("### Ответ от Карлоса")
         response_container.markdown(response)
+        # 4. Сохраняем историю
+        st.session_state.setdefault('chat_history', []).extend([user_input, response])
+
 
     st.header("Анализ документа")
     col1, col2, col3 = st.columns(3)
