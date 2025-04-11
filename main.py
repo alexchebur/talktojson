@@ -240,127 +240,157 @@ class BM25SearchEngine:
         self.chunks_info = []
         self.is_index_loaded = False
         self.llm_keywords = []
+        self.data_dir = "data"  # Папка с файлами индекса
         self._load_index()
+
+    def _find_part_files(self):
+        """Находит все файлы индекса с part в названии в директории data"""
+        try:
+            if not os.path.exists(self.data_dir):
+                os.makedirs(self.data_dir, exist_ok=True)
+                return []
+
+            part_files = []
+            for filename in os.listdir(self.data_dir):
+                if "part" in filename.lower() and filename.endswith(".json"):
+                    full_path = os.path.join(self.data_dir, filename)
+                    part_files.append(full_path)
+
+            # Сортируем файлы по номеру части
+            def extract_part_number(f):
+                match = re.search(r'_part(\d+)\.json$', f, re.IGNORECASE)
+                return int(match.group(1)) if match else 0
+
+            return sorted(part_files, key=extract_part_number)
+        except Exception as e:
+            print(f"Ошибка поиска файлов индекса: {str(e)}")
+            return []
 
     def _normalize_processed(self, processed_data):
         """Нормализует processed данные для индексации"""
+        if processed_data is None:
+            return []
+            
         if isinstance(processed_data, str):
-            # Если данные пришли как строка, пробуем распарсить
             try:
+                # Пробуем распарсить строку как JSON
                 processed_data = json.loads(processed_data)
             except json.JSONDecodeError:
-                # Если не получилось, обрабатываем как текст
+                # Если не JSON, обрабатываем как текст
                 return self.preprocessor.preprocess(processed_data)
         
         if isinstance(processed_data, list):
-            # Убедимся, что все элементы строки
-            return [str(item) for item in processed_data if item]
+            # Удаляем пустые элементы и преобразуем к строке
+            return [str(item).strip() for item in processed_data if item and str(item).strip()]
         
-        # Если данные другого типа, преобразуем в строку и обрабатываем
+        # Для других типов преобразуем в строку и обрабатываем
         return self.preprocessor.preprocess(str(processed_data))
 
+    def _read_json_with_recovery(self, file_path):
+        """Чтение JSON с восстановлением при ошибках"""
+        try:
+            # Чтение с обработкой BOM
+            with open(file_path, 'rb') as f:
+                content = f.read().decode('utf-8-sig')
+
+            # Удаление непечатаемых символов
+            content = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', content)
+            
+            # Попытка стандартного чтения
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                # Попробуем восстановить структуру
+                start = content.find('{')
+                end = content.rfind('}') + 1
+                if start >= 0 and end > 0:
+                    return json.loads(content[start:end])
+                raise
+        except Exception as e:
+            print(f"Ошибка чтения файла {file_path}: {str(e)}")
+            raise
+
     def _load_index(self):
-        """Загрузка индекса с улучшенной обработкой ошибок"""
+        """Загрузка и построение индекса из частей"""
         try:
             part_files = self._find_part_files()
-            
             if not part_files:
-                st.sidebar.warning("Не найдены файлы индекса для загрузки")
+                print("Не найдены файлы индекса для загрузки")
                 return False
 
-            merged_data = {'metadata': []}
-            success_files = 0
+            merged_data = {'metadata': [], 'processed_files': set()}
             
             for file_path in part_files:
                 try:
                     file_data = self._read_json_with_recovery(file_path)
-                    
-                    if not file_data or 'metadata' not in file_data:
-                        st.sidebar.warning(f"Файл {os.path.basename(file_path)} не содержит metadata")
+                    if not file_data:
                         continue
-                        
-                    # Нормализуем processed данные перед добавлением
-                    normalized_metadata = []
-                    for item in file_data['metadata']:
-                        if 'processed' in item:
-                            item['processed'] = self._normalize_processed(item['processed'])
-                        normalized_metadata.append(item)
-                    
-                    merged_data['metadata'].extend(normalized_metadata)
-                    success_files += 1
-                    
+
+                    # Обработка metadata
+                    if 'metadata' in file_data and isinstance(file_data['metadata'], list):
+                        for item in file_data['metadata']:
+                            if isinstance(item, dict) and 'original' in item:
+                                # Нормализуем processed данные
+                                item['processed'] = self._normalize_processed(item.get('processed', ''))
+                                merged_data['metadata'].append(item)
+
+                    # Обработка processed_files
+                    if 'processed_files' in file_data and isinstance(file_data['processed_files'], list):
+                        merged_data['processed_files'].update(file_data['processed_files'])
+
                 except Exception as e:
-                    st.sidebar.error(f"Ошибка в файле {os.path.basename(file_path)}: {str(e)}")
+                    print(f"Ошибка обработки файла {file_path}: {str(e)}")
                     continue
 
             if not merged_data['metadata']:
-                st.sidebar.error("Нет данных для загрузки после обработки файлов")
+                print("Нет данных для построения индекса")
                 return False
 
-            # Строим индекс только с валидными данными
-            processed_texts = []
+            # Построение индекса BM25
+            corpus = []
             valid_metadata = []
             
             for item in merged_data['metadata']:
                 processed = item.get('processed', [])
-                if not processed:
-                    # Если processed нет, обрабатываем original текст
-                    original_text = item.get('original', '')
-                    if original_text:
-                        processed = self.preprocessor.preprocess(original_text)
-                
                 if processed:
-                    processed_texts.append(processed)
+                    corpus.append(processed)
                     valid_metadata.append(item)
 
-            if not processed_texts:
-                st.sidebar.error("Нет данных для индексации после нормализации")
+            if not corpus:
+                print("Нет данных для индексации после нормализации")
                 return False
 
-            self.bm25 = BM25Okapi(processed_texts)
+            self.bm25 = BM25Okapi(corpus)
             self.chunks_info = valid_metadata
             self.is_index_loaded = True
-            
-            st.sidebar.success(f"Успешно загружено {success_files}/{len(part_files)} файлов, {len(processed_texts)} фрагментов")
+            print(f"Индекс успешно загружен. Фрагментов: {len(corpus)}")
             return True
-            
+
         except Exception as e:
-            st.sidebar.error(f"Критическая ошибка загрузки индекса: {str(e)}")
+            print(f"Критическая ошибка загрузки индекса: {str(e)}")
             return False
 
-    def search(self, query: str, top_n: int = 5, min_score: float = 0.1) -> List[Dict]:
-        """Поиск с обработкой ошибок"""
-        if not self.is_index_loaded:
+    def search(self, query, top_n=5, min_score=0.1):
+        """Поиск по индексу"""
+        if not self.is_index_loaded or not query:
             return []
 
-        try:
-            enhanced_query = f"{query} {' '.join(self.llm_keywords * 2)}"
-            tokens = self.preprocessor.preprocess(enhanced_query)
-            
-            if not tokens:
-                return []
-
-            scores = self.bm25.get_scores(tokens)
-            if scores is None or len(scores) == 0:
-                return []
-
-            best_indices = [idx for idx in np.argsort(scores)[-top_n:][::-1] 
-                           if scores[idx] >= min_score]
-            
-            return [
-                {
-                    'doc_id': self.chunks_info[idx].get('file_id', ''),
-                    'doc_name': self.chunks_info[idx].get('doc_name', 'Документ'),
-                    'chunk_text': self.chunks_info[idx].get('original', '')[:2000],
-                    'score': round(float(scores[idx]), 4)
-                }
-                for idx in best_indices
-                if idx < len(self.chunks_info)
-            ]
-        except Exception as e:
-            print(f"Ошибка поиска: {e}")
+        # Улучшаем запрос сгенерированными ключевыми словами
+        enhanced_query = f"{query} {' '.join(self.llm_keywords)}" if self.llm_keywords else query
+        tokens = self.preprocessor.preprocess(enhanced_query)
+        if not tokens:
             return []
 
+        scores = self.bm25.get_scores(tokens)
+        best_indices = [idx for idx in np.argsort(scores)[-top_n:][::-1] 
+                       if scores[idx] >= min_score and idx < len(self.chunks_info)]
+
+        return [{
+            'doc_id': self.chunks_info[idx].get('file_id', ''),
+            'doc_name': self.chunks_info[idx].get('doc_name', 'Документ'),
+            'chunk_text': self.chunks_info[idx].get('original', '')[:2000],
+            'score': round(float(scores[idx]), 4)
+        } for idx in best_indices]
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
         self.api_url = api_url
