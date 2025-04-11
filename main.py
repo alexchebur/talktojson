@@ -637,7 +637,7 @@ class DocumentAnalyzer:
     
         # Фильтруем и сортируем чанки
         relevant_chunks = sorted(
-            [chunk for chunk in chunks if chunk.get('score', 0) > 0.1],  # Фильтр по релевантности
+            [chunk for chunk in chunks if chunk.get('score', 0) > 0.3],  # Фильтр по релевантности
             key=lambda x: x.get('score', 0),
             reverse=True
         )[:5]  # Берем только топ-5 результатов
