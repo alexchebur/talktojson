@@ -360,7 +360,8 @@ class BM25SearchEngine:
                 print("Нет данных для индексации после нормализации")
                 return False
 
-            self.bm25 = BM25Okapi(corpus)
+            #self.bm25 = BM25Okapi(corpus)
+            self.bm25 = BM25Okapi(corpus, k1=1.2, b=0.6)  # в методе _load_index
             self.chunks_info = valid_metadata
             self.is_index_loaded = True
             print(f"Индекс успешно загружен. Фрагментов: {len(corpus)}")
@@ -370,13 +371,13 @@ class BM25SearchEngine:
             print(f"Критическая ошибка загрузки индекса: {str(e)}")
             return False
 
-    def search(self, query, top_n=5, min_score=0.1):
+    def search(self, query, top_n=5, min_score=0.2):  # было 0.1
         """Поиск по индексу"""
         if not self.is_index_loaded or not query:
             return []
 
         # Улучшаем запрос сгенерированными ключевыми словами
-        enhanced_query = f"{query} {' '.join(self.llm_keywords)}" if self.llm_keywords else query
+        enhanced_query = f"{query} {' '.join(self.llm_keywords * 2)}" if self.llm_keywords else query
         tokens = self.preprocessor.preprocess(enhanced_query)
         if not tokens:
             return []
@@ -572,7 +573,7 @@ class DocumentAnalyzer:
         ]
         
         for chunk in chunks:
-            context_parts.append(f"\n📄 {chunk['doc_name']} (релевантность: {chunk['score']:.2f}):")
+            context_parts.append(f"\n📄 {chunk['doc_name']} (релевантность: {chunk['score']:.3f}):")
             context_parts.append(chunk['chunk_text'][:3000])
         
         return "\n".join(context_parts)
