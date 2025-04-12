@@ -465,13 +465,8 @@ class DocumentAnalyzer:
                     st.sidebar.success("✅ Ключевые слова сгенерированы")
                     # Вывод ключевых слов в сайдбар
                     with st.sidebar:
-                        st.subheader("🔑 Сгенерированные ключевые слова")
-                        st.markdown(
-                            f'<div style="padding: 10px; background: #f0f2f6; border-radius: 5px; margin-bottom: 20px;">'
-                            f'{" ".join([f"<span style='background: #e1ecf4; padding: 5px; margin: 2px; border-radius: 3px; display: inline-block;'>{kw}</span>" for kw in keywords])}'
-                            f'</div>',
-                            unsafe_allow_html=True
-                        )
+                        st.sidebar.subheader("🔑 Сгенерированные ключевые слова")
+                        st.sidebar.write(", ".join(keywords))
             # Поиск фрагментов
             chunks = self.search_engine.search(self.search_engine.llm_keywords)
             
