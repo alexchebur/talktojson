@@ -515,17 +515,15 @@ class DocumentAnalyzer:
         except Exception as e:
             st.error(f"Общая ошибка при загрузке документов: {str(e)}")
 
-     def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
-            context_parts = [f"Документ: {docx_text[:10000]}..."] if len(docx_text) > 10000 else [docx_text]
-        
-            for i, chunk in enumerate(chunks[:3]):
-                context_parts.append(
-                    f"\n🔍 **Фрагмент {i+1}** ({chunk.get('doc_name', 'Документ')}, "
-                    f"Релевантность: {chunk.get('score', 0):.2f}\n"
-                    f"{chunk.get('chunk_text', '')[:2000]}"
-                )
-        
-            return "\n".join(context_parts)
+    def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
+        context_parts = [f"Документ: {docx_text[:10000]}..."] if len(docx_text) > 10000 else [docx_text]
+        for i, chunk in enumerate(chunks[:3]):
+            context_parts.append(
+                f"\n🔍 **Фрагмент {i+1}** ({chunk.get('doc_name', 'Документ')}, "
+                f"Релевантность: {chunk.get('score', 0):.2f}\n"
+                f"{chunk.get('chunk_text', '')[:2000]}"
+            )
+        return "\n".join(context_parts)
 
 def main():
     st.set_page_config(page_title="El Documente", layout="wide", initial_sidebar_state="collapsed")
