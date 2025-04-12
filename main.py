@@ -187,8 +187,8 @@ class BM25SearchEngine:
         self.is_index_loaded = False
         self.llm_keywords = []
         self.data_dir = "data"
+        self.min_score = 0.15
         self._load_index()
-        self.min_score = 0.15  # Новый минимальный порог релевантности
 
     def _find_part_files(self):
         """Находит все файлы индекса с part в названии в директории data"""
@@ -311,23 +311,33 @@ class BM25SearchEngine:
             return False
 
 
-
     def search(self, keywords: List[str], top_n=10):
         if not self.is_index_loaded or not keywords:
             return []
 
         # Улучшенная обработка ключевых слов
-        tokens = list(set([word.lower() for keyword in keywords 
-                         for word in self.preprocessor.preprocess(keyword) 
-                         if len(word) > 2]))
+        tokens = list(set([
+            word.lower() 
+            for keyword in keywords 
+            for word in self.preprocessor.preprocess(keyword) 
+            if len(word) > 2
+        ]))
         
         if not tokens:
             return []
 
-        # Нормализация оценок
-        scores = self.bm25.get_scores(tokens)
-        max_score = max(scores) if scores else 0
-        normalized_scores = scores / max_score if max_score > 0 else scores
+        try:
+            scores = self.bm25.get_scores(tokens)
+        except AttributeError:
+            return []
+
+        # Безопасное вычисление максимального score
+        valid_scores = [s for s in scores if s > 0]
+        if not valid_scores:
+            return []
+            
+        max_score = max(valid_scores)
+        normalized_scores = scores / max_score
 
         # Фильтрация и ранжирование
         results = []
@@ -340,19 +350,12 @@ class BM25SearchEngine:
                     'score': round(float(score), 4)
                 })
 
-        # Улучшенная группировка
-        results = sorted(results, key=lambda x: x['score'], reverse=True)
-        
-        # Фильтрация дубликатов
-        seen_texts = set()
-        filtered_results = []
-        for res in results:
-            text_hash = hash(res['chunk_text'][:500])
-            if text_hash not in seen_texts:
-                seen_texts.add(text_hash)
-                filtered_results.append(res)
-        
-        return filtered_results[:top_n]
+        # Удаление дубликатов
+        seen = set()
+        return [
+            r for r in sorted(results, key=lambda x: x['score'], reverse=True)
+            if not (r['chunk_text'][:500] in seen or seen.add(r['chunk_text'][:500]))
+        ][:top_n]
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
         self.api_url = api_url
@@ -425,7 +428,7 @@ class DocumentAnalyzer:
             
         try:
             messages = [
-                {"role": "system", "content": "Ты - эксперт по юридической терминологии. Определи существо спора, подготовь но саммари с цитированием правовых актов и составь список из 10 ключевых слов (один синоним на каждое слово) и десяти синонимичных по смыслу коротких выражений по этому саммари."},
+                {"role": "system", "content": "Ты - эксперт по юридической терминологии. Определи существо спора, подготовь короткое саммари с цитированием правовых актов и составь список из 20 ключевых слов (один синоним на каждое слово) по этому саммари. Слова приводи без окончаний, если окончания состоят из гласных"},
                 {"role": "user", "content": f"{KEYWORDS_PROMPT}\n\nТекст для анализа:\n{text[:10000]}"}
             ]
             
@@ -453,29 +456,26 @@ class DocumentAnalyzer:
             
         docx_text = self.current_docx["content"]
         
-        # Генерация ключевых слов
-        if not self.search_engine.llm_keywords:
-            with st.spinner("Генерация ключевых слов..."):
-                keywords = self._generate_keywords_from_text(docx_text)
-                if not keywords:
-                    return "Не удалось сгенерировать ключевые слова"
-                self.search_engine.llm_keywords = keywords
-                st.sidebar.info(f"Ключевые слова: {', '.join(keywords)}")
-        
-        # Поиск ТОЛЬКО по ключевым словам
-        chunks = self.search_engine.search(self.search_engine.llm_keywords)
-        context = self._build_context(docx_text, chunks)
-        
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + f"\n\nКОНТЕКСТ:\n" + context}
-        ]
-
-        st.sidebar.header("Итоговый запрос к LLM")
-        st.sidebar.markdown("### Запрос пользователя:")
-        st.sidebar.markdown(BUTTON_PROMPTS[prompt_type] + f"\n\nКОНТЕКСТ:\n" + context)
-        
-        return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
+        try:
+            if not self.search_engine.llm_keywords:
+                with st.spinner("Генерация ключевых слов..."):
+                    keywords = self._generate_keywords_from_text(docx_text)
+                    if not keywords:
+                        st.error("Не удалось сгенерировать ключевые слова")
+                        return ""
+                    self.search_engine.llm_keywords = keywords
+                    st.sidebar.success(f"Ключевые слова: {', '.join(keywords)}")
+            
+            chunks = self.search_engine.search(self.search_engine.llm_keywords)
+            
+            if not chunks:
+                return "Релевантные фрагменты не найдены"
+                
+            return self._build_context(docx_text, chunks)
+            
+        except Exception as e:
+            st.error(f"Ошибка при анализе документа: {str(e)}")
+            return ""
 
     def load_documents(self, uploaded_files) -> None:
         """Загружает DOCX файлы"""
@@ -515,48 +515,17 @@ class DocumentAnalyzer:
         except Exception as e:
             st.error(f"Общая ошибка при загрузке документов: {str(e)}")
 
-    def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
-        """Улучшенное построение контекста с фильтрацией"""
-        context_parts = ["=== ЗАГРУЖЕННЫЙ ДОКУМЕНТ ===", docx_text.strip()]
+     def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
+            context_parts = [f"Документ: {docx_text[:10000]}..."] if len(docx_text) > 10000 else [docx_text]
         
-        if not chunks:
-            return "\n".join(context_parts + ["\n=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ НЕ НАЙДЕНЫ ==="])
+            for i, chunk in enumerate(chunks[:3]):
+                context_parts.append(
+                    f"\n🔍 **Фрагмент {i+1}** ({chunk.get('doc_name', 'Документ')}, "
+                    f"Релевантность: {chunk.get('score', 0):.2f}\n"
+                    f"{chunk.get('chunk_text', '')[:2000]}"
+                )
         
-        # Фильтрация фрагментов с низкой релевантностью
-        filtered_chunks = [c for c in chunks if c.get('score', 0) >= 0.1]
-        
-        # Логирование для отладки
-        st.sidebar.markdown("**Отладка поиска:**")
-        st.sidebar.json({
-            "keywords": self.search_engine.llm_keywords,
-            "found_chunks": len(filtered_chunks),
-            "top_scores": [c['score'] for c in filtered_chunks[:3]]
-        })
-        
-        total_length = len(docx_text)
-        MAX_CONTEXT = 18000
-        
-        for i, chunk in enumerate(filtered_chunks[:3]):  # Только топ-3
-            chunk_text = chunk.get('chunk_text', '')
-            doc_name = chunk.get('doc_name', 'Документ')
-            score = chunk.get('score', 0)
-            
-            # Пропускаем фрагменты с нулевой релевантностью
-            if score <= 0:
-                continue
-                
-            header = f"\n📌 **Фрагмент {i+1}** ({doc_name}, релевантность: {score:.2f}):\n"
-            
-            if total_length + len(header) + len(chunk_text) > MAX_CONTEXT:
-                available = MAX_CONTEXT - total_length - len(header)
-                if available > 50:
-                    context_parts.append(header + chunk_text[:available] + "...")
-                break
-                
-            context_parts.append(header + chunk_text)
-            total_length += len(header) + len(chunk_text)
-        
-        return "\n".join(context_parts)
+            return "\n".join(context_parts)
 
 def main():
     st.set_page_config(page_title="El Documente", layout="wide", initial_sidebar_state="collapsed")
