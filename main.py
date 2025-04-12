@@ -309,11 +309,16 @@ class BM25SearchEngine:
             st.sidebar.error(f"Критическая ошибка загрузки индекса: {str(e)}")
             return False
 
-    def search(self, query, top_n=10, min_score=0.01):
-        if not self.is_index_loaded or not query:
+
+    def search(self, keywords: List[str], top_n=10, min_score=0.01):
+        if not self.is_index_loaded or not keywords:
             return []
 
-        tokens = self.preprocessor.preprocess(query)
+        # Обрабатываем только ключевые слова
+        tokens = []
+        for keyword in keywords:
+            tokens.extend(self.preprocessor.preprocess(keyword))
+        
         if not tokens:
             return []
 
@@ -325,10 +330,11 @@ class BM25SearchEngine:
                 results.append({
                     'doc_id': self.chunks_info[idx].get('file_id', ''),
                     'doc_name': self.chunks_info[idx].get('doc_name', 'Документ'),
-                    'chunk_text': self.chunks_info[idx].get('original', '')[:2000],  # Используем original текст
+                    'chunk_text': self.chunks_info[idx].get('original', ''),
                     'score': round(float(score), 4)
                 })
     
+        # Группировка по документам с лимитом чанков
         grouped = {}
         for res in sorted(results, key=lambda x: x['score'], reverse=True):
             doc_id = res['doc_id']
@@ -343,7 +349,9 @@ class BM25SearchEngine:
                 grouped[doc_id]['chunks'].append(res)
                 grouped[doc_id]['total_score'] += res['score']
     
-        return sorted(grouped.values(), key=lambda x: x['total_score'], reverse=True)[:top_n]
+        return sorted(grouped.values(), 
+                     key=lambda x: x['total_score'], 
+                     reverse=True)[:top_n]
 
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
@@ -440,21 +448,22 @@ class DocumentAnalyzer:
             return []
 
     def analyze_document(self, prompt_type: str) -> str:
-        """Анализирует документ с использованием LLM"""
         if not self.current_docx:
             return "Пожалуйста, загрузите DOCX файл"
             
         docx_text = self.current_docx["content"]
         
-        # Генерация ключевых слов из текста документа
+        # Генерация ключевых слов
         if not self.search_engine.llm_keywords:
             with st.spinner("Генерация ключевых слов..."):
-                self.search_engine.llm_keywords = self._generate_keywords_from_text(docx_text)
-                st.sidebar.info(f"Сгенерированные ключевые слова: {', '.join(self.search_engine.llm_keywords)}")
+                keywords = self._generate_keywords_from_text(docx_text)
+                if not keywords:
+                    return "Не удалось сгенерировать ключевые слова"
+                self.search_engine.llm_keywords = keywords
+                st.sidebar.info(f"Ключевые слова: {', '.join(keywords)}")
         
-        # Используем только ключевые слова для поиска
-        query = " ".join(self.search_engine.llm_keywords)
-        chunks = self.search_engine.search(query)
+        # Поиск ТОЛЬКО по ключевым словам
+        chunks = self.search_engine.search(self.search_engine.llm_keywords)
         context = self._build_context(docx_text, chunks)
         
         messages = [
@@ -507,44 +516,31 @@ class DocumentAnalyzer:
             st.error(f"Общая ошибка при загрузке документов: {str(e)}")
 
     def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
-        """Строит контекст для LLM из DOCX и найденных фрагментов (из поля original)"""
-        context_parts = [
-            "=== ЗАГРУЖЕННЫЙ ДОКУМЕНТ ===",
-            docx_text.strip(),
-        ]
-    
-        # Извлекаем релевантные чанки для отображения в сайдбаре
-        relevant_chunks = sorted(
-            [chunk for chunk in chunks if chunk.get('score', 0) > 0.01],
-            key=lambda x: x.get('score', 0),
-            reverse=True
-        )[:5]
+        """Строит контекст с учетом ограничения длины"""
+        context_parts = ["=== ЗАГРУЖЕННЫЙ ДОКУМЕНТ ===", docx_text.strip()]
+        total_length = len(docx_text)
         
-        # Добавляем отображение релевантных чанков в сайдбар
-        st.sidebar.header("Релевантные фрагменты из базы знаний")
-        if relevant_chunks:
-            for i, chunk in enumerate(relevant_chunks, 1):
-                doc_name = chunk.get('doc_name', 'Документ').strip()
-                score = chunk.get('score', 0)
-                chunk_text = chunk.get('chunk_text', '').strip()[:2000]
+        MAX_CONTEXT = 18000  # Резерв для ответа
+        
+        for i, chunk in enumerate(chunks[:5]):  # Топ-5 самых релевантных
+            chunk_text = chunk.get('chunk_text', '')
+            chunk_len = len(chunk_text)
+            
+            if total_length + chunk_len > MAX_CONTEXT:
+                available = MAX_CONTEXT - total_length
+                if available > 100:
+                    context_parts.append(
+                        f"\nФРАГМЕНТ {i+1} ({chunk['doc_name']}, релевантность {chunk['score']:.2f}):\n"
+                        f"{chunk_text[:available]}...\n"
+                    )
+                break
                 
-                if not chunk_text:
-                    continue
-                
-                st.sidebar.markdown(f"**{i}. {doc_name}** (релевантность: {score:.2f})")
-                st.sidebar.markdown(f"> {chunk_text[:500]}...")
-                st.sidebar.markdown("---")
-                
-                # Добавляем в контекст для LLM
-                context_parts.append(
-                    f"\n{i}. 📄 {doc_name} (релевантность: {score:.2f}):\n"
-                    f"{chunk_text}\n"
-                    f"{'-'*50}"
-                )
-        else:
-            st.sidebar.info("Не найдено релевантных фрагментов")
-            context_parts.append("\n=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ НЕ НАЙДЕНЫ ===")
-    
+            context_parts.append(
+                f"\nФРАГМЕНТ {i+1} ({chunk['doc_name']}, релевантность {chunk['score']:.2f}):\n"
+                f"{chunk_text}\n"
+            )
+            total_length += chunk_len
+        
         return "\n".join(context_parts)
 
 def main():
