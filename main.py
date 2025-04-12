@@ -457,25 +457,47 @@ class DocumentAnalyzer:
         docx_text = self.current_docx["content"]
         
         try:
+            # Генерация ключевых слов
             if not self.search_engine.llm_keywords:
                 with st.spinner("Генерация ключевых слов..."):
                     keywords = self._generate_keywords_from_text(docx_text)
-                    if not keywords:
-                        st.error("Не удалось сгенерировать ключевые слова")
-                        return ""
                     self.search_engine.llm_keywords = keywords
-                    st.sidebar.success(f"Ключевые слова: {', '.join(keywords)}")
-            
+                    st.sidebar.success("✅ Ключевые слова сгенерированы")
+
+            # Поиск фрагментов
             chunks = self.search_engine.search(self.search_engine.llm_keywords)
             
-            if not chunks:
-                return "Релевантные фрагменты не найдены"
-                
-            return self._build_context(docx_text, chunks)
+            # Очистка сайдбара перед новым выводом
+            st.sidebar.empty()
             
+            # Вывод фрагментов в сайдбар
+            with st.sidebar:
+                st.header("Найденные фрагменты")
+                if not chunks:
+                    st.info("Релевантные фрагменты не найдены")
+                else:
+                    for i, chunk in enumerate(chunks[:3], 1):
+                        st.subheader(f"Фрагмент {i}")
+                        st.caption(f"**Документ:** {chunk.get('doc_name', 'Без названия')}")
+                        st.caption(f"**Релевантность:** {chunk.get('score', 0):.2f}")
+                        st.write(chunk.get('chunk_text', '')[:500] + "...")
+                        st.divider()
+
+            # Формирование контекста без фрагментов
+            context = self._build_context(docx_text)
+            
+            # Запрос к LLM
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + f"\n\nКОНТЕКСТ:\n{context}"}
+            ]
+            
+            return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
+
         except Exception as e:
-            st.error(f"Ошибка при анализе документа: {str(e)}")
+            st.error(f"Ошибка анализа: {str(e)}")
             return ""
+
 
     def load_documents(self, uploaded_files) -> None:
         """Загружает DOCX файлы"""
@@ -515,15 +537,12 @@ class DocumentAnalyzer:
         except Exception as e:
             st.error(f"Общая ошибка при загрузке документов: {str(e)}")
 
-    def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
-        context_parts = [f"Документ: {docx_text[:10000]}..."] if len(docx_text) > 10000 else [docx_text]
-        for i, chunk in enumerate(chunks[:3]):
-            context_parts.append(
-                f"\n🔍 **Фрагмент {i+1}** ({chunk.get('doc_name', 'Документ')}, "
-                f"Релевантность: {chunk.get('score', 0):.2f}\n"
-                f"{chunk.get('chunk_text', '')[:2000]}"
-            )
-        return "\n".join(context_parts)
+    def _build_context(self, docx_text: str) -> str:
+        """Собирает только основной контекст без фрагментов"""
+        return (
+            "=== АНАЛИЗИРУЕМЫЙ ДОКУМЕНТ ===\n"
+            f"{docx_text[:10000]}{'...' if len(docx_text)>10000 else ''}"
+        )
 
 def main():
     st.set_page_config(page_title="El Documente", layout="wide", initial_sidebar_state="collapsed")
