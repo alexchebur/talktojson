@@ -188,6 +188,7 @@ class BM25SearchEngine:
         self.llm_keywords = []
         self.data_dir = "data"
         self._load_index()
+        self.min_score = 0.15  # Новый минимальный порог релевантности
 
     def _find_part_files(self):
         """Находит все файлы индекса с part в названии в директории data"""
@@ -299,7 +300,7 @@ class BM25SearchEngine:
                 st.sidebar.error("Нет данных для индексации после нормализации")
                 return False
 
-            self.bm25 = BM25Okapi(corpus, k1=1.2, b=0.6)
+            self.bm25 = BM25Okapi(corpus, k1=1.5, b=0.75)
             self.chunks_info = valid_metadata
             self.is_index_loaded = True
             st.sidebar.info(f"Индекс успешно загружен. Фрагментов: {len(corpus)}")
@@ -310,49 +311,48 @@ class BM25SearchEngine:
             return False
 
 
-    def search(self, keywords: List[str], top_n=10, min_score=0.01):
+
+    def search(self, keywords: List[str], top_n=10):
         if not self.is_index_loaded or not keywords:
             return []
 
-        # Обрабатываем только ключевые слова
-        tokens = []
-        for keyword in keywords:
-            tokens.extend(self.preprocessor.preprocess(keyword))
+        # Улучшенная обработка ключевых слов
+        tokens = list(set([word.lower() for keyword in keywords 
+                         for word in self.preprocessor.preprocess(keyword) 
+                         if len(word) > 2]))
         
         if not tokens:
             return []
 
+        # Нормализация оценок
         scores = self.bm25.get_scores(tokens)
-    
+        max_score = max(scores) if scores else 0
+        normalized_scores = scores / max_score if max_score > 0 else scores
+
+        # Фильтрация и ранжирование
         results = []
-        for idx, score in enumerate(scores):
-            if score >= min_score and idx < len(self.chunks_info):
+        for idx, score in enumerate(normalized_scores):
+            if score >= self.min_score and idx < len(self.chunks_info):
                 results.append({
                     'doc_id': self.chunks_info[idx].get('file_id', ''),
                     'doc_name': self.chunks_info[idx].get('doc_name', 'Документ'),
                     'chunk_text': self.chunks_info[idx].get('original', ''),
                     'score': round(float(score), 4)
                 })
-    
-        # Группировка по документам с лимитом чанков
-        grouped = {}
-        for res in sorted(results, key=lambda x: x['score'], reverse=True):
-            doc_id = res['doc_id']
-            if doc_id not in grouped:
-                grouped[doc_id] = {
-                    'doc_id': doc_id,
-                    'doc_name': res['doc_name'],
-                    'chunks': [],
-                    'total_score': 0
-                }
-            if len(grouped[doc_id]['chunks']) < 3:
-                grouped[doc_id]['chunks'].append(res)
-                grouped[doc_id]['total_score'] += res['score']
-    
-        return sorted(grouped.values(), 
-                     key=lambda x: x['total_score'], 
-                     reverse=True)[:top_n]
 
+        # Улучшенная группировка
+        results = sorted(results, key=lambda x: x['score'], reverse=True)
+        
+        # Фильтрация дубликатов
+        seen_texts = set()
+        filtered_results = []
+        for res in results:
+            text_hash = hash(res['chunk_text'][:500])
+            if text_hash not in seen_texts:
+                seen_texts.add(text_hash)
+                filtered_results.append(res)
+        
+        return filtered_results[:top_n]
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
         self.api_url = api_url
@@ -516,40 +516,46 @@ class DocumentAnalyzer:
             st.error(f"Общая ошибка при загрузке документов: {str(e)}")
 
     def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
-        """Строит контекст с учетом ограничения длины"""
+        """Улучшенное построение контекста с фильтрацией"""
         context_parts = ["=== ЗАГРУЖЕННЫЙ ДОКУМЕНТ ===", docx_text.strip()]
-        total_length = len(docx_text)
-    
-        MAX_CONTEXT = 18000  # Резерв для ответа
-    
-        # Добавляем проверку наличия chunks
+        
         if not chunks:
             return "\n".join(context_parts + ["\n=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ НЕ НАЙДЕНЫ ==="])
-    
-        # Обрабатываем только первые 5 элементов с проверкой ключей
-        for i, chunk in enumerate(chunks[:5]):
-            # Безопасное получение значений
-            score = chunk.get('score', 0.0)
-            doc_name = chunk.get('doc_name', 'Документ')
+        
+        # Фильтрация фрагментов с низкой релевантностью
+        filtered_chunks = [c for c in chunks if c.get('score', 0) >= 0.1]
+        
+        # Логирование для отладки
+        st.sidebar.markdown("**Отладка поиска:**")
+        st.sidebar.json({
+            "keywords": self.search_engine.llm_keywords,
+            "found_chunks": len(filtered_chunks),
+            "top_scores": [c['score'] for c in filtered_chunks[:3]]
+        })
+        
+        total_length = len(docx_text)
+        MAX_CONTEXT = 18000
+        
+        for i, chunk in enumerate(filtered_chunks[:3]):  # Только топ-3
             chunk_text = chunk.get('chunk_text', '')
-        
-            chunk_len = len(chunk_text)
-        
-            if total_length + chunk_len > MAX_CONTEXT:
-                available = MAX_CONTEXT - total_length
-                if available > 100:
-                    context_parts.append(
-                        f"\nФРАГМЕНТ {i+1} ({doc_name}, релевантность {score:.2f}):\n"
-                        f"{chunk_text[:available]}...\n"
-                    )
-                break
+            doc_name = chunk.get('doc_name', 'Документ')
+            score = chunk.get('score', 0)
             
-            context_parts.append(
-                f"\nФРАГМЕНТ {i+1} ({doc_name}, релевантность {score:.2f}):\n"
-                f"{chunk_text}\n"
-            )
-            total_length += chunk_len
-    
+            # Пропускаем фрагменты с нулевой релевантностью
+            if score <= 0:
+                continue
+                
+            header = f"\n📌 **Фрагмент {i+1}** ({doc_name}, релевантность: {score:.2f}):\n"
+            
+            if total_length + len(header) + len(chunk_text) > MAX_CONTEXT:
+                available = MAX_CONTEXT - total_length - len(header)
+                if available > 50:
+                    context_parts.append(header + chunk_text[:available] + "...")
+                break
+                
+            context_parts.append(header + chunk_text)
+            total_length += len(header) + len(chunk_text)
+        
         return "\n".join(context_parts)
 
 def main():
