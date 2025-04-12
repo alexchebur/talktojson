@@ -519,28 +519,37 @@ class DocumentAnalyzer:
         """Строит контекст с учетом ограничения длины"""
         context_parts = ["=== ЗАГРУЖЕННЫЙ ДОКУМЕНТ ===", docx_text.strip()]
         total_length = len(docx_text)
-        
+    
         MAX_CONTEXT = 18000  # Резерв для ответа
-        
-        for i, chunk in enumerate(chunks[:5]):  # Топ-5 самых релевантных
+    
+        # Добавляем проверку наличия chunks
+        if not chunks:
+            return "\n".join(context_parts + ["\n=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ НЕ НАЙДЕНЫ ==="])
+    
+        # Обрабатываем только первые 5 элементов с проверкой ключей
+        for i, chunk in enumerate(chunks[:5]):
+            # Безопасное получение значений
+            score = chunk.get('score', 0.0)
+            doc_name = chunk.get('doc_name', 'Документ')
             chunk_text = chunk.get('chunk_text', '')
+        
             chunk_len = len(chunk_text)
-            
+        
             if total_length + chunk_len > MAX_CONTEXT:
                 available = MAX_CONTEXT - total_length
                 if available > 100:
                     context_parts.append(
-                        f"\nФРАГМЕНТ {i+1} ({chunk['doc_name']}, релевантность {chunk['score']:.2f}):\n"
+                        f"\nФРАГМЕНТ {i+1} ({doc_name}, релевантность {score:.2f}):\n"
                         f"{chunk_text[:available]}...\n"
                     )
                 break
-                
+            
             context_parts.append(
-                f"\nФРАГМЕНТ {i+1} ({chunk['doc_name']}, релевантность {chunk['score']:.2f}):\n"
+                f"\nФРАГМЕНТ {i+1} ({doc_name}, релевантность {score:.2f}):\n"
                 f"{chunk_text}\n"
             )
             total_length += chunk_len
-        
+    
         return "\n".join(context_parts)
 
 def main():
