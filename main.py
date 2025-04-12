@@ -485,7 +485,7 @@ class DocumentAnalyzer:
                         st.subheader(f"Фрагмент {i}")
                         st.caption(f"**Документ:** {chunk.get('doc_name', 'Без названия')}")
                         st.caption(f"**Релевантность:** {chunk.get('score', 0):.2f}")
-                        st.write(chunk.get('chunk_text', '')[:500] + "...")
+                        st.write(chunk.get('chunk_text', '')[:2000] + "...")
                         st.divider()
 
             # Формирование контекста без фрагментов
