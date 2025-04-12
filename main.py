@@ -24,7 +24,7 @@ except ImportError:
 
 # Конфигурация
 DATA_DIR = "data"
-MAX_CONTEXT_LENGTH = 20000
+MAX_CONTEXT_LENGTH = 30000
 MAX_ANSWER_LENGTH = 15000
 TEMPERATURE = 0.2
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -485,7 +485,7 @@ class DocumentAnalyzer:
                         st.subheader(f"Фрагмент {i}")
                         st.caption(f"**Документ:** {chunk.get('doc_name', 'Без названия')}")
                         st.caption(f"**Релевантность:** {chunk.get('score', 0):.2f}")
-                        st.write(chunk.get('chunk_text', '')[:2000] + "...")
+                        st.write(chunk.get('chunk_text', '')[:10000] + "...")
                         st.divider()
 
             # Формирование контекста без фрагментов
@@ -601,7 +601,7 @@ def main():
             {"role": "system", "content": CHAT_SYSTEM_PROMPT},
             {"role": "assistant", "content": f"Анализируемый документ (сокращённо):\n{doc_summary}"},
             *[
-                {"role": "assistant", "content": f"Релевантный фрагмент ({chunk['doc_name']}):\n{chunk['chunk_text'][:800]}"}
+                {"role": "assistant", "content": f"Релевантный фрагмент ({chunk['doc_name']}):\n{chunk['chunk_text'][:10000]}"}
                 for chunk in relevant_chunks[:2]
             ],
             {"role": "user", "content": f"Диалог:\n{'\n'.join(st.session_state.get('chat_history', []))[-2:]}"},
