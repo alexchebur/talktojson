@@ -467,6 +467,8 @@ class DocumentAnalyzer:
                     with st.sidebar:
                         st.sidebar.subheader("🔑 Сгенерированные ключевые слова")
                         st.sidebar.write(", ".join(keywords))
+            st.sidebar.subheader("🔍 Используемые ключевые слова")
+            st.sidebar.write(", ".join(self.search_engine.llm_keywords))
             # Поиск фрагментов
             chunks = self.search_engine.search(self.search_engine.llm_keywords)
             
