@@ -211,49 +211,24 @@ class BM25SearchEngine:
             print(f"Ошибка поиска файлов индекса: {str(e)}")
             return []
 
-    def _normalize_processed(self, processed_data):
-        """Нормализует processed данные для индексации с фильтрацией организаций"""
+    def _normalize_text(self, text_data):
+        """Нормализует текст для индексации с фильтрацией организаций"""
         STOP_ORGANIZATIONS = [
             "ПАО Т Плюс", "АО ЕТК", "Екатеринбургская теплосетевая компания",
             "Т Плюс", "ЕТК", "AO ETK"
         ]
     
-        if not processed_data:
+        if not text_data:
             return []
 
-        if isinstance(processed_data, str):
-            try:
-                processed_data = json.loads(processed_data)
-            except json.JSONDecodeError:
-                pass
-
-        if not isinstance(processed_data, (str, list)):
-            processed_data = str(processed_data)
-
-        if isinstance(processed_data, list):
-            cleaned_items = []
-            for item in processed_data:
-                if not item:
-                    continue
-                
-                item_str = str(item).strip()
-            
-                for org in STOP_ORGANIZATIONS:
-                    item_str = item_str.replace(org, "")
-                
-                if item_str:
-                    cleaned_items.append(item_str)
-                
-            return self.preprocessor.preprocess(" ".join(cleaned_items))
-
-        if isinstance(processed_data, str):
+        if isinstance(text_data, str):
             for org in STOP_ORGANIZATIONS:
-                processed_data = processed_data.replace(org, "")
+                text_data = text_data.replace(org, "")
             
-            processed_data = re.sub(r'\S+@\S+', '', processed_data)
-            processed_data = re.sub(r'[\+\(\)\d\-]{6,}', '', processed_data)
+            text_data = re.sub(r'\S+@\S+', '', text_data)
+            text_data = re.sub(r'[\+\(\)\d\-]{6,}', '', text_data)
         
-            return self.preprocessor.preprocess(processed_data)
+            return self.preprocessor.preprocess(text_data)
 
         return []
 
@@ -278,7 +253,7 @@ class BM25SearchEngine:
             raise
 
     def _load_index(self):
-        """Загрузка и построение индекса из частей"""
+        """Загрузка и построение индекса из частей, используя поле original"""
         try:
             part_files = self._find_part_files()
             if not part_files:
@@ -296,7 +271,8 @@ class BM25SearchEngine:
                     if 'metadata' in file_data and isinstance(file_data['metadata'], list):
                         for item in file_data['metadata']:
                             if isinstance(item, dict) and 'original' in item:
-                                item['processed'] = self._normalize_processed(item.get('processed', ''))
+                                # Используем original текст для индексации
+                                item['processed'] = self._normalize_text(item['original'])
                                 merged_data['metadata'].append(item)
 
                     if 'processed_files' in file_data and isinstance(file_data['processed_files'], list):
@@ -349,7 +325,7 @@ class BM25SearchEngine:
                 results.append({
                     'doc_id': self.chunks_info[idx].get('file_id', ''),
                     'doc_name': self.chunks_info[idx].get('doc_name', 'Документ'),
-                    'chunk_text': self.chunks_info[idx].get('original', '')[:2000],
+                    'chunk_text': self.chunks_info[idx].get('original', '')[:2000],  # Используем original текст
                     'score': round(float(score), 4)
                 })
     
@@ -530,10 +506,8 @@ class DocumentAnalyzer:
         except Exception as e:
             st.error(f"Общая ошибка при загрузке документов: {str(e)}")
 
-# ... (предыдущий код остается без изменений до метода _build_context)
-
     def _build_context(self, docx_text: str, chunks: List[Dict]) -> str:
-        """Строит контекст для LLM из DOCX и найденных фрагментов"""
+        """Строит контекст для LLM из DOCX и найденных фрагментов (из поля original)"""
         context_parts = [
             "=== ЗАГРУЖЕННЫЙ ДОКУМЕНТ ===",
             docx_text.strip(),
@@ -573,23 +547,12 @@ class DocumentAnalyzer:
     
         return "\n".join(context_parts)
 
-# ... (остальной код остается без изменений)
 def main():
     st.set_page_config(page_title="El Documente", layout="wide", initial_sidebar_state="collapsed")
     gif_path = "data/maracas-sombrero-hat.gif"
     st.image(gif_path, caption="Hola!", width=64)
     st.title("El Documente: проверьте свой процессуальный документ")
-    # Добавьте в main()
-    if st.button("Показать примеры из индекса"):
-        if analyzer.search_engine.chunks_info:
-            sample = analyzer.search_engine.chunks_info[0]
-            st.json({
-                "doc_name": sample.get('doc_name'),
-                "original": sample.get('original')[:100] + "...",
-                "processed": sample.get('processed')[:5]
-            })
-        else:
-            st.error("Нет данных в индексе!")
+    
     if 'analyzer' not in st.session_state:
         st.session_state.analyzer = DocumentAnalyzer(API_URL, API_KEY)
     
