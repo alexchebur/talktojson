@@ -186,6 +186,7 @@ class BM25SearchEngine:
         self.chunks_info = []
         self.is_index_loaded = False
         self.llm_keywords = []
+        self.processed_keywords = []  # Добавлено новое поле
         self.data_dir = "data"
         self.min_score = 0.15
         self._load_index()
@@ -253,8 +254,19 @@ class BM25SearchEngine:
             print(f"Ошибка чтения файла {file_path}: {str(e)}")
             raise
 
+    def _process_keywords(self, words: List[str]) -> List[str]:
+        vowels = {'а', 'е', 'ё', 'и', 'о', 'у', 'ы', 'э', 'ю', 'я'}
+        processed = []
+        for word in words:
+            if len(word) < 4:
+                continue
+            if word[-1].lower() in vowels:
+                word = word[:-1]
+            processed.append(word.lower())
+        return list(set(processed))
+
+    
     def _load_index(self):
-        """Загрузка и построение индекса из частей, используя поле original"""
         try:
             part_files = self._find_part_files()
             if not part_files:
@@ -262,7 +274,8 @@ class BM25SearchEngine:
                 return False
 
             merged_data = {'metadata': [], 'processed_files': set()}
-            
+            all_processed_words = []
+
             for file_path in part_files:
                 try:
                     file_data = self._read_json_with_recovery(file_path)
@@ -271,14 +284,9 @@ class BM25SearchEngine:
 
                     if 'metadata' in file_data and isinstance(file_data['metadata'], list):
                         for item in file_data['metadata']:
-                            if isinstance(item, dict) and 'original' in item:
-                                # Используем original текст для индексации
-                                item['processed'] = self._normalize_text(item['original'])
-                                merged_data['metadata'].append(item)
-
-                    if 'processed_files' in file_data and isinstance(file_data['processed_files'], list):
-                        merged_data['processed_files'].update(file_data['processed_files'])
-
+                            if isinstance(item, dict) and 'processed' in item:
+                                all_processed_words.extend(item['processed'])
+            self.processed_keywords = self._process_keywords(all_processed_words)
                 except Exception as e:
                     st.sidebar.error(f"Ошибка обработки файла {file_path}: {str(e)}")
                     continue
@@ -455,7 +463,7 @@ class DocumentAnalyzer:
             return "Пожалуйста, загрузите DOCX файл"
             
         docx_text = self.current_docx["content"]
-        
+            
         try:
             # Генерация ключевых слов
             if not self.search_engine.llm_keywords:
@@ -463,12 +471,18 @@ class DocumentAnalyzer:
                     keywords = self._generate_keywords_from_text(docx_text)
                     self.search_engine.llm_keywords = keywords
                     st.sidebar.success("✅ Ключевые слова сгенерированы")
-                    # Вывод ключевых слов в сайдбар
                     with st.sidebar:
-                        st.sidebar.subheader("🔑 Сгенерированные ключевые слова")
-                        st.sidebar.write(", ".join(keywords))
-            st.sidebar.subheader("🔍 Используемые ключевые слова")
-            st.sidebar.write(", ".join(self.search_engine.llm_keywords))
+                        st.subheader("🔑 Ключевые слова LLM")
+                        st.write(", ".join(keywords))
+                        st.subheader("🔍 Ключи из документов")
+                        st.write(", ".join(self.search_engine.processed_keywords))
+            # Объединение ключевых слов
+            combined_keywords = (
+                self.search_engine.llm_keywords + 
+                self.search_engine.processed_keywords
+            )
+            combined_keywords = list(set(combined_keywords))
+           
             # Поиск фрагментов
             chunks = self.search_engine.search(self.search_engine.llm_keywords)
             
@@ -490,11 +504,15 @@ class DocumentAnalyzer:
 
             # Формирование контекста без фрагментов
             context = self._build_context(docx_text)
+            llm_kw_str = ", ".join(self.search_engine.llm_keywords)
+            processed_kw_str = ", ".join(self.search_engine.processed_keywords)            context = self._build_context(docx_text)
             
             # Запрос к LLM
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": BUTTON_PROMPTS[prompt_type] + f"\n\nКОНТЕКСТ:\n{context}"}
+                {"role": "user", "content": BUTTON_PROMPTS[prompt_type].format(context=context) + 
+                    f"\n\nКлючевые слова из LLM: {llm_kw_str}" +
+                    f"\nКлючевые слова из документов: {processed_kw_str}"}
             ]
             
             return self.llm_client.query(messages, TEMPERATURE, MAX_ANSWER_LENGTH)
@@ -502,7 +520,6 @@ class DocumentAnalyzer:
         except Exception as e:
             st.error(f"Ошибка анализа: {str(e)}")
             return ""
-
 
     def load_documents(self, uploaded_files) -> None:
         """Загружает DOCX файлы"""
