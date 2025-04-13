@@ -300,7 +300,7 @@ class BM25SearchEngine:
                 st.sidebar.error("Нет данных для индексации после нормализации")
                 return False
 
-            self.bm25 = BM25Okapi(corpus, k1=2.0, b=0.75)
+            self.bm25 = BM25Okapi(corpus, k1=1.1, b=0.75)
             self.chunks_info = valid_metadata
             self.is_index_loaded = True
             st.sidebar.info(f"Индекс успешно загружен. Фрагментов: {len(corpus)}")
