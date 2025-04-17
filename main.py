@@ -287,7 +287,7 @@ class BM25SearchEngine:
                             if isinstance(item, dict) and 'processed' in item:
                                 all_processed_words.extend(item['processed'])
                     self.processed_keywords = self._process_keywords(all_processed_words)
-                 except Exception as e:
+                except Exception as e:
                     st.sidebar.error(f"Ошибка обработки файла {file_path}: {str(e)}")
                     continue
 
