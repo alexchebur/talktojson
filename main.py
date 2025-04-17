@@ -364,6 +364,7 @@ class BM25SearchEngine:
             r for r in sorted(results, key=lambda x: x['score'], reverse=True)
             if not (r['chunk_text'][:500] in seen or seen.add(r['chunk_text'][:500]))
         ][:top_n]
+
 class LLMClient:
     def __init__(self, api_url: str, api_key: str):
         self.api_url = api_url
@@ -503,9 +504,9 @@ class DocumentAnalyzer:
                         st.divider()
 
             # Формирование контекста без фрагментов
-            context = self._build_context(docx_text)
             llm_kw_str = ", ".join(self.search_engine.llm_keywords)
-            processed_kw_str = ", ".join(self.search_engine.processed_keywords)            context = self._build_context(docx_text)
+            processed_kw_str = ", ".join(self.search_engine.processed_keywords)
+            context = self._build_context(docx_text)
             
             # Запрос к LLM
             messages = [
