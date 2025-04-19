@@ -152,6 +152,9 @@ if uploaded_file:
         file_text = file_to_text(uploaded_file)
         if not file_text:
             st.stop()
+        # Сохраняем текст документа в сессии
+        st.session_state.document_text = file_text  # <-- НОВАЯ СТРОКА
+        
         # Создание индекса
         st.session_state.bm25_index, st.session_state.original_chunks = create_bm25_index()
         if not st.session_state.bm25_index or not st.session_state.original_chunks:
@@ -249,7 +252,11 @@ if send_button and uploaded_file:
     with st.spinner("Формируем ответ..."):
         try:
             # Формируем полный контекст
-            full_context = f"{st.session_state.user_context}\n\nДанные:\n" + "\n\n".join(relevant_chunks)
+            full_context = (
+                f"{st.session_state.user_context}\n\n"
+                f"Полный текст документа:\n{st.session_state.document_text[:30000]}...\n\n"  # Ограничение в 30k символов
+                f"Релевантные фрагменты:\n" + "\n\n".join(relevant_chunks)
+            )
             
             response = requests.post(
                 API_URL,
