@@ -175,18 +175,13 @@ if uploaded_file:
 
     try:
         # Взвешивание через повторение терминов
-        query_weights = {term: 2 for term in keywords}  # Увеличили вес
+        query_weights = {term: 2 for term in keywords}  # Используем целые веса
         weighted_query = []
         for term, weight in query_weights.items():
             weighted_query.extend([term] * weight)
     
-        # Получаем оценки
-        doc_scores = st.session_state.bm25_index.get_scores(weighted_query)
-    
-        # Отладочная информация
-        st.write("## Отладочная информация")
-        st.write(f"Максимальная оценка: {max(doc_scores) if doc_scores else 0:.2f}")
-        st.write(f"Средняя оценка: {sum(doc_scores)/len(doc_scores) if doc_scores else 0:.2f}")
+        # Получаем оценки как numpy массив
+        doc_scores = np.array(st.session_state.bm25_index.get_scores(weighted_query))
     
         # Фильтрация и сортировка
         sorted_indices = sorted(
@@ -195,25 +190,14 @@ if uploaded_file:
             reverse=True
         )
     
-        # Выбираем топ-5 с пороговым значением (понизили порог)
-        top_indices = [i for i in sorted_indices if doc_scores[i] > 0.01][:5]
+        # Явное сравнение с плавающей точкой
+        top_indices = [i for i in sorted_indices if doc_scores[i] > 0.0][:5]
     
-        # Извлекаем чанки
         top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
-
-        # Вывод результатов
-        st.subheader("Релевантные фрагменты")
-        if top_chunks:
-            for idx, chunk in enumerate(top_chunks, 1):
-                score = doc_scores[top_indices[idx-1]]
-                st.write(f"#### Фрагмент {idx} (оценка: {score:.2f})")
-                st.text(chunk[:2000] + ("..." if len(chunk) > 2000 else ""))
-        else:
-            st.warning("Релевантные фрагменты не найдены")
 
     except Exception as e:
         st.error(f"Ошибка поиска: {str(e)}")
-        st.stop()
+        st.stop()        st.stop()
 
         # Отображение информации
         st.subheader("Контекст анализа:")
