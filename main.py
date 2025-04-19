@@ -203,37 +203,85 @@ if uploaded_file:
         st.error(f"Ошибка поиска: {str(e)}")
         st.stop()
 
-   
-    # Подготовка запроса к LLM
-    full_context = f"{st.session_state.user_context}\n\nДанные:\n" + "\n\n".join(relevant_chunks)
-        
-    try:
-        st.write("Отправляю запрос к LLM с контекстом:", full_context[:500] + "...")
-        response = requests.post(
-            API_URL,
-            headers={"Authorization": f"Bearer {API_KEY}"},
-            json={
-                 "model": "google/gemini-2.0-flash-lite-001",
-                  "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": full_context},
-                    {"role": "assistant", "content": st.session_state.chat_log}
-                ],
-                "temperature": 0.3
-            },
-            timeout=API_TIMEOUT
-        )
-        response.raise_for_status()
+# Блок чата
+chat_container = st.container()
+with chat_container:
+    if uploaded_file:
+        st.subheader("Контекст анализа:")
+        st.write(st.session_state.user_context)
+    
+    # История диалога
+    st.subheader("История консультаций")
+    st.text_area("Лог переговоров", 
+                value=st.session_state.chat_log, 
+                height=300,
+                key="chat_history",
+                disabled=True)
+
+# Блок ввода пользователя
+input_container = st.container()
+with input_container:
+    user_input = st.text_area(
+        "Введите ваш вопрос:", 
+        height=150,
+        max_chars=600,
+        key="user_input",
+        help="Максимум 600 символов"
+    )
+    
+    col1, col2 = st.columns([1, 6])
+    with col1:
+        send_button = st.button("Отправить", use_container_width=True)
+
+# Обработка запроса
+if send_button and uploaded_file:
+    if not user_input.strip():
+        st.error("Введите текст вопроса")
+        st.stop()
+    
+    # Добавляем вопрос в контекст
+    st.session_state.user_context += f"\n\nВопрос пользователя: {user_input.strip()}"
+    
+    # Обновляем историю
+    st.session_state.chat_log += f"\nПользователь: {user_input.strip()}"
+    
+    # Выполняем запрос к LLM
+    with st.spinner("Формируем ответ..."):
+        try:
+            # Формируем полный контекст
+            full_context = f"{st.session_state.user_context}\n\nДанные:\n" + "\n\n".join(relevant_chunks)
             
-        answer = response.json()['choices'][0]['message']['content']
-        st.subheader("Юридическая оценка:")
-        st.write(answer)
+            response = requests.post(
+                API_URL,
+                headers={"Authorization": f"Bearer {API_KEY}"},
+                json={
+                    "model": "google/gemini-2.0-flash-lite-001",
+                    "messages": [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": full_context},
+                        {"role": "assistant", "content": st.session_state.chat_log}
+                    ],
+                    "temperature": 0.3
+                },
+                timeout=API_TIMEOUT
+            )
+            response.raise_for_status()
             
-        # Обновление истории
-        st.session_state.chat_log += f"\nПользователь: {file_text[:100]}...\nАссистент: {answer}"
+            answer = response.json()['choices'][0]['message']['content']
             
-    except requests.exceptions.RequestException as e:
-        st.error(f"Ошибка API: {str(e)}")
+            # Обновляем интерфейс
+            with chat_container:
+                st.subheader("Юридическая оценка:")
+                st.write(answer)
+                
+            # Сохраняем в историю
+            st.session_state.chat_log += f"\nАссистент: {answer}"
+            
+        except requests.exceptions.RequestException as e:
+            st.error(f"Ошибка API: {str(e)}")
+            
+    # Очищаем поле ввода
+    st.session_state.user_input = ""
 
 # Отображение истории
 st.subheader("История консультаций")
