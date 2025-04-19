@@ -175,7 +175,7 @@ if uploaded_file:
                 range(len(doc_scores)), 
                 key=lambda i: doc_scores[i], 
                 reverse=True
-            )[:10]
+            )[:3]
             
             # Извлекаем оригинальные тексты по индексам
             top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
@@ -192,7 +192,7 @@ if uploaded_file:
         relevant_chunks = []
         for i, chunk in enumerate(top_chunks):
             relevant_chunks.append(chunk)
-            st.text_area(f"Фрагмент {i+1}", value=chunk[:1500], height=150)
+            st.text_area(f"Фрагмент {i+1}", value=chunk[:5000], height=150)
 
         # Подготовка запроса к LLM
         full_context = f"{st.session_state.user_context}\n\nДанные:\n" + "\n\n".join(relevant_chunks)
