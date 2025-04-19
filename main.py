@@ -167,7 +167,7 @@ if uploaded_file:
     st.write("Ключевые слова:", keywords)
     st.write("Количество чанков:", len(st.session_state.original_chunks))
         # В блоке поиска замените текущий код на этот:
-        try:
+    try:
             # Взвешивание через повторение терминов
             query_weights = {term: 2 for term in keywords}  # Используем целые веса
             weighted_query = []
