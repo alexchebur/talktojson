@@ -156,7 +156,11 @@ if uploaded_file:
         st.session_state.bm25_index, st.session_state.original_chunks = create_bm25_index()
         if not st.session_state.bm25_index or not st.session_state.original_chunks:
             st.stop()
-
+            st.write("Параметры BM25:", 
+                    f"k1={st.session_state.bm25_index.k1}, " 
+                    f"b={st.session_state.bm25_index.b}")
+         
+            st.write("Пример оценок:", doc_scores[:5])
         
         # Извлечение ключевых слов
         keywords = extract_keywords(file_text, st.session_state.bm25_index)
