@@ -49,30 +49,29 @@ def create_bm25_index():
     
     for filename in txt_files:
         file_path = os.path.join("documents", filename)
-        text = None
-        
-        # Попробуем разные кодировки
-        encodings = ['utf-8', 'cp1251', 'iso-8859-1', 'latin1']
-        for encoding in encodings:
-            try:
-                with open(file_path, 'r', encoding=encoding) as f:
-                    text = f.read()
-                break
-            except UnicodeDecodeError:
-                continue
-            except Exception as e:
-                st.warning(f"Ошибка чтения {filename}: {str(e)}")
-                continue
-        
-        if not text:
-            st.error(f"Не удалось прочитать файл {filename} с поддерживаемыми кодировками")
+        try:
+            # Определение кодировки с помощью chardet
+            with open(file_path, 'rb') as f:
+                raw_data = f.read(10000)  # Читаем первые 10KB для определения кодировки
+                encoding = chardet.detect(raw_data)['encoding']
+            
+            # Чтение всего файла с определенной кодировкой
+            with open(file_path, 'r', encoding=encoding or 'utf-8', errors='replace') as f:
+                text = f.read()
+                
+            chunks = process_text(text)
+            all_chunks.extend(chunks)
+            
+        except Exception as e:
+            st.error(f"Ошибка обработки файла {filename}: {str(e)}")
             continue
-        
-        chunks = process_text(text)
-        all_chunks.extend(chunks)
 
+    if not all_chunks:
+        st.error("Не удалось загрузить ни одного документа для индексации!")
+        return None
+        
     tokenized_chunks = [doc.split() for doc in all_chunks]
-    return BM25Okapi(tokenized_chunks) if tokenized_chunks else None
+    return BM25Okapi(tokenized_chunks)
 
 def extract_keywords(text: str, bm25: BM25Okapi) -> List[str]:
     """Extract keywords using BM25 scoring with filters"""
