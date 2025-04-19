@@ -129,7 +129,7 @@ def extract_keywords(text: str, bm25: BM25Okapi) -> List[str]:
             if word not in seen:
                 seen.add(word)
                 unique_words.append(word)
-                if len(unique_words) == 15:
+                if len(unique_words) == 20:
                     break
 
         return [clean_keyword(word) for word in unique_words]
@@ -191,7 +191,7 @@ if uploaded_file:
             key=lambda x: x[1], 
             reverse=True) 
             if score > 0
-        ][:5]
+        ][:10]
 
         # 6. Извлечение чанков
         top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
