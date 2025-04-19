@@ -232,7 +232,7 @@ if uploaded_file:
         # Обновление истории
         st.session_state.chat_log += f"\nПользователь: {file_text[:100]}...\nАссистент: {answer}"
             
-     except requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException as e:
         st.error(f"Ошибка API: {str(e)}")
 
 # Отображение истории
