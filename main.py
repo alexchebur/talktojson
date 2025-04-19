@@ -3,6 +3,7 @@ import os
 import re
 import time
 import requests
+import chardet
 import streamlit as st
 from rank_bm25 import BM25Okapi
 from docx import Document
