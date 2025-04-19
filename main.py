@@ -186,31 +186,23 @@ if uploaded_file:
         # Поиск релевантных фрагментов
         # Модифицированный код поиска
     try:
-        # 1. Исправленная токенизация запроса
-        tokenized_query = keywords  # Используем список ключевых слов напрямую
+        # Взвешивание через повторение терминов
+        query_weights = {term: 1.5 for term in keywords}
+        weighted_query = []
+        for term, weight in query_weights.items():
+            weighted_query.extend([term] * int(weight))
     
-        # 2. Настройка параметров BM25 (k1 и b)
-        st.session_state.bm25_index.k1 = 2.0  # Контроль частоты терминов
-        st.session_state.bm25_index.b = 0.8 # Контроль длины документа
+        # Поиск с модифицированным запросом
+        doc_scores = st.session_state.bm25_index.get_scores(weighted_query)
     
-        # 3. Взвешивание уникальных терминов
-        query_weights = {term: 1.5 for term in tokenized_query}
-    
-        # 4. Поиск с учетом весов
-        doc_scores = st.session_state.bm25_index.get_scores(
-            query=tokenized_query, 
-            weights=query_weights
+        # Фильтрация и сортировка
+        sorted_indices = sorted(
+            range(len(doc_scores)), 
+            key=lambda i: doc_scores[i], 
+            reverse=True
         )
+        top_indices = [i for i in sorted_indices if doc_scores[i] > 0][:5]
     
-        # 5. Фильтрация нулевых результатов
-        top_indices = [
-            i for i, score in sorted(enumerate(doc_scores), 
-            key=lambda x: x[1], 
-            reverse=True) 
-            if score > 0
-        ][:10]
-
-        # 6. Извлечение чанков
         top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
 
     except Exception as e:
