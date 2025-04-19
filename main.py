@@ -209,6 +209,7 @@ if uploaded_file:
         full_context = f"{st.session_state.user_context}\n\nДанные:\n" + "\n\n".join(relevant_chunks)
         
         try:
+            st.write("Отправляю запрос к LLM с контекстом:", full_context[:500] + "...")
             response = requests.post(
                 API_URL,
                 headers={"Authorization": f"Bearer {API_KEY}"},
