@@ -157,21 +157,7 @@ if uploaded_file:
         if not st.session_state.bm25_index or not st.session_state.original_chunks:
             st.stop()
 
-        # После создания индекса добавьте:
-        if st.session_state.bm25_index and st.session_state.original_chunks:
-            # Объединяем все чанки в один текст
-            all_indexed_text = "\n\n".join(st.session_state.original_chunks)
-    
-            # Выводим первые 5000 символов
-            st.subheader("Содержимое индекса (первые 5000 символов)")
-            preview_text = all_indexed_text[:5000]
-            st.text_area("Превью индексированных данных", 
-                        value=preview_text, 
-                        height=300)
-    
-            # Дополнительная информация
-            st.write(f"Всего символов в индексе: {len(all_indexed_text):,}")
-            st.write(f"Количество чанков: {len(st.session_state.original_chunks)}")
+
 
 
         
@@ -214,7 +200,7 @@ if uploaded_file:
         # 6. Извлечение чанков
         top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
 
-        except Exception as e:
+            except Exception as e:
                 st.error(f"Ошибка поиска: {str(e)}")
                 st.stop()
 
