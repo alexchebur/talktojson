@@ -9,6 +9,7 @@ pymorphy2>=0.9.1
 pymorphy2-dicts-ru>=2.4.417127.4579844
 scikit-learn==1.4.0
 nltk==3.8.1
+chardet>=2.1.0
 
 
 
