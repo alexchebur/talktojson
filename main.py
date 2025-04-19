@@ -204,37 +204,36 @@ if uploaded_file:
         st.stop()
 
    
-
-        # Подготовка запроса к LLM
-        full_context = f"{st.session_state.user_context}\n\nДанные:\n" + "\n\n".join(relevant_chunks)
+    # Подготовка запроса к LLM
+    full_context = f"{st.session_state.user_context}\n\nДанные:\n" + "\n\n".join(relevant_chunks)
         
-        try:
-            st.write("Отправляю запрос к LLM с контекстом:", full_context[:500] + "...")
-            response = requests.post(
-                API_URL,
-                headers={"Authorization": f"Bearer {API_KEY}"},
-                json={
-                    "model": "google/gemini-2.0-flash-lite-001",
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": full_context},
-                        {"role": "assistant", "content": st.session_state.chat_log}
-                    ],
-                    "temperature": 0.3
-                },
-                timeout=API_TIMEOUT
-            )
-            response.raise_for_status()
+    try:
+        st.write("Отправляю запрос к LLM с контекстом:", full_context[:500] + "...")
+        response = requests.post(
+            API_URL,
+            headers={"Authorization": f"Bearer {API_KEY}"},
+            json={
+                 "model": "google/gemini-2.0-flash-lite-001",
+                  "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": full_context},
+                    {"role": "assistant", "content": st.session_state.chat_log}
+                ],
+                "temperature": 0.3
+            },
+            timeout=API_TIMEOUT
+        )
+        response.raise_for_status()
             
-            answer = response.json()['choices'][0]['message']['content']
-            st.subheader("Юридическая оценка:")
-            st.write(answer)
+        answer = response.json()['choices'][0]['message']['content']
+        st.subheader("Юридическая оценка:")
+        st.write(answer)
             
-            # Обновление истории
-            st.session_state.chat_log += f"\nПользователь: {file_text[:100]}...\nАссистент: {answer}"
+        # Обновление истории
+        st.session_state.chat_log += f"\nПользователь: {file_text[:100]}...\nАссистент: {answer}"
             
-        except requests.exceptions.RequestException as e:
-            st.error(f"Ошибка API: {str(e)}")
+     except requests.exceptions.RequestException as e:
+        st.error(f"Ошибка API: {str(e)}")
 
 # Отображение истории
 st.subheader("История консультаций")
