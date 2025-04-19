@@ -44,16 +44,35 @@ def create_bm25_index():
     
     if not os.path.exists("documents"):
         os.makedirs("documents")
-    
+
     txt_files = [f for f in os.listdir("documents") if f.endswith(".txt")]
-    for i, filename in enumerate(txt_files):
-        with open(os.path.join("documents", filename), "r", encoding="utf-8") as f:
-            text = f.read()
-            chunks = process_text(text)
-            all_chunks.extend(chunks)
     
+    for filename in txt_files:
+        file_path = os.path.join("documents", filename)
+        text = None
+        
+        # Попробуем разные кодировки
+        encodings = ['utf-8', 'cp1251', 'iso-8859-1', 'latin1']
+        for encoding in encodings:
+            try:
+                with open(file_path, 'r', encoding=encoding) as f:
+                    text = f.read()
+                break
+            except UnicodeDecodeError:
+                continue
+            except Exception as e:
+                st.warning(f"Ошибка чтения {filename}: {str(e)}")
+                continue
+        
+        if not text:
+            st.error(f"Не удалось прочитать файл {filename} с поддерживаемыми кодировками")
+            continue
+        
+        chunks = process_text(text)
+        all_chunks.extend(chunks)
+
     tokenized_chunks = [doc.split() for doc in all_chunks]
-    return BM25Okapi(tokenized_chunks)
+    return BM25Okapi(tokenized_chunks) if tokenized_chunks else None
 
 def extract_keywords(text: str, bm25: BM25Okapi) -> List[str]:
     """Extract keywords using BM25 scoring with filters"""
