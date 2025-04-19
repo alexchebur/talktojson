@@ -213,7 +213,7 @@ if uploaded_file:
                 API_URL,
                 headers={"Authorization": f"Bearer {API_KEY}"},
                 json={
-                    "model": "your-model-name",
+                    "model": "google/gemini-2.0-flash-lite-001",
                     "messages": [
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": full_context},
