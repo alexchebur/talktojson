@@ -3,6 +3,7 @@ import re
 import time
 import chardet
 import requests
+import numpy as np  # Добавлено здесь
 import streamlit as st
 from docx import Document
 from PyPDF2 import PdfReader
