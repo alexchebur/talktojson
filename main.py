@@ -167,22 +167,38 @@ if uploaded_file:
         st.session_state.user_context += f"Ключевые термины: {', '.join(keywords)}"
 
         # Поиск релевантных фрагментов
-        try:
-            tokenized_query = keywords #" ".join(keywords).split()
-            # Получаем индексы топовых чанков
-            doc_scores = st.session_state.bm25_index.get_scores(tokenized_query)
-            top_indices = sorted(
-                range(len(doc_scores)), 
-                key=lambda i: doc_scores[i], 
-                reverse=True
-            )[:3]
-            
-            # Извлекаем оригинальные тексты по индексам
-            top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
+        # Модифицированный код поиска
+    try:
+        # 1. Исправленная токенизация запроса
+        tokenized_query = keywords  # Используем список ключевых слов напрямую
+    
+        # 2. Настройка параметров BM25 (k1 и b)
+        st.session_state.bm25_index.k1 = 2.0  # Контроль частоты терминов
+        st.session_state.bm25_index.b = 0.8   # Контроль длины документа
+    
+        # 3. Взвешивание уникальных терминов
+        query_weights = {term: 1.5 for term in tokenized_query}
+    
+        # 4. Поиск с учетом весов
+        doc_scores = st.session_state.bm25_index.get_scores(
+            query=tokenized_query, 
+            weights=query_weights
+        )
+    
+        # 5. Фильтрация нулевых результатов
+        top_indices = [
+            i for i, score in sorted(enumerate(doc_scores), 
+            key=lambda x: x[1], 
+            reverse=True) 
+            if score > 0
+        ][:5]
 
-        except Exception as e:
-            st.error(f"Ошибка поиска: {str(e)}")
-            st.stop()
+        # 6. Извлечение чанков
+        top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
+
+            except Exception as e:
+                st.error(f"Ошибка поиска: {str(e)}")
+                st.stop()
 
         # Отображение информации
         st.subheader("Контекст анализа:")
