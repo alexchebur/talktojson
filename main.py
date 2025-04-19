@@ -197,7 +197,7 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"Ошибка поиска: {str(e)}")
-        st.stop()        st.stop()
+        st.stop()
 
         # Отображение информации
         st.subheader("Контекст анализа:")
