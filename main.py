@@ -188,20 +188,21 @@ if uploaded_file:
         top_indices = [i for i in sorted_indices if doc_scores[i] > 0.0][:5]
     
         top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
+         # Отображение информации
+        st.subheader("Контекст анализа:")
+        st.write(st.session_state.user_context)
+
+        st.subheader("Релевантные фрагменты:")
+        relevant_chunks = []
+        for i, chunk in enumerate(top_chunks):
+            relevant_chunks.append(chunk)
+            st.text_area(f"Фрагмент {i+1}", value=chunk[:5000], height=150)
 
     except Exception as e:
         st.error(f"Ошибка поиска: {str(e)}")
         st.stop()
 
-    # Отображение информации
-    st.subheader("Контекст анализа:")
-    st.write(st.session_state.user_context)
-
-    st.subheader("Релевантные фрагменты:")
-    relevant_chunks = []
-    for i, chunk in enumerate(top_chunks):
-        relevant_chunks.append(chunk)
-        st.text_area(f"Фрагмент {i+1}", value=chunk[:5000], height=150)
+   
 
         # Подготовка запроса к LLM
         full_context = f"{st.session_state.user_context}\n\nДанные:\n" + "\n\n".join(relevant_chunks)
