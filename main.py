@@ -76,7 +76,7 @@ def create_bm25_index():
             return None, None
 
         tokenized_chunks = [doc.split() for doc in all_chunks]
-        return BM25Okapi(tokenized_chunks), original_texts  # Возвращаем оба объекта
+        return BM25Okapi(tokenized_chunks, k1=2.0, b=0.8), original_texts  # Возвращаем оба объекта
 
     except Exception as e:
         st.error(f"Критическая ошибка при создании индекса: {str(e)}")
@@ -174,7 +174,7 @@ if uploaded_file:
     
         # 2. Настройка параметров BM25 (k1 и b)
         st.session_state.bm25_index.k1 = 2.0  # Контроль частоты терминов
-        st.session_state.bm25_index.b = 2.0 # Контроль длины документа
+        st.session_state.bm25_index.b = 0.8 # Контроль длины документа
     
         # 3. Взвешивание уникальных терминов
         query_weights = {term: 1.5 for term in tokenized_query}
