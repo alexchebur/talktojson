@@ -15,7 +15,7 @@ API_KEY = "your_api_key"
 SYSTEM_PROMPT = "Ты юрист-консультант. Отвечай доброжелательно и структурированно. Запрещено выдумывать законы и судебные решения. Оперируй только известной информацией из контекста USER_CONTEXT."
 INITIAL_USER_CONTEXT = "USER_CONTEXT: "
 API_TIMEOUT = 60
-CHUNK_SIZE = 5000
+CHUNK_SIZE = 10000
 CHUNK_OVERLAP = 1000
 
 # Инициализация состояния сессии
@@ -175,7 +175,7 @@ if uploaded_file:
                 range(len(doc_scores)), 
                 key=lambda i: doc_scores[i], 
                 reverse=True
-            )[:5]
+            )[:10]
             
             # Извлекаем оригинальные тексты по индексам
             top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
