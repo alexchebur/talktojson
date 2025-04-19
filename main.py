@@ -46,8 +46,9 @@ def detect_file_encoding(file_path: str) -> str:
     return chardet.detect(raw_data)['encoding']
 
 def create_bm25_index():
-    """Создание BM25 индекса с обработкой ошибок"""
+    """Создание BM25 индекса с сохранением оригинальных текстов"""
     all_chunks = []
+    original_texts = []  # Сохраняем оригинальные тексты чанков
     
     try:
         if not os.path.exists("documents"):
@@ -55,7 +56,7 @@ def create_bm25_index():
 
         txt_files = [f for f in os.listdir("documents") if f.endswith(".txt")]
         if not txt_files:
-            return None
+            return None, None
 
         for filename in txt_files:
             file_path = os.path.join("documents", filename)
@@ -65,20 +66,21 @@ def create_bm25_index():
                     text = f.read()
                 chunks = process_text(text)
                 all_chunks.extend(chunks)
+                original_texts.extend(chunks)  # Сохраняем оригинальные чанки
             except Exception as e:
                 st.error(f"Ошибка чтения {filename}: {str(e)}")
                 continue
 
         if not all_chunks:
             st.error("Нет данных для индексации!")
-            return None
+            return None, None
 
         tokenized_chunks = [doc.split() for doc in all_chunks]
-        return BM25Okapi(tokenized_chunks)
+        return BM25Okapi(tokenized_chunks), original_texts  # Возвращаем оба объекта
 
     except Exception as e:
         st.error(f"Критическая ошибка при создании индекса: {str(e)}")
-        return None
+        return None, None
 
 def file_to_text(uploaded_file) -> Optional[str]:
     """Конвертация файла в текст с обработкой ошибок"""
@@ -151,8 +153,8 @@ if uploaded_file:
             st.stop()
 
         # Создание индекса
-        st.session_state.bm25_index = create_bm25_index()
-        if not st.session_state.bm25_index:
+        st.session_state.bm25_index, st.session_state.original_chunks = create_bm25_index()
+        if not st.session_state.bm25_index or not st.session_state.original_chunks:
             st.stop()
 
         # Извлечение ключевых слов
@@ -166,9 +168,18 @@ if uploaded_file:
 
         # Поиск релевантных фрагментов
         try:
-            corpus = st.session_state.bm25_index.corpus
             tokenized_query = " ".join(keywords).split()
-            top_chunks = st.session_state.bm25_index.get_top_n(tokenized_query, corpus, n=5)
+            # Получаем индексы топовых чанков
+            doc_scores = st.session_state.bm25_index.get_scores(tokenized_query)
+            top_indices = sorted(
+                range(len(doc_scores)), 
+                key=lambda i: doc_scores[i], 
+                reverse=True
+            )[:5]
+            
+            # Извлекаем оригинальные тексты по индексам
+            top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
+
         except Exception as e:
             st.error(f"Ошибка поиска: {str(e)}")
             st.stop()
@@ -180,9 +191,8 @@ if uploaded_file:
         st.subheader("Релевантные фрагменты:")
         relevant_chunks = []
         for i, chunk in enumerate(top_chunks):
-            chunk_text = " ".join(chunk)
-            relevant_chunks.append(chunk_text)
-            st.text_area(f"Фрагмент {i+1}", value=chunk_text[:1500], height=150)
+            relevant_chunks.append(chunk)
+            st.text_area(f"Фрагмент {i+1}", value=chunk[:1500], height=150)
 
         # Подготовка запроса к LLM
         full_context = f"{st.session_state.user_context}\n\nДанные:\n" + "\n\n".join(relevant_chunks)
