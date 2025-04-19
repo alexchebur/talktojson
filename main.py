@@ -174,7 +174,7 @@ if uploaded_file:
     
         # 2. Настройка параметров BM25 (k1 и b)
         st.session_state.bm25_index.k1 = 2.0  # Контроль частоты терминов
-        st.session_state.bm25_index.b = 0.1  # Контроль длины документа
+        st.session_state.bm25_index.b = 2.0 # Контроль длины документа
     
         # 3. Взвешивание уникальных терминов
         query_weights = {term: 1.5 for term in tokenized_query}
