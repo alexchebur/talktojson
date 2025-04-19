@@ -157,23 +157,23 @@ if uploaded_file:
         if not st.session_state.bm25_index or not st.session_state.original_chunks:
             st.stop()
 
-    # После создания индекса добавьте:
-    if st.session_state.bm25_index and st.session_state.original_chunks:
-        # Объединяем все чанки в один текст
-        all_indexed_text = "\n\n".join(st.session_state.original_chunks)
+        # После создания индекса добавьте:
+        if st.session_state.bm25_index and st.session_state.original_chunks:
+            # Объединяем все чанки в один текст
+            all_indexed_text = "\n\n".join(st.session_state.original_chunks)
     
-        # Выводим первые 5000 символов
-        st.subheader("Содержимое индекса (первые 5000 символов)")
-        preview_text = all_indexed_text[:5000]
-        st.text_area("Превью индексированных данных", 
-                    value=preview_text, 
-                    height=300)
+            # Выводим первые 5000 символов
+            st.subheader("Содержимое индекса (первые 5000 символов)")
+            preview_text = all_indexed_text[:5000]
+            st.text_area("Превью индексированных данных", 
+                        value=preview_text, 
+                        height=300)
     
-        # Дополнительная информация
-        st.write(f"Всего символов в индексе: {len(all_indexed_text):,}")
-        st.write(f"Количество чанков: {len(st.session_state.original_chunks)}")
-        st.write("Пример токенизированных данных:", 
-        st.session_state.bm25_index.corpus[0][:20])  # Первые 20 токенов первого чанка
+            # Дополнительная информация
+            st.write(f"Всего символов в индексе: {len(all_indexed_text):,}")
+            st.write(f"Количество чанков: {len(st.session_state.original_chunks)}")
+            st.write("Пример токенизированных данных:", 
+            st.session_state.bm25_index.corpus[0][:20])  # Первые 20 токенов первого чанка
 
 
         
