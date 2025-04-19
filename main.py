@@ -200,9 +200,9 @@ if uploaded_file:
         # 6. Извлечение чанков
         top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
 
-            except Exception as e:
-                st.error(f"Ошибка поиска: {str(e)}")
-                st.stop()
+    except Exception as e:
+        st.error(f"Ошибка поиска: {str(e)}")
+        st.stop()
 
         # Отображение информации
         st.subheader("Контекст анализа:")
