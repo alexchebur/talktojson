@@ -210,12 +210,12 @@ with chat_container:
         st.subheader("Контекст анализа:")
         st.write(st.session_state.user_context)
     
-    # История диалога
+    # История диалога - ИЗМЕНИЛИ КЛЮЧ
     st.subheader("История консультаций")
     st.text_area("Лог переговоров", 
                 value=st.session_state.chat_log, 
                 height=300,
-                key="chat_history",
+                key="chat_history_display",  # Уникальный ключ
                 disabled=True)
 
 # Блок ввода пользователя
@@ -225,13 +225,13 @@ with input_container:
         "Введите ваш вопрос:", 
         height=150,
         max_chars=600,
-        key="user_input",
+        key="user_input_field",  # Уникальный ключ
         help="Максимум 600 символов"
     )
     
     col1, col2 = st.columns([1, 6])
     with col1:
-        send_button = st.button("Отправить", use_container_width=True)
+        send_button = st.button("Отправить", use_container_width=True, key="send_button_unique")  # Уникальный ключ
 
 # Обработка запроса
 if send_button and uploaded_file:
@@ -281,8 +281,7 @@ if send_button and uploaded_file:
             st.error(f"Ошибка API: {str(e)}")
             
     # Очищаем поле ввода
-    st.session_state.user_input = ""
-
+    st.session_state.user_input_field = ""  # Используем тот же ключ, что и в text_area
 # Отображение истории
 st.subheader("История консультаций")
 st.text_area("Лог переговоров", 
