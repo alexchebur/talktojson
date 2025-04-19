@@ -168,7 +168,7 @@ if uploaded_file:
 
         # Поиск релевантных фрагментов
         try:
-            tokenized_query = " ".join(keywords).split()
+            tokenized_query = keywords #" ".join(keywords).split()
             # Получаем индексы топовых чанков
             doc_scores = st.session_state.bm25_index.get_scores(tokenized_query)
             top_indices = sorted(
