@@ -103,8 +103,8 @@ def file_to_text(uploaded_file) -> Optional[str]:
 def clean_keyword(word: str) -> str:
     """Очистка ключевых слов"""
     # Удаление гласных окончаний
-    while len(word) > 0 and word[-2] in 'аеёиоуыэюя':
-        word = word[:-2]
+    while len(word) > 0 and word[-1] in 'аеёиоуыэюя':
+        word = word[:-1]
     return word
 
 def extract_keywords(text: str, bm25: BM25Okapi) -> List[str]:
