@@ -165,6 +165,11 @@ if uploaded_file:
 
         # Обновление контекста
         st.session_state.user_context += f"Ключевые термины: {', '.join(keywords)}"
+    # Проверка ключевых слов
+    st.write("## Отладка")
+    st.write("Ключевые слова:", keywords)
+    st.write("Количество чанков:", len(st.session_state.original_chunks))
+
 
         # Поиск релевантных фрагментов
         # Модифицированный код поиска
