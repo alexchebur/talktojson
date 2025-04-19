@@ -76,7 +76,7 @@ def create_bm25_index():
             return None, None
 
         tokenized_chunks = [doc.split() for doc in all_chunks]
-        return BM25Okapi(tokenized_chunks, k1=2.0, b=0.8), original_texts  # Возвращаем оба объекта
+        return BM25Okapi(tokenized_chunks, k1=0.1, b=1.0), original_texts  # Возвращаем оба объекта
 
     except Exception as e:
         st.error(f"Критическая ошибка при создании индекса: {str(e)}")
