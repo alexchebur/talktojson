@@ -147,33 +147,26 @@ if uploaded_file:
     with st.spinner("Анализ документа..."):
         # Сброс предыдущего состояния
         st.session_state.user_context = INITIAL_USER_CONTEXT
-        
         # Конвертация файла
         file_text = file_to_text(uploaded_file)
         if not file_text:
             st.stop()
-
         # Создание индекса
         st.session_state.bm25_index, st.session_state.original_chunks = create_bm25_index()
         if not st.session_state.bm25_index or not st.session_state.original_chunks:
             st.stop()
-        
         # Извлечение ключевых слов
         keywords = extract_keywords(file_text, st.session_state.bm25_index)
         if not keywords:
             st.error("Не удалось извлечь ключевые слова")
             st.stop()
-
         # Обновление контекста
         st.session_state.user_context += f"Ключевые термины: {', '.join(keywords)}"
     # Проверка ключевых слов
     st.write("## Отладка")
     st.write("Ключевые слова:", keywords)
     st.write("Количество чанков:", len(st.session_state.original_chunks))
-
-
         # В блоке поиска замените текущий код на этот:
-
         try:
             # Взвешивание через повторение терминов
             query_weights = {term: 2 for term in keywords}  # Используем целые веса
