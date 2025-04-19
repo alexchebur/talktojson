@@ -168,30 +168,30 @@ if uploaded_file:
     st.write("Количество чанков:", len(st.session_state.original_chunks))
         # В блоке поиска замените текущий код на этот:
     try:
-            # Взвешивание через повторение терминов
-            query_weights = {term: 2 for term in keywords}  # Используем целые веса
-            weighted_query = []
-            for term, weight in query_weights.items():
-                weighted_query.extend([term] * weight)
+        #Взвешивание через повторение терминов
+        query_weights = {term: 2 for term in keywords}  # Используем целые веса
+        weighted_query = []
+        for term, weight in query_weights.items():
+            weighted_query.extend([term] * weight)
     
-            # Получаем оценки как numpy массив
-            doc_scores = np.array(st.session_state.bm25_index.get_scores(weighted_query))
+        # Получаем оценки как numpy массив
+        doc_scores = np.array(st.session_state.bm25_index.get_scores(weighted_query))
     
-            # Фильтрация и сортировка
-            sorted_indices = sorted(
-                range(len(doc_scores)), 
-                key=lambda i: doc_scores[i], 
-                reverse=True
-            )
+        # Фильтрация и сортировка
+        sorted_indices = sorted(
+            range(len(doc_scores)), 
+            key=lambda i: doc_scores[i], 
+            reverse=True
+        )
     
-            # Явное сравнение с плавающей точкой
-            top_indices = [i for i in sorted_indices if doc_scores[i] > 0.0][:5]
+        # Явное сравнение с плавающей точкой
+        top_indices = [i for i in sorted_indices if doc_scores[i] > 0.0][:5]
     
-            top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
+        top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
 
-        except Exception as e:
-            st.error(f"Ошибка поиска: {str(e)}")
-            st.stop()
+    except Exception as e:
+        st.error(f"Ошибка поиска: {str(e)}")
+        st.stop()
 
         # Отображение информации
         st.subheader("Контекст анализа:")
