@@ -9,10 +9,11 @@ from docx import Document
 from PyPDF2 import PdfReader
 from typing import List, Optional
 from rank_bm25 import BM25Okapi
+from config import API_KEY, API_URL
 
 # Конфигурация приложения
-API_URL = "your_api_endpoint"
-API_KEY = "your_api_key"
+#API_URL = "your_api_endpoint"
+#API_KEY = "your_api_key"
 SYSTEM_PROMPT = "Ты юрист-консультант. Отвечай доброжелательно и структурированно. Запрещено выдумывать законы и судебные решения. Оперируй только известной информацией из контекста USER_CONTEXT."
 INITIAL_USER_CONTEXT = "USER_CONTEXT: "
 API_TIMEOUT = 60
