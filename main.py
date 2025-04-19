@@ -116,7 +116,7 @@ def extract_keywords(text: str, bm25: BM25Okapi) -> List[str]:
         
         filtered = [
             word for word in words
-            if len(word) >= 4 
+            if len(word) >= 3 
             and word not in stop_words
             and not re.search(r'\d', word)
         ]
