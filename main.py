@@ -301,7 +301,9 @@ if send_button and uploaded_file:
             st.error(f"Ошибка API: {str(e)}")
             
     # Очищаем поле ввода
-    st.session_state.user_input_field = ""  # Используем тот же ключ, что и в text_area
+    #st.session_state.user_input_field = ""  # Используем тот же ключ, что и в text_area
+    st.session_state.user_input = ""
+    st.experimental_rerun()  # Принудительное обновление
 # Отображение истории
 st.subheader("История консультаций")
 st.text_area("Лог переговоров", 
