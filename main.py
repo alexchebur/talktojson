@@ -31,6 +31,8 @@ def initialize_session():
     if "user_input" not in st.session_state:  # Правильный ключ
         st.session_state.user_input = ""
 
+initialize_session()
+
 def process_text(text: str) -> List[str]:
     """Разделение текста на чанки с перекрытием"""
     chunks = []
