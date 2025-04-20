@@ -218,12 +218,12 @@ with chat_container:
         st.write(st.session_state.user_context)
     
     # История диалога - ИЗМЕНИЛИ КЛЮЧ
-    st.subheader("История консультаций")
-    st.text_area("Лог переговоров", 
-                value=st.session_state.chat_log, 
-                height=300,
-                key="chat_history_display",  # Уникальный ключ
-                disabled=True)
+    #st.subheader("История консультаций")
+    #st.text_area("Лог переговоров", 
+    #            value=st.session_state.chat_log, 
+    #            height=300,
+    #            key="chat_history_display",  # Уникальный ключ
+    #            disabled=True)
 
 # Блок ввода пользователя
 #input_container = st.container()
@@ -307,8 +307,8 @@ if send_button and uploaded_file:
         clear_input()  # Вызов функции очистки
         st.rerun()
 # Отображение истории
-#st.subheader("История консультаций")
-#st.text_area("Лог переговоров", 
-#           value=st.session_state.chat_log, 
-#           height=300,
-#           key="chat_history")
+st.subheader("История консультаций")
+st.text_area("Лог переговоров", 
+           value=st.session_state.chat_log, 
+           height=300,
+           key="chat_history")
