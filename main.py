@@ -124,6 +124,7 @@ def extract_keywords_tfidf(text: str) -> List[str]:
             ngram_range=(1, 2),
             max_features=50,
             stop_words=list(DOC_STOP_WORDS)
+        )
         
         tfidf_matrix = vectorizer.fit_transform([text])
         feature_names = vectorizer.get_feature_names_out()
