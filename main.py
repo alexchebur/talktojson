@@ -61,108 +61,151 @@ def detect_file_encoding(file_path: str) -> str:
 
 def create_bm25_index():
     try:
+        # [1] Проверка существования директории
         if not os.path.exists("documents"):
             os.makedirs("documents")
-            st.warning("Создана пустая папка documents")
+            st.warning("Создана директория documents")
             return None, None
 
+        # [2] Поиск файлов с расширением .txt
         txt_files = [f for f in os.listdir("documents") if f.endswith(".txt")]
         if not txt_files:
-            st.error("Нет .txt файлов в папке documents!")
+            st.error("В папке documents отсутствуют .txt файлы!")
             return None, None
 
         all_chunks = []
         lemmatized_chunks = []
         corpus_vocabulary = set()
-        total_words = 0
-
-        # Отладочная информация
-        debug_info = {
-            "files_processed": 0,
+        debug_data = {
+            "total_files": len(txt_files),
+            "processed_files": 0,
+            "total_words": 0,
             "empty_chunks": 0,
-            "sample_lemmas": []
+            "sample_data": []
         }
 
+        # [3] Обработка файлов
         for filename in txt_files:
             try:
                 file_path = os.path.join("documents", filename)
-                encoding = detect_file_encoding(file_path)
                 
+                # [4] Определение кодировки
+                rawdata = open(file_path, 'rb').read(10000)
+                encoding = chardet.detect(rawdata)['encoding']
+                if not encoding:
+                    encoding = 'utf-8'
+                
+                # [5] Чтение файла
                 with open(file_path, 'r', encoding=encoding, errors='replace') as f:
                     text = f.read().strip()
                 
                 if not text:
-                    st.warning(f"Файл {filename} пуст")
+                    debug_data["sample_data"].append(f"{filename}: EMPTY")
                     continue
-
+                
+                # [6] Разделение на чанки
                 chunks = process_text(text)
                 if not chunks:
-                    st.warning(f"Файл {filename} не содержит текста после обработки")
+                    debug_data["sample_data"].append(f"{filename}: NO CHUNKS")
                     continue
-
-                debug_info["files_processed"] += 1
+                
+                debug_data["processed_files"] += 1
                 all_chunks.extend(chunks)
-
-                for chunk in chunks:
-                    words = re.findall(r'\b[а-яё-]+\b', chunk.lower())  # Разрешаем дефисы
-                    lemmas = [
-                        lemmatize_word(w) for w in words 
-                        if len(w) >= 3 
-                        and w not in DOC_STOP_WORDS
-                        and not re.search(r'^\d+$', w)  # Исключаем чисто числовые токены
-                    ]
-                    
-                    total_words += len(lemmas)
-                    if lemmas:
+                
+                # [7] Обработка чанков
+                for chunk_idx, chunk in enumerate(chunks):
+                    try:
+                        # Извлечение слов с дефисами и апострофами
+                        words = re.findall(r'\b[а-яё\-]+\b', chunk.lower())
+                        if not words:
+                            debug_data["empty_chunks"] += 1
+                            continue
+                        
+                        # Лемматизация
+                        lemmas = []
+                        for word in words:
+                            lemma = lemmatize_word(word)
+                            if (len(lemma) >= 3 
+                                and lemma not in DOC_STOP_WORDS 
+                                and not lemma.isdigit()):
+                                lemmas.append(lemma)
+                        
+                        if not lemmas:
+                            debug_data["empty_chunks"] += 1
+                            continue
+                        
+                        # Сохранение данных
                         lemmatized_chunks.append(lemmas)
                         corpus_vocabulary.update(lemmas)
-                        if len(debug_info["sample_lemmas"]) < 5:
-                            debug_info["sample_lemmas"].extend(lemmas[:3])
-                    else:
-                        debug_info["empty_chunks"] += 1
+                        debug_data["total_words"] += len(lemmas)
+                        
+                        # Сохранение примеров
+                        if len(debug_data["sample_data"]) < 3:
+                            debug_data["sample_data"].append({
+                                "filename": filename,
+                                "original": chunk[:100] + "...",
+                                "lemmas": lemmas[:10]
+                            })
+                            
+                    except Exception as chunk_error:
+                        st.error(f"Ошибка в чанке {chunk_idx} файла {filename}: {str(chunk_error)}")
+                        
+            except Exception as file_error:
+                st.error(f"Файл {filename} не может быть обработан: {str(file_error)}")
 
-            except Exception as e:
-                st.error(f"Ошибка обработки {filename}: {str(e)}")
-                continue
+        # [8] Валидация данных
+        st.write("## Диагностика данных")
+        st.write(f"Обработано файлов: {debug_data['processed_files']}/{debug_data['total_files']}")
+        st.write(f"Всего слов: {debug_data['total_words']}")
+        st.write(f"Пустых чанков: {debug_data['empty_chunks']}")
+        
+        if debug_data["sample_data"]:
+            st.write("### Примеры обработки:")
+            for sample in debug_data["sample_data"]:
+                st.json(sample)
 
-        # Отладочный вывод
-        st.write("## Отладочная информация:")
-        st.write(f"- Обработано файлов: {debug_info['files_processed']}")
-        st.write(f"- Всего чанков: {len(lemmatized_chunks)}")
-        st.write(f"- Пустых чанков: {debug_info['empty_chunks']}")
-        st.write(f"- Примеры лемм: {debug_info['sample_lemmas'][:5]}")
-        st.write(f"- Всего уникальных слов: {len(corpus_vocabulary)}")
-
+        # [9] Проверка критических условий
         if not lemmatized_chunks:
             st.error("""
-                Нет данных для индексации! Возможные причины:
-                1. Все файлы пусты
-                2. Слишком агрессивная фильтрация стоп-слов
-                3. Неправильная обработка кодировок
+            Нет данных для индексации! Возможные причины:
+            1. Все файлы пусты или содержат только стоп-слова
+            2. Неправильная кодировка файлов
+            3. Слишком агрессивная фильтрация (мин. длина слова 3)
             """)
             return None, None
 
-        if total_words < 10:
-            st.error(f"Слишком мало слов для индексации: {total_words}. Минимум 10.")
+        if len(lemmatized_chunks[0]) == 0:
+            st.error("Первый чанк пуст! Проверьте фильтрацию")
             return None, None
 
+        # [10] Создание индекса
         try:
-            bm25 = BM25Okapi(lemmatized_chunks, k1=1.5, b=0.75)  # Возвращаем к стандартным параметрам
-            idf = {term: bm25.idf[i] for i, term in enumerate(sorted(corpus_vocabulary))}
+            st.write("Параметры BM25:")
+            st.write(f"- k1: 1.5")
+            st.write(f"- b: 0.75")
+            st.write(f"- Кол-во чанков: {len(lemmatized_chunks)}")
+            st.write(f"- Пример первого чанка: {lemmatized_chunks[0][:5]}...")
             
-            st.session_state.idf_values = idf
+            bm25 = BM25Okapi(lemmatized_chunks, k1=1.5, b=0.75)
+            
+            # [11] Сохранение IDF
+            idf_dict = {}
+            for term in corpus_vocabulary:
+                if term in bm25.term_index:
+                    idf_dict[term] = bm25.idf[bm25.term_index[term]]
+            
+            st.session_state.idf_values = idf_dict
             st.session_state.lemmatized_chunks = lemmatized_chunks
             
             return bm25, all_chunks
-
-        except Exception as e:
-            st.error(f"Ошибка инициализации BM25: {str(e)}")
+            
+        except Exception as bm25_error:
+            st.error(f"Критическая ошибка BM25: {str(bm25_error)}")
             return None, None
 
-    except Exception as e:
-        st.error(f"Критическая ошибка: {str(e)}")
-        return None, None
-def file_to_text(uploaded_file) -> Optional[str]:
+    except Exception as global_error:
+        st.error(f"Системная ошибка: {str(global_error)}")
+        return None, Nonedef file_to_text(uploaded_file) -> Optional[str]:
     try:
         if uploaded_file.name.endswith('.txt'):
             return uploaded_file.getvalue().decode("utf-8")
