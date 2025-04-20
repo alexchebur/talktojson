@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import chardet
 import requests
 import numpy as np
@@ -12,23 +13,23 @@ from config import API_KEY, API_URL
 
 # Конфигурация приложения
 SYSTEM_PROMPT = "Ты юрист-консультант. Отвечай доброжелательно и структурированно. Запрещено выдумывать законы и судебные решения. Оперируй только известной информацией из контекста USER_CONTEXT."
-INITIAL_USER_CONTEXT = "USER_CONTEXT: "
 API_TIMEOUT = 60
 CHUNK_SIZE = 10000
 CHUNK_OVERLAP = 1000
 
 def initialize_session():
     required_keys = {
-        "bm25_index": None,
-        "original_chunks": [],
         "chat_log": "",
-        "user_context": INITIAL_USER_CONTEXT,
+        "user_input": "",
         "document_text": "",
-        "relevant_chunks": []
+        "document_keywords": [],
+        "document_relevant_chunks": [],
+        "query_keywords": [],
+        "query_relevant_chunks": []
     }
-    for key, default in required_keys.items():
+    for key in required_keys:
         if key not in st.session_state:
-            st.session_state[key] = default
+            st.session_state[key] = required_keys[key]
 
 initialize_session()
 
@@ -49,7 +50,7 @@ def detect_file_encoding(file_path: str) -> str:
     return chardet.detect(raw_data)['encoding']
 
 def create_bm25_index():
-    """Создание BM25 индекса на основе документов в папке 'documents'"""
+    """Создание BM25 индекса на основе документов в папке"""
     all_chunks = []
     original_texts = []
     
@@ -81,7 +82,7 @@ def create_bm25_index():
         return BM25Okapi(tokenized_chunks, k1=1.8, b=0.75), original_texts
 
     except Exception as e:
-        st.error(f"Ошибка при создании индекса: {str(e)}")
+        st.error(f"Ошибка создания индекса: {str(e)}")
         return None, None
 
 def file_to_text(uploaded_file) -> Optional[str]:
@@ -89,13 +90,15 @@ def file_to_text(uploaded_file) -> Optional[str]:
     try:
         if uploaded_file.name.endswith('.txt'):
             return uploaded_file.getvalue().decode("utf-8")
+        
         elif uploaded_file.name.endswith('.docx'):
             doc = Document(uploaded_file)
             return "\n".join([para.text for para in doc.paragraphs])
+        
         elif uploaded_file.name.endswith('.pdf'):
             reader = PdfReader(uploaded_file)
             return "\n".join([page.extract_text() for page in reader.pages])
-        return None
+        
     except Exception as e:
         st.error(f"Ошибка обработки файла: {str(e)}")
         return None
@@ -106,8 +109,8 @@ def clean_keyword(word: str) -> str:
         word = word[:-1]
     return word
 
-def extract_keywords(text: str, bm25: Optional[BM25Okapi] = None) -> List[str]:
-    """Извлечение ключевых слов с использованием BM25 или частоты"""
+def extract_keywords(text: str, bm25: BM25Okapi) -> List[str]:
+    """Извлечение ключевых слов с учетом BM25"""
     try:
         words = re.findall(r'\b[а-яё]+\b', text.lower())
         stop_words = {"на", "под", "в", "среди", "перед", "затем", "после", "до", "сразу"}
@@ -119,23 +122,12 @@ def extract_keywords(text: str, bm25: Optional[BM25Okapi] = None) -> List[str]:
             and not re.search(r'\d', word)
         ]
 
-        if not filtered:
-            return []
-
-        if bm25 is not None:
-            scores = bm25.get_scores(filtered)
-            scored_words = sorted(zip(filtered, scores), key=lambda x: x[1], reverse=True)
-        else:
-            freq = {}
-            for word in filtered:
-                freq[word] = freq.get(word, 0) + 1
-            scored_words = sorted(freq.items(), key=lambda x: x[1], reverse=True)
-            scored_words = [(word, freq) for word, freq in scored_words]
-
+        scores = bm25.get_scores(filtered)
+        scored_words = sorted(zip(filtered, scores), key=lambda x: x[1], reverse=True)
+        
         unique_words = []
         seen = set()
-        for item in scored_words:
-            word = item[0] if isinstance(item, tuple) else item
+        for word, _ in scored_words:
             if word not in seen:
                 seen.add(word)
                 unique_words.append(word)
@@ -148,84 +140,108 @@ def extract_keywords(text: str, bm25: Optional[BM25Okapi] = None) -> List[str]:
         st.error(f"Ошибка извлечения ключевых слов: {str(e)}")
         return []
 
-# Интерфейс Streamlit
+def search_relevant_chunks(bm25: BM25Okapi, original_chunks: List[str], keywords: List[str]) -> List[str]:
+    """Поиск релевантных фрагментов"""
+    try:
+        query_weights = {term: 2 for term in keywords}
+        weighted_query = []
+        for term, weight in query_weights.items():
+            weighted_query.extend([term] * weight)
+        
+        doc_scores = np.array(bm25.get_scores(weighted_query))
+        sorted_indices = sorted(range(len(doc_scores)), key=lambda i: doc_scores[i], reverse=True)
+        return [original_chunks[i] for i in sorted_indices if doc_scores[i] > 0.0][:5]
+    
+    except Exception as e:
+        st.error(f"Ошибка поиска: {str(e)}")
+        return []
+
+# Интерфейс
 st.title("Юридический консультант AI")
 uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 
 if uploaded_file:
     with st.spinner("Анализ документа..."):
         file_text = file_to_text(uploaded_file)
-        if file_text:
-            st.session_state.document_text = file_text
-            st.success("Документ успешно загружен!")
-        else:
-            st.session_state.document_text = ""
+        if not file_text:
+            st.stop()
+        
+        st.session_state.document_text = file_text
+        bm25_index, original_chunks = create_bm25_index()
+        
+        if not bm25_index or not original_chunks:
+            st.stop()
+        
+        keywords = extract_keywords(file_text, bm25_index)
+        if not keywords:
+            st.error("Не удалось извлечь ключевые слова")
+            st.stop()
+        
+        st.session_state.document_keywords = keywords
+        st.session_state.document_relevant_chunks = search_relevant_chunks(bm25_index, original_chunks, keywords)
+        
+        if st.session_state.document_relevant_chunks:
+            st.subheader("Релевантные фрагменты из документа:")
+            for i, chunk in enumerate(st.session_state.document_relevant_chunks):
+                st.text_area(f"Фрагмент {i+1}", value=chunk[:5000], height=150, key=f"doc_chunk_{i}")
 
+# Блок чата
 user_input = st.text_area(
-    "Введите ваш вопрос:",
+    "Введите ваш вопрос:", 
     height=150,
     max_chars=600,
-    key="user_input",
-    help="Максимум 600 символов"
+    key="user_input"
 )
 
 if st.button("Отправить"):
     if not user_input.strip():
         st.error("Введите текст вопроса")
         st.stop()
-
-    # Обновляем историю чата
-    st.session_state.chat_log += f"\nПользователь: {user_input.strip()}"
     
-    # Создаем BM25 индекс
-    with st.spinner("Создание индекса..."):
+    with st.spinner("Обработка запроса..."):
+        # Создание индекса и обработка запроса
         bm25_index, original_chunks = create_bm25_index()
-    
-    # Определяем источник для ключевых слов
-    source_text = st.session_state.document_text if st.session_state.document_text else user_input
-    
-    # Извлекаем ключевые слова
-    with st.spinner("Извлечение ключевых слов..."):
-        keywords = extract_keywords(source_text, bm25_index)
-    
-    # Формируем контекст пользователя
-    user_context = INITIAL_USER_CONTEXT
-    if keywords:
-        user_context += f"Ключевые термины: {', '.join(keywords)}"
-    
-    # Поиск релевантных фрагментов
-    relevant_chunks = []
-    if bm25_index and original_chunks:
-        with st.spinner("Поиск релевантных фрагментов..."):
-            try:
-                query_weights = {term: 2 for term in keywords}
-                weighted_query = []
-                for term, weight in query_weights.items():
-                    weighted_query.extend([term] * weight)
-                
-                doc_scores = np.array(bm25_index.get_scores(weighted_query))
-                sorted_indices = sorted(range(len(doc_scores)), key=lambda i: doc_scores[i], reverse=True)
-                top_indices = [i for i in sorted_indices if doc_scores[i] > 0][:5]
-                relevant_chunks = [original_chunks[i] for i in top_indices]
-            except Exception as e:
-                relevant_chunks = []
-    
-    # Формируем запрос к LLM
-    with st.spinner("Формирование ответа..."):
+        if not bm25_index or not original_chunks:
+            st.error("Не удалось создать поисковый индекс")
+            st.stop()
+        
+        # Извлечение ключевых слов из запроса
+        query_keywords = extract_keywords(user_input, bm25_index)
+        if not query_keywords:
+            st.error("Не удалось извлечь ключевые слова из запроса")
+            st.stop()
+        
+        # Поиск релевантных фрагментов
+        query_chunks = search_relevant_chunks(bm25_index, original_chunks, query_keywords)
+        st.session_state.query_relevant_chunks = query_chunks
+        
+        # Формирование контекста
+        context_parts = []
+        if st.session_state.document_keywords:
+            context_parts.append(
+                "Контекст из документа:\n"
+                f"Ключевые термины: {', '.join(st.session_state.document_keywords)}\n"
+                f"Релевантные фрагменты:\n" + 
+                "\n\n".join(st.session_state.document_relevant_chunks)
+            )
+        
+        context_parts.append(
+            "Контекст из запроса:\n"
+            f"Ключевые термины: {', '.join(query_keywords)}\n"
+            f"Релевантные фрагменты:\n" + 
+            "\n\n".join(query_chunks)
+        )
+        
+        assistant_content = "\n\n".join(context_parts)
+        
+        # Формирование запроса к LLM
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_input},
+            {"role": "assistant", "content": assistant_content}
+        ]
+        
         try:
-            messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_context}
-            ]
-
-            if relevant_chunks:
-                messages.append({
-                    "role": "assistant",
-                    "content": "Релевантные фрагменты документов:\n" + "\n\n".join(relevant_chunks[:3])
-                })
-            
-            messages.append({"role": "user", "content": user_input.strip()})
-
             response = requests.post(
                 API_URL,
                 headers={"Authorization": f"Bearer {API_KEY}"},
@@ -239,27 +255,20 @@ if st.button("Отправить"):
             response.raise_for_status()
             
             answer = response.json()['choices'][0]['message']['content']
-            st.session_state.chat_log += f"\nАссистент: {answer}"
+            st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
             
-            # Отображение ответа
             st.subheader("Ответ:")
             st.write(answer)
             
-            # Отображение релевантных фрагментов
-            if relevant_chunks:
-                st.subheader("Релевантные фрагменты:")
-                for i, chunk in enumerate(relevant_chunks):
-                    st.text_area(f"Фрагмент {i+1}", value=chunk[:5000], height=150, disabled=True)
+            if query_chunks:
+                st.subheader("Релевантные фрагменты из запроса:")
+                for i, chunk in enumerate(query_chunks):
+                    st.text_area(f"Фрагмент {i+1}", value=chunk[:5000], height=150, key=f"query_chunk_{i}")
             
-        except requests.exceptions.RequestException as e:
-            st.error(f"Ошибка API: {str(e)}")
         except Exception as e:
-            st.error(f"Ошибка: {str(e)}")
+            st.error(f"Ошибка API: {str(e)}")
 
-# Отображение истории чата
-st.subheader("История диалога")
-st.text_area("Лог", value=st.session_state.chat_log, height=300, key="chat_history", disabled=True)
-
-if st.button("Очистить историю"):
-    st.session_state.chat_log = ""
-    st.rerun()
+# История чата
+if st.session_state.chat_log:
+    st.subheader("История диалога")
+    st.text_area("Лог", value=st.session_state.chat_log, height=300, key="history")
