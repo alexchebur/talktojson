@@ -241,8 +241,8 @@ user_input = st.text_area(
     help="Максимум 600 символов"
 )   
 col1, col2 = st.columns([1, 4])
-    with col1:
-        send_button = st.button("Отправить", use_container_width=True, key="send_button_unique")  # Уникальный ключ
+with col1:
+    send_button = st.button("Отправить", use_container_width=True, key="send_button_unique")  # Уникальный ключ
 
 
 
