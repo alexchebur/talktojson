@@ -67,6 +67,9 @@ def create_bm25_index():
         all_chunks = []
         lemmatized_chunks = []
         
+        # Сбор всех терминов корпуса
+        corpus_vocabulary = set()
+        
         for filename in [f for f in os.listdir("documents") if f.endswith(".txt")]:
             file_path = os.path.join("documents", filename)
             try:
@@ -76,12 +79,12 @@ def create_bm25_index():
                 chunks = process_text(text)
                 all_chunks.extend(chunks)
                 
-                # Лемматизация чанков
                 for chunk in chunks:
                     words = re.findall(r'\b[а-яё]+\b', chunk.lower())
                     lemmas = [lemmatize_word(w) for w in words 
                              if len(w) >= 3 and w not in DOC_STOP_WORDS]
                     lemmatized_chunks.append(lemmas)
+                    corpus_vocabulary.update(lemmas)
                 
             except Exception as e:
                 st.error(f"Ошибка обработки {filename}: {str(e)}")
@@ -91,14 +94,17 @@ def create_bm25_index():
             st.error("Нет данных для индексации!")
             return None, None
 
-        # Создаем BM25 с адаптированными параметрами
+        # Создаем BM25
         bm25 = BM25Okapi(lemmatized_chunks, k1=2.2, b=0.65)
         
-        # Сохраняем IDF значения
-        idf = {term: bm25.idf[i] for i, term in enumerate(bm25.term_index.keys())}
+        # Собираем IDF вручную
+        idf = {}
+        vocabulary = list(corpus_vocabulary)
+        for i, term in enumerate(vocabulary):
+            idf[term] = bm25.idf[i]
         
-        st.session_state.lemmatized_chunks = lemmatized_chunks
         st.session_state.idf_values = idf
+        st.session_state.lemmatized_chunks = lemmatized_chunks
         
         return bm25, all_chunks
 
