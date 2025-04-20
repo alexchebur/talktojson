@@ -305,8 +305,8 @@ if send_button and uploaded_file:
     st.session_state.user_input = ""
     st.experimental_rerun()  # Принудительное обновление
 # Отображение истории
-st.subheader("История консультаций")
-st.text_area("Лог переговоров", 
-           value=st.session_state.chat_log, 
-           height=300,
-           key="chat_history")
+#st.subheader("История консультаций")
+#st.text_area("Лог переговоров", 
+#           value=st.session_state.chat_log, 
+#           height=300,
+#           key="chat_history")
