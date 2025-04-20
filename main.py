@@ -20,18 +20,20 @@ API_TIMEOUT = 60
 CHUNK_SIZE = 10000
 CHUNK_OVERLAP = 1000
 
-# Инициализация состояния сессии
+# В функции инициализации убедитесь, что есть ключ user_input
 def initialize_session():
-    if "bm25_index" not in st.session_state:
-        st.session_state.bm25_index = None
-    if "chat_log" not in st.session_state:
-        st.session_state.chat_log = ""
-    if "user_context" not in st.session_state:
-        st.session_state.user_context = INITIAL_USER_CONTEXT
-    if "user_input" not in st.session_state:  # Правильный ключ
-        st.session_state.user_input = ""
+    required_keys = {
+        "bm25_index": None,
+        "chat_log": "",
+        "user_context": INITIAL_USER_CONTEXT,
+        "user_input": "",  # Обязательный ключ
+        "document_text": ""
+    }
+    for key, default in required_keys.items():
+        if key not in st.session_state:
+            st.session_state[key] = default
 
-initialize_session()
+initialize_session() 
 
 def process_text(text: str) -> List[str]:
     """Разделение текста на чанки с перекрытием"""
@@ -300,10 +302,10 @@ if send_button and uploaded_file:
         except requests.exceptions.RequestException as e:
             st.error(f"Ошибка API: {str(e)}")
             
-    # Очищаем поле ввода
-    #st.session_state.user_input_field = ""  # Используем тот же ключ, что и в text_area
-    st.session_state.user_input = ""
-    st.experimental_rerun()  # Принудительное обновление
+    def clear_input():
+        st.session_state.user_input = ""
+        clear_input()  # Вызов функции очистки
+        st.rerun()
 # Отображение истории
 #st.subheader("История консультаций")
 #st.text_area("Лог переговоров", 
