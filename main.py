@@ -211,8 +211,8 @@ if uploaded_file:
 # Блок чата
 chat_container = st.container()
 with chat_container:
-    #if uploaded_file:
-        #st.subheader("Контекст анализа:")
+    if uploaded_file:
+        st.subheader("Контекст анализа:")
         #st.write(st.session_state.user_context)
     
 # Виджет ввода
