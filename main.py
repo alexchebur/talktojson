@@ -28,6 +28,8 @@ def initialize_session():
         st.session_state.chat_log = ""
     if "user_context" not in st.session_state:
         st.session_state.user_context = INITIAL_USER_CONTEXT
+    if "user_input" not in st.session_state:  # Правильный ключ
+        st.session_state.user_input = ""
 
 initialize_session()
 
@@ -222,19 +224,30 @@ with chat_container:
                 disabled=True)
 
 # Блок ввода пользователя
-input_container = st.container()
-with input_container:
-    user_input = st.text_area(
-        "Введите ваш вопрос:", 
-        height=150,
-        max_chars=600,
-        key="user_input_field",  # Уникальный ключ
-        help="Максимум 600 символов"
-    )
-    
+#input_container = st.container()
+#with input_container:
+#    user_input = st.text_area(
+#        "Введите ваш вопрос:", 
+#        height=150,
+#        max_chars=600,
+#        key="user_input_field",  # Уникальный ключ
+#        help="Максимум 600 символов"
+#    )
+# Виджет ввода
+user_input = st.text_area(
+    "Введите ваш вопрос:", 
+    value=st.session_state.user_input,  # Привязка к состоянию
+    height=150,
+    max_chars=600,
+    key="user_input",  # Совпадает с ключом в session_state
+    help="Максимум 600 символов"
+)   
     col1, col2 = st.columns([1, 4])
     with col1:
         send_button = st.button("Отправить", use_container_width=True, key="send_button_unique")  # Уникальный ключ
+
+
+
 
 # Обработка запроса
 if send_button and uploaded_file:
