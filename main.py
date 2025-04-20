@@ -197,8 +197,8 @@ if uploaded_file:
     
         top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
          # Отображение информации
-        st.subheader("Контекст анализа:")
-        st.write(st.session_state.user_context)
+        #st.subheader("Контекст анализа:")
+        #st.write(st.session_state.user_context)
 
         st.subheader("Релевантные фрагменты:")
         relevant_chunks = []
