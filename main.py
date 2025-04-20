@@ -3,40 +3,50 @@ import re
 import time
 import chardet
 import requests
-import numpy as np  # Добавлено здесь
+import numpy as np
 import streamlit as st
 from docx import Document
 from PyPDF2 import PdfReader
 from typing import List, Optional
 from rank_bm25 import BM25Okapi
+from pymorphy3 import MorphAnalyzer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from config import API_KEY, API_URL
 
 # Конфигурация приложения
-#API_URL = "your_api_endpoint"
-#API_KEY = "your_api_key"
 SYSTEM_PROMPT = "Ты юрист-консультант. Отвечай доброжелательно и структурированно. Запрещено выдумывать законы и судебные решения. Оперируй только известной информацией из контекста USER_CONTEXT."
 INITIAL_USER_CONTEXT = "USER_CONTEXT: "
 API_TIMEOUT = 60
-CHUNK_SIZE = 10000
-CHUNK_OVERLAP = 1000
+CHUNK_SIZE = 8000
+CHUNK_OVERLAP = 800
+DOC_STOP_WORDS = {"на", "под", "в", "среди", "перед", "затем", "после", "до", "сразу"}
+QUERY_STOP_WORDS = {"как", "что", "на", "под", "в", "со", "и", "или"}
 
-# В функции инициализации убедитесь, что есть ключ user_input
+morph = MorphAnalyzer()
+
 def initialize_session():
     required_keys = {
         "bm25_index": None,
         "chat_log": "",
         "user_context": INITIAL_USER_CONTEXT,
-        "user_input": "",  # Обязательный ключ
-        "document_text": ""
+        "user_input": "",
+        "document_text": "",
+        "idf_values": {},
+        "lemmatized_chunks": []
     }
     for key, default in required_keys.items():
         if key not in st.session_state:
             st.session_state[key] = default
 
-initialize_session() 
+initialize_session()
+
+def lemmatize_word(word: str) -> str:
+    try:
+        return morph.parse(word)[0].normal_form
+    except:
+        return word
 
 def process_text(text: str) -> List[str]:
-    """Разделение текста на чанки с перекрытием"""
     chunks = []
     start = 0
     while start < len(text):
@@ -46,103 +56,97 @@ def process_text(text: str) -> List[str]:
     return chunks
 
 def detect_file_encoding(file_path: str) -> str:
-    """Определение кодировки файла"""
     with open(file_path, 'rb') as f:
-        raw_data = f.read(10000)
-    return chardet.detect(raw_data)['encoding']
+        return chardet.detect(f.read(10000))['encoding']
 
 def create_bm25_index():
-    """Создание BM25 индекса с сохранением оригинальных текстов"""
-    all_chunks = []
-    original_texts = []  # Сохраняем оригинальные тексты чанков
-    
     try:
         if not os.path.exists("documents"):
             os.makedirs("documents")
 
-        txt_files = [f for f in os.listdir("documents") if f.endswith(".txt")]
-        if not txt_files:
-            return None, None
-
-        for filename in txt_files:
+        all_chunks = []
+        lemmatized_chunks = []
+        
+        for filename in [f for f in os.listdir("documents") if f.endswith(".txt")]:
             file_path = os.path.join("documents", filename)
             try:
-                encoding = detect_file_encoding(file_path)
-                with open(file_path, 'r', encoding=encoding, errors='replace') as f:
+                with open(file_path, 'r', encoding=detect_file_encoding(file_path), errors='replace') as f:
                     text = f.read()
+                
                 chunks = process_text(text)
                 all_chunks.extend(chunks)
-                original_texts.extend(chunks)  # Сохраняем оригинальные чанки
+                
+                # Лемматизация чанков
+                for chunk in chunks:
+                    words = re.findall(r'\b[а-яё]+\b', chunk.lower())
+                    lemmas = [lemmatize_word(w) for w in words 
+                             if len(w) >= 3 and w not in DOC_STOP_WORDS]
+                    lemmatized_chunks.append(lemmas)
+                
             except Exception as e:
-                st.error(f"Ошибка чтения {filename}: {str(e)}")
+                st.error(f"Ошибка обработки {filename}: {str(e)}")
                 continue
 
-        if not all_chunks:
+        if not lemmatized_chunks:
             st.error("Нет данных для индексации!")
             return None, None
 
-        tokenized_chunks = [doc.split() for doc in all_chunks]
-        return BM25Okapi(tokenized_chunks, k1=1.8, b=0.75), original_texts  # Возвращаем оба объекта
+        # Создаем BM25 с адаптированными параметрами
+        bm25 = BM25Okapi(lemmatized_chunks, k1=2.2, b=0.65)
+        
+        # Сохраняем IDF значения
+        idf = {term: bm25.idf[i] for i, term in enumerate(bm25.term_index.keys())}
+        
+        st.session_state.lemmatized_chunks = lemmatized_chunks
+        st.session_state.idf_values = idf
+        
+        return bm25, all_chunks
 
     except Exception as e:
-        st.error(f"Критическая ошибка при создании индекса: {str(e)}")
+        st.error(f"Ошибка создания индекса: {str(e)}")
         return None, None
 
 def file_to_text(uploaded_file) -> Optional[str]:
-    """Конвертация файла в текст с обработкой ошибок"""
     try:
         if uploaded_file.name.endswith('.txt'):
             return uploaded_file.getvalue().decode("utf-8")
-        
         elif uploaded_file.name.endswith('.docx'):
-            doc = Document(uploaded_file)
-            return "\n".join([para.text for para in doc.paragraphs])
-        
+            return "\n".join([p.text for p in Document(uploaded_file).paragraphs])
         elif uploaded_file.name.endswith('.pdf'):
-            reader = PdfReader(uploaded_file)
-            return "\n".join([page.extract_text() for page in reader.pages])
-        
+            return "\n".join([p.extract_text() for p in PdfReader(uploaded_file).pages])
     except Exception as e:
         st.error(f"Ошибка обработки файла: {str(e)}")
         return None
 
-def clean_keyword(word: str) -> str:
-    """Очистка ключевых слов"""
-    # Удаление гласных окончаний
-    while len(word) > 0 and word[-1] in 'аеёийоуыэюя':
-        word = word[:-1]
-    return word
-
-def extract_keywords(text: str, bm25: BM25Okapi) -> List[str]:
-    """Извлечение ключевых слов с фильтрацией"""
+def extract_keywords_tfidf(text: str) -> List[str]:
     try:
-        words = re.findall(r'\b[а-яё]+\b', text.lower())
-        stop_words = {"на", "под", "в", "среди", "перед", "затем", "после", "до", "сразу"}
+        vectorizer = TfidfVectorizer(
+            ngram_range=(1, 2),
+            max_features=50,
+            stop_words=list(DOC_STOP_WORDS)
         
-        filtered = [
-            word for word in words
-            if len(word) >= 5 
-            and word not in stop_words
-            and not re.search(r'\d', word)
-        ]
-
-        scores = bm25.get_scores(filtered)
-        scored_words = sorted(zip(filtered, scores), key=lambda x: x[1], reverse=True)
+        tfidf_matrix = vectorizer.fit_transform([text])
+        feature_names = vectorizer.get_feature_names_out()
         
-        unique_words = []
-        seen = set()
-        for word, _ in scored_words:
-            if word not in seen:
-                seen.add(word)
-                unique_words.append(word)
-                if len(unique_words) == 20:
-                    break
-
-        return [clean_keyword(word) for word in unique_words]
-
+        sorted_indices = np.argsort(tfidf_matrix.toarray()).flatten()[::-1]
+        return [feature_names[i] for i in sorted_indices[:20]]
+    
     except Exception as e:
-        st.error(f"Ошибка извлечения ключевых слов: {str(e)}")
+        st.error(f"Ошибка TF-IDF: {str(e)}")
         return []
+
+def process_query(text: str) -> List[str]:
+    words = re.findall(r'\b[а-яё]+\b', text.lower())
+    query_terms = []
+    
+    for word in words:
+        if len(word) < 3 or word in QUERY_STOP_WORDS:
+            continue
+        lemma = lemmatize_word(word)
+        if lemma in st.session_state.idf_values:
+            query_terms.append(lemma)
+    
+    return query_terms
 
 # Интерфейс Streamlit
 st.title("Юридический консультант AI")
@@ -150,63 +154,65 @@ uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX
 
 if uploaded_file:
     with st.spinner("Анализ документа..."):
-        # Сброс предыдущего состояния
         st.session_state.user_context = INITIAL_USER_CONTEXT
-        # Конвертация файла
         file_text = file_to_text(uploaded_file)
-        if not file_text:
-            st.stop()
-        # Сохраняем текст документа в сессии
-        st.session_state.document_text = file_text  # <-- НОВАЯ СТРОКА
         
-        # Создание индекса
-        st.session_state.bm25_index, st.session_state.original_chunks = create_bm25_index()
-        if not st.session_state.bm25_index or not st.session_state.original_chunks:
-            st.stop()
-        # Извлечение ключевых слов
-        keywords = extract_keywords(file_text, st.session_state.bm25_index)
-        if not keywords:
-            st.error("Не удалось извлечь ключевые слова")
-            st.stop()
-        # Обновление контекста
-        st.session_state.user_context += f"Ключевые термины: {', '.join(keywords)}"
-    # Проверка ключевых слов
-    st.write("## Отладка")
-    st.write("Ключевые слова:", keywords)
-    st.write("Количество чанков:", len(st.session_state.original_chunks))
-        # В блоке поиска замените текущий код на этот:
-    try:
-        #Взвешивание через повторение терминов
-        query_weights = {term: 2 for term in keywords}  # Используем целые веса
-        weighted_query = []
-        for term, weight in query_weights.items():
-            weighted_query.extend([term] * weight)
-    
-        # Получаем оценки как numpy массив
-        doc_scores = np.array(st.session_state.bm25_index.get_scores(weighted_query))
-    
-        # Фильтрация и сортировка
-        sorted_indices = sorted(
-            range(len(doc_scores)), 
-            key=lambda i: doc_scores[i], 
-            reverse=True
-        )
-    
-        # Явное сравнение с плавающей точкой
-        top_indices = [i for i in sorted_indices if doc_scores[i] > 0.0][:5]
-    
-        top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
-         
+        if file_text:
+            st.session_state.document_text = file_text
+            bm25_index, original_chunks = create_bm25_index()
+            
+            if bm25_index:
+                st.session_state.bm25_index = bm25_index
+                st.session_state.original_chunks = original_chunks
+                
+                keywords = extract_keywords_tfidf(file_text)
+                if keywords:
+                    st.session_state.user_context += f"Ключевые термины: {', '.join(keywords)}"
+                    
+                    st.write("## Отладка")
+                    st.write("Ключевые слова:", keywords)
+                    st.write("Количество чанков:", len(original_chunks))
 
-        st.subheader("Релевантные фрагменты:")
-        relevant_chunks = []
-        for i, chunk in enumerate(top_chunks):
-            relevant_chunks.append(chunk)
-            st.text_area(f"Фрагмент {i+1}", value=chunk[:5000], height=150)
+# Поисковая часть
+if uploaded_file and st.session_state.bm25_index:
+    user_input = st.text_area("Введите ваш вопрос:", key="user_input")
+    
+    if st.button("Поиск"):
+        with st.spinner("Поиск релевантных фрагментов..."):
+            try:
+                query_terms = process_query(user_input)
+                
+                if not query_terms:
+                    st.error("Не удалось извлечь значимые термины из запроса")
+                    st.stop()
+                
+                # Взвешивание терминов запроса
+                weighted_query = []
+                for term in query_terms:
+                    weight = int(st.session_state.idf_values.get(term, 1)) + 1
+                    weighted_query.extend([term] * weight)
+                
+                # Получение оценок
+                doc_scores = np.array(st.session_state.bm25_index.get_scores(weighted_query))
+                
+                # Boost для точных совпадений
+                for i, chunk in enumerate(st.session_state.original_chunks):
+                    if user_input.strip().lower() in chunk.lower():
+                        doc_scores[i] *= 1.5
+                
+                # Сортировка и выбор топ-5
+                top_indices = np.argsort(doc_scores)[::-1][:5]
+                top_chunks = [st.session_state.original_chunks[i] for i in top_indices if doc_scores[i] > 0]
+                
+                st.subheader("Релевантные фрагменты:")
+                for i, chunk in enumerate(top_chunks):
+                    st.text_area(f"Фрагмент {i+1}", value=chunk[:5000], height=150)
+                    
+            except Exception as e:
+                st.error(f"Ошибка поиска: {str(e)}")
 
-    except Exception as e:
-        st.error(f"Ошибка поиска: {str(e)}")
-        st.stop()
+# Блок чата и остальная логика остается аналогичной оригинальной версии
+        #st.stop()
 
 # Блок чата
 chat_container = st.container()
