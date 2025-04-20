@@ -240,7 +240,7 @@ user_input = st.text_area(
     key="user_input",  # Совпадает с ключом в session_state
     help="Максимум 600 символов"
 )   
-    col1, col2 = st.columns([1, 4])
+col1, col2 = st.columns([1, 4])
     with col1:
         send_button = st.button("Отправить", use_container_width=True, key="send_button_unique")  # Уникальный ключ
 
