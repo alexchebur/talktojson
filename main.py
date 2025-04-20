@@ -196,9 +196,7 @@ if uploaded_file:
         top_indices = [i for i in sorted_indices if doc_scores[i] > 0.0][:5]
     
         top_chunks = [st.session_state.original_chunks[i] for i in top_indices]
-         # Отображение информации
-        #st.subheader("Контекст анализа:")
-        #st.write(st.session_state.user_context)
+         
 
         st.subheader("Релевантные фрагменты:")
         relevant_chunks = []
@@ -214,27 +212,9 @@ if uploaded_file:
 chat_container = st.container()
 with chat_container:
     if uploaded_file:
-        st.subheader("Контекст анализа:")
-        st.write(st.session_state.user_context)
+        #st.subheader("Контекст анализа:")
+        #st.write(st.session_state.user_context)
     
-    # История диалога - ИЗМЕНИЛИ КЛЮЧ
-    #st.subheader("История консультаций")
-    #st.text_area("Лог переговоров", 
-    #            value=st.session_state.chat_log, 
-    #            height=300,
-    #            key="chat_history_display",  # Уникальный ключ
-    #            disabled=True)
-
-# Блок ввода пользователя
-#input_container = st.container()
-#with input_container:
-#    user_input = st.text_area(
-#        "Введите ваш вопрос:", 
-#        height=150,
-#        max_chars=600,
-#        key="user_input_field",  # Уникальный ключ
-#        help="Максимум 600 символов"
-#    )
 # Виджет ввода
 user_input = st.text_area(
     "Введите ваш вопрос:", 
