@@ -63,55 +63,105 @@ def create_bm25_index():
     try:
         if not os.path.exists("documents"):
             os.makedirs("documents")
+            st.warning("Создана пустая папка documents")
+            return None, None
+
+        txt_files = [f for f in os.listdir("documents") if f.endswith(".txt")]
+        if not txt_files:
+            st.error("Нет .txt файлов в папке documents!")
+            return None, None
 
         all_chunks = []
         lemmatized_chunks = []
-        
-        # Сбор всех терминов корпуса
         corpus_vocabulary = set()
-        
-        for filename in [f for f in os.listdir("documents") if f.endswith(".txt")]:
-            file_path = os.path.join("documents", filename)
+        total_words = 0
+
+        # Отладочная информация
+        debug_info = {
+            "files_processed": 0,
+            "empty_chunks": 0,
+            "sample_lemmas": []
+        }
+
+        for filename in txt_files:
             try:
-                with open(file_path, 'r', encoding=detect_file_encoding(file_path), errors='replace') as f:
-                    text = f.read()
+                file_path = os.path.join("documents", filename)
+                encoding = detect_file_encoding(file_path)
                 
+                with open(file_path, 'r', encoding=encoding, errors='replace') as f:
+                    text = f.read().strip()
+                
+                if not text:
+                    st.warning(f"Файл {filename} пуст")
+                    continue
+
                 chunks = process_text(text)
+                if not chunks:
+                    st.warning(f"Файл {filename} не содержит текста после обработки")
+                    continue
+
+                debug_info["files_processed"] += 1
                 all_chunks.extend(chunks)
-                
+
                 for chunk in chunks:
-                    words = re.findall(r'\b[а-яё]+\b', chunk.lower())
-                    lemmas = [lemmatize_word(w) for w in words 
-                             if len(w) >= 3 and w not in DOC_STOP_WORDS]
-                    lemmatized_chunks.append(lemmas)
-                    corpus_vocabulary.update(lemmas)
-                
+                    words = re.findall(r'\b[а-яё-]+\b', chunk.lower())  # Разрешаем дефисы
+                    lemmas = [
+                        lemmatize_word(w) for w in words 
+                        if len(w) >= 3 
+                        and w not in DOC_STOP_WORDS
+                        and not re.search(r'^\d+$', w)  # Исключаем чисто числовые токены
+                    ]
+                    
+                    total_words += len(lemmas)
+                    if lemmas:
+                        lemmatized_chunks.append(lemmas)
+                        corpus_vocabulary.update(lemmas)
+                        if len(debug_info["sample_lemmas"]) < 5:
+                            debug_info["sample_lemmas"].extend(lemmas[:3])
+                    else:
+                        debug_info["empty_chunks"] += 1
+
             except Exception as e:
                 st.error(f"Ошибка обработки {filename}: {str(e)}")
                 continue
 
+        # Отладочный вывод
+        st.write("## Отладочная информация:")
+        st.write(f"- Обработано файлов: {debug_info['files_processed']}")
+        st.write(f"- Всего чанков: {len(lemmatized_chunks)}")
+        st.write(f"- Пустых чанков: {debug_info['empty_chunks']}")
+        st.write(f"- Примеры лемм: {debug_info['sample_lemmas'][:5]}")
+        st.write(f"- Всего уникальных слов: {len(corpus_vocabulary)}")
+
         if not lemmatized_chunks:
-            st.error("Нет данных для индексации!")
+            st.error("""
+                Нет данных для индексации! Возможные причины:
+                1. Все файлы пусты
+                2. Слишком агрессивная фильтрация стоп-слов
+                3. Неправильная обработка кодировок
+            """)
             return None, None
 
-        # Создаем BM25
-        bm25 = BM25Okapi(lemmatized_chunks, k1=2.2, b=0.65)
-        
-        # Собираем IDF вручную
-        idf = {}
-        vocabulary = list(corpus_vocabulary)
-        for i, term in enumerate(vocabulary):
-            idf[term] = bm25.idf[i]
-        
-        st.session_state.idf_values = idf
-        st.session_state.lemmatized_chunks = lemmatized_chunks
-        
-        return bm25, all_chunks
+        if total_words < 10:
+            st.error(f"Слишком мало слов для индексации: {total_words}. Минимум 10.")
+            return None, None
+
+        try:
+            bm25 = BM25Okapi(lemmatized_chunks, k1=1.5, b=0.75)  # Возвращаем к стандартным параметрам
+            idf = {term: bm25.idf[i] for i, term in enumerate(sorted(corpus_vocabulary))}
+            
+            st.session_state.idf_values = idf
+            st.session_state.lemmatized_chunks = lemmatized_chunks
+            
+            return bm25, all_chunks
+
+        except Exception as e:
+            st.error(f"Ошибка инициализации BM25: {str(e)}")
+            return None, None
 
     except Exception as e:
-        st.error(f"Ошибка создания индекса: {str(e)}")
+        st.error(f"Критическая ошибка: {str(e)}")
         return None, None
-
 def file_to_text(uploaded_file) -> Optional[str]:
     try:
         if uploaded_file.name.endswith('.txt'):
