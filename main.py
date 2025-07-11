@@ -40,6 +40,23 @@ SYSTEM_PROMPT = """
 **Важно:** Заключение должно быть готово к использованию в суде или для представления клиенту.
 """
 
+QUERY_GENERATION_PROMPT = """
+Как опытный юрист, сгенерируй 3-5 дополнительных уточняющих запросов для поиска правовой информации 
+на основе ключевых терминов из исходного запроса. Запросы должны быть краткими (5-10 слов) и 
+охватывать различные аспекты проблемы.
+
+**Исходный запрос:**
+{user_query}
+
+**Ключевые термины:**
+{keywords}
+
+**Требования:**
+1. Каждый запрос должен быть самостоятельным вопросом или тезисом
+2. Используй профессиональную юридическую терминологию
+3. Избегай дублирования исходного запроса
+"""
+
 API_TIMEOUT = 60
 CHUNK_SIZE = 10000
 CHUNK_OVERLAP = 1000
@@ -131,7 +148,62 @@ def file_to_text(uploaded_file) -> Optional[str]:
     except Exception as e:
         st.error(f"Ошибка обработки файла: {str(e)}")
         return None
+def generate_queries(user_query: str, keywords: List[str]) -> List[str]:
+    """Генерация уточняющих запросов с помощью LLM"""
+    try:
+        prompt = QUERY_GENERATION_PROMPT.format(
+            user_query=user_query,
+            keywords=", ".join(keywords)
+        
+        response = requests.post(
+            API_URL,
+            headers={"Authorization": f"Bearer {API_KEY}"},
+            json={
+                "model": "google/gemini-2.0-flash-lite-001",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.4,
+                "max_tokens": 300
+            },
+            timeout=API_TIMEOUT
+        )
+        response.raise_for_status()
+        response_data = response.json()
+        
+        # Обработка ответа
+        if 'choices' in response_data:
+            content = response_data['choices'][0]['message']['content']
+        elif 'candidates' in response_data:
+            content = response_data['candidates'][0]['content']['parts'][0]['text']
+        else:
+            content = str(response_data)
+        
+        # Извлечение запросов из нумерованного списка
+        queries = []
+        for line in content.split('\n'):
+            if re.match(r'^\d+[\.\)]', line.strip()):
+                query = re.sub(r'^\d+[\.\)]\s*', '', line).strip()
+                if query:
+                    queries.append(query)
+        return queries[:5]  # Ограничиваем 5 запросами
+        
+    except Exception as e:
+        st.error(f"Ошибка генерации запросов: {str(e)}")
+        return []
 
+def get_unique_chunks(main_chunks: List[str], new_chunks: List[str]) -> List[str]:
+    """Фильтрация дублирующихся фрагментов с порогом схожести"""
+    unique_chunks = []
+    for new_chunk in new_chunks:
+        is_duplicate = False
+        for main_chunk in main_chunks:
+            # Считаем дубликатом если >80% содержимого совпадает
+            if SequenceMatcher(None, main_chunk[:1000], new_chunk[:1000]).ratio() > 0.8:
+                is_duplicate = True
+                break
+        if not is_duplicate and new_chunk not in unique_chunks:
+            unique_chunks.append(new_chunk)
+    return unique_chunks
+   
 def clean_keyword(word: str) -> str:
     """Очистка ключевых слов"""
     while len(word) > 0 and word[-1] in 'аеёийоуыэюя':
@@ -241,23 +313,60 @@ if st.button("Отправить"):
             st.error("Не удалось извлечь ключевые слова из запроса")
             st.stop()
         
-        # Поиск релевантных фрагментов
-        query_chunks = search_relevant_chunks(bm25_index, original_chunks, query_keywords)
-        st.session_state.query_relevant_chunks = query_chunks
+        if st.button("Отправить"):
+    if not user_input.strip():
+        st.error("Введите текст вопроса")
+        st.stop()
+    st.session_state.last_query = user_input
+    
         
+        # ШАГ 1: Генерация дополнительных запросов
+        generated_queries = generate_queries(user_input, query_keywords)
+        st.session_state.generated_queries = generated_queries  # Сохраняем для отображения
         
-        # Формирование КОРРЕКТНОГО контекста
+        # ШАГ 2: Поиск по сгенерированным запросам
+        all_knowledge_chunks = st.session_state.query_relevant_chunks.copy()
+        additional_chunks = []
+        
+        for query in generated_queries:
+            with st.spinner(f"Поиск по запросу: '{query[:30]}...'"):
+                # Извлечение ключевых слов для сгенерированного запроса
+                q_keywords = extract_keywords(query, bm25_index)
+                if not q_keywords:
+                    continue
+                
+                # Поиск релевантных фрагментов
+                q_chunks = search_relevant_chunks(bm25_index, original_chunks, q_keywords)
+                
+                # Фильтрация дубликатов
+                unique_chunks = get_unique_chunks(all_knowledge_chunks, q_chunks)
+                additional_chunks.extend(unique_chunks)
+                all_knowledge_chunks.extend(unique_chunks)
+        
+        st.session_state.additional_chunks = additional_chunks  # Сохраняем для отображения
+        
+        # Формирование контекста с расширенными данными
         context_parts = []
+        
+        # Контекст из документа (если есть)
         if st.session_state.document_relevant_chunks:
             context_parts.append(
                 "Контекст из документа:\n" + 
-                "\n\n".join(st.session_state.document_relevant_chunks[:3])  # Ограничиваем количество
+                "\n\n".join(st.session_state.document_relevant_chunks[:3])
             )
         
-        if query_chunks:
+        # Основной контекст из базы знаний
+        if st.session_state.query_relevant_chunks:
             context_parts.append(
-                "Контекст из базы знаний:\n" + 
-                "\n\n".join(query_chunks[:3])  # Ограничиваем количество
+                "Основной контекст из базы знаний:\n" + 
+                "\n\n".join(st.session_state.query_relevant_chunks[:3])
+            )
+        
+        # Дополнительный контекст из сгенерированных запросов
+        if additional_chunks:
+            context_parts.append(
+                "Дополнительный контекст из базы знаний:\n" + 
+                "\n\n".join(additional_chunks[:3])
             )
         
         full_context = "\n\n".join(context_parts)
@@ -319,6 +428,19 @@ if st.session_state.llm_response and st.session_state.last_query == user_input:
         st.subheader("Релевантные фрагменты из базы знаний:")
         for i, chunk in enumerate(st.session_state.query_relevant_chunks):
             unique_key = f"chunk_{int(time.time())}_{i}"
+            st.text_area(label="", value=chunk[:2000], height=150, key=unique_key)
+
+
+    # ВСТАВЛЯЕМ НОВЫЕ БЛОКИ ЗДЕСЬ
+    if st.session_state.get('generated_queries'):
+        st.subheader("Сгенерированные уточняющие запросы:")
+        for i, query in enumerate(st.session_state.generated_queries):
+            st.write(f"{i+1}. {query}")
+
+    if st.session_state.get('additional_chunks'):
+        st.subheader("Дополнительные релевантные фрагменты:")
+        for i, chunk in enumerate(st.session_state.additional_chunks):
+            unique_key = f"add_chunk_{int(time.time())}_{i}"
             st.text_area(label="", value=chunk[:2000], height=150, key=unique_key)
 
 # Обновленный блок истории
