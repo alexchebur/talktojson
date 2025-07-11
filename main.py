@@ -53,7 +53,8 @@ def initialize_session():
         "document_relevant_chunks": [],
         "query_keywords": [],
         "query_relevant_chunks": [],
-        "llm_response": "" 
+        "llm_response": "",  # Добавлено хранилище для ответа
+        "last_query": ""     # Для отслеживания последнего запроса
     }
     for key in required_keys:
         if key not in st.session_state:
@@ -225,6 +226,7 @@ if st.button("Отправить"):
     if not user_input.strip():
         st.error("Введите текст вопроса")
         st.stop()
+    st.session_state.last_query = user_input
     
     with st.spinner("Обработка запроса..."):
         # Создание индекса и обработка запроса
@@ -243,30 +245,30 @@ if st.button("Отправить"):
         query_chunks = search_relevant_chunks(bm25_index, original_chunks, query_keywords)
         st.session_state.query_relevant_chunks = query_chunks
         
-        # Формирование контекста
+        
+        # Формирование КОРРЕКТНОГО контекста
         context_parts = []
-        if st.session_state.document_keywords:
+        if st.session_state.document_relevant_chunks:
             context_parts.append(
-                "Контекст из документа:\n"
-                f"Ключевые термины: {', '.join(st.session_state.document_keywords)}\n"
-                f"Релевантные фрагменты:\n" + 
-                "\n\n".join(st.session_state.document_relevant_chunks)
+                "Контекст из документа:\n" + 
+                "\n\n".join(st.session_state.document_relevant_chunks[:3])  # Ограничиваем количество
             )
         
-        context_parts.append(
-            "Контекст из запроса:\n"
-            f"Ключевые термины: {', '.join(query_keywords)}\n"
-            f"Релевантные фрагменты:\n" + 
-            "\n\n".join(query_chunks)
-        )
+        if query_chunks:
+            context_parts.append(
+                "Контекст из базы знаний:\n" + 
+                "\n\n".join(query_chunks[:3])  # Ограничиваем количество
+            )
         
-        assistant_content = "\n\n".join(context_parts)
+        full_context = "\n\n".join(context_parts)
         
-        # Формирование запроса к LLM
+        # Формирование ПРАВИЛЬНОГО запроса к LLM
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_input},
-            {"role": "assistant", "content": assistant_content}
+            {"role": "system", "content": SYSTEM_PROMPT.format(
+                user_input=user_input,
+                contex_parts=full_context
+            )},
+            {"role": "user", "content": "Сформируйте юридическое заключение на основе предоставленных данных."}
         ]
         
         try:
@@ -276,35 +278,44 @@ if st.button("Отправить"):
                 json={
                     "model": "google/gemini-2.0-flash-lite-001",
                     "messages": messages,
-                    "temperature": 0.3
+                    "temperature": 0.3,
+                    "max_tokens": 3000  # Добавьте при необходимости
                 },
                 timeout=API_TIMEOUT
             )
             response.raise_for_status()
+            response_data = response.json()
             
-            answer = response.json()['choices'][0]['message']['content']
+            # Универсальное извлечение ответа для разных API
+            if 'choices' in response_data:
+                answer = response_data['choices'][0]['message']['content']
+            elif 'candidates' in response_data:  # Для Google Gemini
+                answer = response_data['candidates'][0]['content']['parts'][0]['text']
+            else:
+                answer = str(response_data)  # Фолбэк для отладки
             
+            # Сохраняем ответ
             st.session_state.llm_response = answer
             st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
             
-            
-            if query_chunks:
-                st.subheader("Релевантные фрагменты из запроса:")
-                for i, chunk in enumerate(query_chunks):
-                    st.text_area(f"Фрагмент {i+1}", value=chunk[:5000], height=150, key=f"query_chunk_{i}")
-            
         except Exception as e:
             st.error(f"Ошибка API: {str(e)}")
-           ######### может быть придется сдвинуть
-if st.session_state.llm_response:
-    st.subheader("Ответ LLM:")
+            if 'response' in locals():
+                st.error(f"Тело ответа: {response.text}")
+
+# Отображение ответа ПОСЛЕ обработки кнопки
+if st.session_state.llm_response and st.session_state.last_query == user_input:
+    st.subheader("Ответ юридического ассистента:")
     st.markdown(st.session_state.llm_response)
+    
+    # Отображение релевантных фрагментов с УНИКАЛЬНЫМИ ключами
+    if st.session_state.query_relevant_chunks:
+        st.subheader("Релевантные фрагменты из базы знаний:")
+        for i, chunk in enumerate(st.session_state.query_relevant_chunks):
+            unique_key = f"chunk_{int(time.time())}_{i}"
+            st.text_area(label="", value=chunk[:2000], height=150, key=unique_key)
 
 # Обновленный блок истории
 if st.session_state.chat_log:
     st.subheader("История диалога")
-    st.markdown(f"```\n{st.session_state.chat_log}\n```")
-# История чата
-if st.session_state.chat_log:
-    st.subheader("История диалога")
-    st.text_area("Лог", value=st.session_state.chat_log, height=300, key="history")
+    st.text_area(label="", value=st.session_state.chat_log, height=300, key="chat_history", disabled=True)
