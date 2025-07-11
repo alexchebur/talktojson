@@ -73,7 +73,7 @@ CHUNK_OVERLAP = 1000
 
 
 def check_gemini_api_key():
-    test_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro?key={GEMINI_API_KEY}"
+    test_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17?key={GEMINI_API_KEY}"
     try:
         response = requests.get(test_url, timeout=10)
         if response.status_code == 200:
