@@ -387,17 +387,20 @@ if uploaded_file:
             for i, chunk in enumerate(st.session_state.document_relevant_chunks):
                 st.text_area(f"Фрагмент {i+1}", value=chunk[:5000], height=150, key=f"doc_chunk_{i}")
 
+# Блок чата
 user_input = st.text_area(
     "Введите ваш вопрос:", 
     height=150,
     max_chars=600,
-    key=f"user_input_{time.time()}"  # Уникальный ключ
+    key="user_input_unique"  # Фиксированный ключ
 )
 
-if st.button("Отправить", key=f"send_button_{time.time()}"):
+# Кнопка с фиксированным ключом
+if st.button("Отправить", key="send_button_unique"):
     if not user_input.strip():
         st.error("Введите текст вопроса")
         st.stop()
+    
     st.session_state.last_query = user_input
     
     with st.spinner("Обработка запроса..."):
