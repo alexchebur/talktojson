@@ -395,7 +395,7 @@ user_input = st.text_area(
     key="user_input"
 )
 
-if st.button("Отправить"):
+if st.button("Отправить", key="send_button_unique"):
     if not user_input.strip():
         st.error("Введите текст вопроса")
         st.stop()
