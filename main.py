@@ -543,51 +543,51 @@ if st.button("Отправить", key="send_button_unique"):
         full_context = "\n\n".join(context_parts)
         
         # Формирование ПРАВИЛЬНОГО запроса к LLM
-        messages = [
-            {
-                "role": "system", 
-                "content": SYSTEM_PROMPT.format(
-                    user_query=user_input,       # Совпадает с {user_query} в SYSTEM_PROMPT
-                    context=full_context         # Совпадает с {context} в SYSTEM_PROMPT
-                )
-            },
-            {
-                "role": "user", 
-                "content": "Сформируйте подробное юридическое заключение."
+        # Формируем полный промпт
+        full_prompt = SYSTEM_PROMPT.format(
+            user_query=user_input,
+            context=full_context
+        ) + "\n\nСформируйте подробное юридическое заключение."
+
+        # Подготовка данных для запроса
+        request_data = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": full_prompt}
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": 5000
             }
-        ]
-        
+        }
+
         try:
             response = requests.post(
                 API_URL,
-                headers={"Authorization": f"Bearer {GEMINI_API_KEY}"},
-                json={
-                    "model": "google/gemini-2.5-flash-lite-preview-06-17",
-                    "messages": messages,
-                    "temperature": 0.3,
-                    "max_tokens": 5000  # Добавьте при необходимости
-                },
+                headers={"Content-Type": "application/json"},
+                params={"key": GEMINI_API_KEY},
+                json=request_data,
                 timeout=API_TIMEOUT
             )
             response.raise_for_status()
             response_data = response.json()
-            
-            # Универсальное извлечение ответа для разных API
-            if 'choices' in response_data:
-                answer = response_data['choices'][0]['message']['content']
-            elif 'candidates' in response_data:  # Для Google Gemini
+    
+            # Правильная обработка ответа Gemini
+            if 'candidates' in response_data and response_data['candidates']:
                 answer = response_data['candidates'][0]['content']['parts'][0]['text']
             else:
-                answer = str(response_data)  # Фолбэк для отладки
-            
-            # Сохраняем ответ
+                answer = "Не удалось получить ответ от API"
+    
             st.session_state.llm_response = answer
             st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
-            
+    
         except Exception as e:
             st.error(f"Ошибка API: {str(e)}")
-            if 'response' in locals():
-                st.error(f"Тело ответа: {response.text}")
+            if hasattr(e, 'response') and e.response:
+                st.error(f"Тело ответа: {e.response.text}")
 
 # Отображение ответа ПОСЛЕ обработки кнопки
 if st.session_state.get('llm_response') and st.session_state.get('last_query') == user_input:
