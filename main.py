@@ -284,7 +284,7 @@ def generate_queries(user_query: str, keywords: List[str]) -> List[str]:
             }
        )
 
-            try:
+             try:
                 response = requests.post(
                     API_URL,
                     headers=headers,
