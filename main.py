@@ -242,7 +242,7 @@ def generate_queries(user_query: str, keywords: List[str]) -> List[str]:
             API_URL,
             headers={"Authorization": f"Bearer {API_KEY}"},
             json={
-                "model": "google/gemini-2.0-flash-lite-001",
+                "model": "models/gemini-2.5-flash-lite-preview-06-17",
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.4,
                 "max_tokens": 300
