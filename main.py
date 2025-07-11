@@ -15,6 +15,7 @@ import random
 from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
 from urllib.parse import unquote, urlparse, parse_qs
+from typing import List, Dict, Any
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 # Конфигурация приложения
