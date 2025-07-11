@@ -10,7 +10,13 @@ from PyPDF2 import PdfReader
 from typing import List, Optional
 from rank_bm25 import BM25Okapi
 from config import API_KEY, API_URL
-
+import logging
+import random
+from bs4 import BeautifulSoup
+from difflib import SequenceMatcher
+from urllib.parse import unquote, urlparse, parse_qs
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 # Конфигурация приложения
 SYSTEM_PROMPT = """
 Вы - опытный юрист, специализирующийся на подготовке правовых заключений. 
@@ -61,22 +67,99 @@ API_TIMEOUT = 60
 CHUNK_SIZE = 10000
 CHUNK_OVERLAP = 1000
 
+# ДОБАВЛЯЕМ КЛАСС ДЛЯ ВЕБ-ПОИСКА
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.78 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0"
+]
+
+class WebSearcher:
+    def __init__(self, delay_range=(1.0, 3.0)):
+        self.delay_range = delay_range
+        self.session = requests.Session()
+        self.session.headers.update({'User-Agent': random.choice(USER_AGENTS)})
+        
+        # Настройки Google CSE (ЗАМЕНИТЕ НА СВОИ КЛЮЧИ!)
+        self.api_key = "AIzaSyCNVeNmUgrt-kL5ZI4EkHFoTjTzRSWATX4"
+        self.cse_id = "a4f17489c6a0a4414"
+        
+    def perform_search(self, query: str, max_results: int = 3) -> List[Dict]:
+        """Выполняет поиск через Google Custom Search API"""
+        try:
+            url = "https://www.googleapis.com/customsearch/v1"
+            params = {
+                'key': self.api_key,
+                'cx': self.cse_id,
+                'q': query,
+                'num': max_results,
+                'lr': 'lang_ru',
+                'cr': 'countryRU',
+                'hl': 'ru'
+            }
+            
+            response = self.session.get(url, params=params, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            
+            results = []
+            for item in data.get('items', [])[:max_results]:
+                # Получаем полный текст страницы
+                full_content = self.get_full_page_content(item.get('link', '#'))
+                
+                results.append({
+                    'title': item.get('title', 'Без названия')[:150],
+                    'url': item.get('link', '#'),
+                    'snippet': item.get('snippet', 'Без описания')[:500],
+                    'full_content': full_content[:5000]  # Ограничиваем объем
+                })
+            
+            return results
+        except Exception as e:
+            logger.error(f"Ошибка Google CSE: {str(e)}")
+            return []
+
+    def get_full_page_content(self, url: str) -> str:
+        """Получение полного текста страницы"""
+        try:
+            headers = {'User-Agent': random.choice(USER_AGENTS)}
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            
+            # Определяем кодировку
+            if response.encoding == 'ISO-8859-1':
+                response.encoding = 'utf-8'
+            
+            # Парсим основной контент
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Удаляем ненужные элементы
+            for tag in soup(['script', 'style', 'footer', 'nav', 'aside', 'header']):
+                tag.decompose()
+            
+            # Извлекаем текст
+            text = soup.get_text(separator=' ', strip=True)
+            
+            # Удаляем лишние пробелы
+            text = re.sub(r'\s+', ' ', text)
+            
+            return text
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения контента: {str(e)}")
+            return ""
+
+# ИНИЦИАЛИЗАЦИЯ СЕССИИ (ОБНОВЛЕННАЯ)
 def initialize_session():
     required_keys = {
-        "chat_log": "",
-        "user_input": "",
-        "document_text": "",
-        "document_keywords": [],
-        "document_relevant_chunks": [],
-        "query_keywords": [],
-        "query_relevant_chunks": [],
-        "llm_response": "",  # Добавлено хранилище для ответа
-        "last_query": ""     # Для отслеживания последнего запроса
+        # ... (предыдущие ключи остаются) ...
+        "web_searcher": WebSearcher(),  # Инициализируем поисковик
+        "web_search_results": [],       # Результаты веб-поиска
+        "web_search_chunks": []         # Фрагменты из веб-поиска
     }
     for key in required_keys:
         if key not in st.session_state:
             st.session_state[key] = required_keys[key]
-
 initialize_session()
 
 def process_text(text: str) -> List[str]:
@@ -368,7 +451,39 @@ if st.button("Отправить"):
                 "Дополнительный контекст из базы знаний:\n" + 
                 "\n\n".join(additional_chunks[:3])
             )
+
         
+        # ШАГ 3: ВЕБ-ПОИСК ПО СГЕНЕРИРОВАННЫМ ЗАПРОСАМ
+        web_results = []
+        for query in generated_queries:
+            with st.spinner(f"Веб-поиск: '{query[:30]}...'"):
+                results = st.session_state.web_searcher.perform_search(query)
+                web_results.extend(results)
+        
+        # Извлекаем фрагменты контента
+        web_chunks = [result['full_content'] for result in web_results if result['full_content']]
+        
+        # Фильтруем дубликаты
+        unique_web_chunks = []
+        seen_chunks = set()
+        for chunk in web_chunks:
+            # Хэшируем для быстрого сравнения
+            chunk_hash = hash(chunk[:1000])
+            if chunk_hash not in seen_chunks:
+                seen_chunks.add(chunk_hash)
+                unique_web_chunks.append(chunk)
+        
+        st.session_state.web_search_results = web_results
+        st.session_state.web_search_chunks = unique_web_chunks[:3]  # Берем 3 уникальных фрагмента
+        
+        # ДОБАВЛЯЕМ ВЕБ-ФРАГМЕНТЫ В КОНТЕКСТ
+        if st.session_state.web_search_chunks:
+            context_parts.append(
+                "Контекст из веб-поиска:\n" + 
+                "\n\n".join(st.session_state.web_search_chunks)
+            )
+
+
         full_context = "\n\n".join(context_parts)
         
         # Формирование ПРАВИЛЬНОГО запроса к LLM
