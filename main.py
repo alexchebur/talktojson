@@ -387,15 +387,14 @@ if uploaded_file:
             for i, chunk in enumerate(st.session_state.document_relevant_chunks):
                 st.text_area(f"Фрагмент {i+1}", value=chunk[:5000], height=150, key=f"doc_chunk_{i}")
 
-# Блок чата
 user_input = st.text_area(
     "Введите ваш вопрос:", 
     height=150,
     max_chars=600,
-    key="user_input"
+    key=f"user_input_{time.time()}"  # Уникальный ключ
 )
 
-if st.button("Отправить", key="send_button_unique"):
+if st.button("Отправить", key=f"send_button_{time.time()}"):
     if not user_input.strip():
         st.error("Введите текст вопроса")
         st.stop()
