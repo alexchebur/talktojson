@@ -546,7 +546,7 @@ if st.button("Отправить", key="send_button_unique"):
                 API_URL,
                 headers={"Authorization": f"Bearer {API_KEY}"},
                 json={
-                    "model": "google/gemini-2.0-flash-lite-001",
+                    "model": "google/gemini-2.5-flash-lite-preview-06-17",
                     "messages": messages,
                     "temperature": 0.3,
                     "max_tokens": 5000  # Добавьте при необходимости
