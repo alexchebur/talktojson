@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlparse, parse_qs
 from typing import List, Dict, Any
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+initialize_session()
 # Конфигурация приложения
 SYSTEM_PROMPT = """
 Вы - опытный юрист, специализирующийся на подготовке правовых заключений. 
@@ -153,15 +154,24 @@ class WebSearcher:
 # ИНИЦИАЛИЗАЦИЯ СЕССИИ (ОБНОВЛЕННАЯ)
 def initialize_session():
     required_keys = {
-        # ... (предыдущие ключи остаются) ...
-        "web_searcher": WebSearcher(),  # Инициализируем поисковик
-        "web_search_results": [],       # Результаты веб-поиска
-        "web_search_chunks": []         # Фрагменты из веб-поиска
+        "chat_log": "",
+        "user_input": "",
+        "document_text": "",
+        "document_keywords": [],
+        "document_relevant_chunks": [],
+        "query_keywords": [],
+        "query_relevant_chunks": [],
+        "llm_response": "",  # Добавляем инициализацию llm_response
+        "last_query": "",
+        "web_searcher": WebSearcher(),
+        "web_search_results": [],
+        "web_search_chunks": [],
+        "generated_queries": [],  # Добавляем для сгенерированных запросов
+        "additional_chunks": []   # Добавляем для дополнительных фрагментов
     }
     for key in required_keys:
         if key not in st.session_state:
             st.session_state[key] = required_keys[key]
-initialize_session()
 
 def process_text(text: str) -> List[str]:
     """Разделение текста на чанки с перекрытием"""
@@ -536,12 +546,12 @@ if st.button("Отправить"):
                 st.error(f"Тело ответа: {response.text}")
 
 # Отображение ответа ПОСЛЕ обработки кнопки
-if st.session_state.llm_response and st.session_state.last_query == user_input:
+if st.session_state.get('llm_response') and st.session_state.get('last_query') == user_input:
     st.subheader("Ответ юридического ассистента:")
     st.markdown(st.session_state.llm_response)
     
     # Отображение релевантных фрагментов с УНИКАЛЬНЫМИ ключами
-    if st.session_state.query_relevant_chunks:
+    if st.session_state.get('query_relevant_chunks'):
         st.subheader("Релевантные фрагменты из базы знаний:")
         for i, chunk in enumerate(st.session_state.query_relevant_chunks):
             unique_key = f"chunk_{int(time.time())}_{i}"
