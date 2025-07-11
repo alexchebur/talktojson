@@ -437,22 +437,22 @@ if st.button("Отправить", key="send_button_unique"):
         st.error("Введите текст вопроса")
         st.stop()
         if st.session_state.get('web_search_results'):
-        st.subheader("Результаты веб-поиска")
+            st.subheader("Результаты веб-поиска")
     
-        for i, result in enumerate(st.session_state.web_search_results):
-            with st.expander(f"{i+1}. {result['title']}"):
-                st.markdown(f"**URL**: [{result['url']}]({result['url']})")
+            for i, result in enumerate(st.session_state.web_search_results):
+                with st.expander(f"{i+1}. {result['title']}"):
+                    st.markdown(f"**URL**: [{result['url']}]({result['url']})")
             
-                if result.get('snippet'):
-                    st.markdown("**Сниппет:**")
-                    st.info(result['snippet'])
+                    if result.get('snippet'):
+                        st.markdown("**Сниппет:**")
+                        st.info(result['snippet'])
             
-                if result.get('full_content'):
-                    st.markdown("**Извлеченный контент:**")
-                    st.text_area("", 
-                                value=result['full_content'][:3000] + "...", 
-                                height=200,
-                                key=f"web_content_{i}")
+                    if result.get('full_content'):
+                        st.markdown("**Извлеченный контент:**")
+                        st.text_area("", 
+                                    value=result['full_content'][:3000] + "...", 
+                                    height=200,
+                                    key=f"web_content_{i}")
     
     st.session_state.last_query = user_input
     
