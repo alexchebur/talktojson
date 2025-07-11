@@ -18,7 +18,7 @@ from urllib.parse import unquote, urlparse, parse_qs
 from typing import List, Dict, Any
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-initialize_session()
+#initialize_session()
 # Конфигурация приложения
 SYSTEM_PROMPT = """
 Вы - опытный юрист, специализирующийся на подготовке правовых заключений. 
