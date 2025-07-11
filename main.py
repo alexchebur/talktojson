@@ -17,11 +17,11 @@ SYSTEM_PROMPT = """
 На основе предоставленных данных подготовьте подробное правовое заключение по запросу пользователя:
 
 **Запрос клиента:**
-{user_input}
+{user_query}
 
 **Контекст:**
 Извлеченные данные поиска:
-{assistant_content}
+{context}
 
 
 **Требования к заключению:**
@@ -264,11 +264,17 @@ if st.button("Отправить"):
         
         # Формирование ПРАВИЛЬНОГО запроса к LLM
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT.format(
-                user_input=user_input,
-                contex_parts=full_context
-            )},
-            {"role": "user", "content": "Сформируйте юридическое заключение на основе предоставленных данных."}
+            {
+                "role": "system", 
+                "content": SYSTEM_PROMPT.format(
+                    user_query=user_input,       # Совпадает с {user_query} в SYSTEM_PROMPT
+                    context=full_context         # Совпадает с {context} в SYSTEM_PROMPT
+                )
+            },
+            {
+                "role": "user", 
+                "content": "Сформируйте подробное юридическое заключение."
+            }
         ]
         
         try:
@@ -279,7 +285,7 @@ if st.button("Отправить"):
                     "model": "google/gemini-2.0-flash-lite-001",
                     "messages": messages,
                     "temperature": 0.3,
-                    "max_tokens": 3000  # Добавьте при необходимости
+                    "max_tokens": 5000  # Добавьте при необходимости
                 },
                 timeout=API_TIMEOUT
             )
