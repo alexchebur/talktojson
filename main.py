@@ -251,64 +251,60 @@ def file_to_text(uploaded_file) -> Optional[str]:
 def generate_queries(user_query: str, keywords: List[str]) -> List[str]:
     """Генерация уточняющих запросов с помощью LLM"""
     try:
+        # Формирование системного промпта
         prompt = QUERY_GENERATION_PROMPT.format(
             user_query=user_query,
             keywords=", ".join(keywords)
         )
         
+        # Подготовка данных для запроса
+        request_data = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": SYSTEM_PROMPT.format(
+                            user_query=user_query,  # Исправлено: было user_input
+                            context=keywords  # Исправлено: было full_context
+                        )}
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": 5000
+            }
+        }
+        
+        # Выполнение запроса
         response = requests.post(
             API_URL,
-            headers = {
-                "Content-Type": "application/json"
-            },
-
-            params = {
-                "key": API_KEY  # Ключ передается как параметр, а не в заголовках
-            },
-
-            data = {
-                "contents": [
-                    {
-                        "parts": [
-                            {"text": SYSTEM_PROMPT.format(
-                                user_query=user_input,
-                                context=full_context
-                            )}
-                        ]
-                    }
-                ],
-                "generationConfig": {
-                    "temperature": 0.3,
-                    "maxOutputTokens": 5000
-                }
-            }
-       )
-
-            try:
-                response = requests.post(
-                    API_URL,
-                    headers=headers,
-                    params=params,  # Ключ передается здесь
-                    json=data,
-                    timeout=API_TIMEOUT
-                )
-                response.raise_for_status()
+            headers={"Content-Type": "application/json"},
+            params={"key": API_KEY},  # Ключ передается как параметр
+            json=request_data,  # Используем json вместо data
+            timeout=API_TIMEOUT
+        )
+        response.raise_for_status()
         
-        # Обработка ответа
+        # Получение и обработка ответа
+        response_data = response.json()  # Добавлено: получение данных ответа
+        
+        # Извлечение запросов из нумерованного списка
+        queries = []
+        content = ""
+        
         if 'choices' in response_data:
             content = response_data['choices'][0]['message']['content']
         elif 'candidates' in response_data:
             content = response_data['candidates'][0]['content']['parts'][0]['text']
         else:
             content = str(response_data)
-        
-        # Извлечение запросов из нумерованного списка
-        queries = []
+            
         for line in content.split('\n'):
             if re.match(r'^\d+[\.\)]', line.strip()):
                 query = re.sub(r'^\d+[\.\)]\s*', '', line).strip()
                 if query:
                     queries.append(query)
+                    
         return queries[:5]  # Ограничиваем 5 запросами
         
     except Exception as e:
