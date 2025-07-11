@@ -155,7 +155,8 @@ class WebSearcher:
 
 # ИНИЦИАЛИЗАЦИЯ СЕССИИ (ОБНОВЛЕННАЯ)
 def initialize_session():
-    required_keys = {
+    """Инициализация всех необходимых переменных в session_state"""
+    default_state = {
         "chat_log": "",
         "user_input": "",
         "document_text": "",
@@ -163,17 +164,18 @@ def initialize_session():
         "document_relevant_chunks": [],
         "query_keywords": [],
         "query_relevant_chunks": [],
-        "llm_response": "",  # Добавляем инициализацию llm_response
+        "llm_response": "",
         "last_query": "",
         "web_searcher": WebSearcher(),
         "web_search_results": [],
         "web_search_chunks": [],
-        "generated_queries": [],  # Добавляем для сгенерированных запросов
-        "additional_chunks": []   # Добавляем для дополнительных фрагментов
+        "generated_queries": [],
+        "additional_chunks": []
     }
-    for key in required_keys:
+    
+    for key, value in default_state.items():
         if key not in st.session_state:
-            st.session_state[key] = required_keys[key]
+            st.session_state[key] = value
 
 def process_text(text: str) -> List[str]:
     """Разделение текста на чанки с перекрытием"""
