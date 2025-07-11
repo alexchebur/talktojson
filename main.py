@@ -237,6 +237,7 @@ def generate_queries(user_query: str, keywords: List[str]) -> List[str]:
         prompt = QUERY_GENERATION_PROMPT.format(
             user_query=user_query,
             keywords=", ".join(keywords)
+        )
         
         response = requests.post(
             API_URL,
