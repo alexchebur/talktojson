@@ -52,7 +52,8 @@ def initialize_session():
         "document_keywords": [],
         "document_relevant_chunks": [],
         "query_keywords": [],
-        "query_relevant_chunks": []
+        "query_relevant_chunks": [],
+        "llm_response": "" 
     }
     for key in required_keys:
         if key not in st.session_state:
@@ -282,10 +283,10 @@ if st.button("Отправить"):
             response.raise_for_status()
             
             answer = response.json()['choices'][0]['message']['content']
+            
+            st.session_state.llm_response = answer
             st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
             
-            st.subheader("Ответ:")
-            st.write(answer)
             
             if query_chunks:
                 st.subheader("Релевантные фрагменты из запроса:")
@@ -294,7 +295,15 @@ if st.button("Отправить"):
             
         except Exception as e:
             st.error(f"Ошибка API: {str(e)}")
+           ######### может быть придется сдвинуть
+if st.session_state.llm_response:
+    st.subheader("Ответ LLM:")
+    st.markdown(st.session_state.llm_response)
 
+# Обновленный блок истории
+if st.session_state.chat_log:
+    st.subheader("История диалога")
+    st.markdown(f"```\n{st.session_state.chat_log}\n```")
 # История чата
 if st.session_state.chat_log:
     st.subheader("История диалога")
