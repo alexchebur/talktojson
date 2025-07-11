@@ -260,11 +260,11 @@ def generate_queries(user_query: str, keywords: List[str]) -> List[str]:
             API_URL,
             headers = {
                 "Content-Type": "application/json"
-            }
+            },
 
             params = {
                 "key": API_KEY  # Ключ передается как параметр, а не в заголовках
-            }
+            },
 
             data = {
                 "contents": [
