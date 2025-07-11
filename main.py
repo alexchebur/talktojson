@@ -9,7 +9,7 @@ from docx import Document
 from PyPDF2 import PdfReader
 from typing import List, Optional
 from rank_bm25 import BM25Okapi
-from config import API_KEY, API_URL
+from config import GEMINI_API_KEY, API_URL
 import logging
 import random
 from bs4 import BeautifulSoup
@@ -279,7 +279,7 @@ def generate_queries(user_query: str, keywords: List[str]) -> List[str]:
         response = requests.post(
             API_URL,
             headers={"Content-Type": "application/json"},
-            params={"key": API_KEY},  # Ключ передается как параметр
+            params={"key": GEMINI_API_KEY},  # Ключ передается как параметр
             json=request_data,  # Используем json вместо data
             timeout=API_TIMEOUT
         )
@@ -544,7 +544,7 @@ if st.button("Отправить", key="send_button_unique"):
         try:
             response = requests.post(
                 API_URL,
-                headers={"Authorization": f"Bearer {API_KEY}"},
+                headers={"Authorization": f"Bearer {GEMINI_API_KEY}"},
                 json={
                     "model": "google/gemini-2.5-flash-lite-preview-06-17",
                     "messages": messages,
