@@ -124,7 +124,6 @@ class WebSearcher:
         self.cse_id = "a4f17489c6a0a4414"
         
     def perform_search(self, query: str, max_results: int = 3) -> List[Dict]:
-        """Выполняет поиск через Google Custom Search API"""
         try:
             url = "https://www.googleapis.com/customsearch/v1"
             params = {
@@ -133,59 +132,63 @@ class WebSearcher:
                 'q': query,
                 'num': max_results,
                 'lr': 'lang_ru',
-                'cr': 'countryRU',
                 'hl': 'ru'
             }
-            
+        
             response = self.session.get(url, params=params, timeout=15)
             response.raise_for_status()
             data = response.json()
-            
+        
             results = []
             for item in data.get('items', [])[:max_results]:
-                # Получаем полный текст страницы
-                full_content = self.get_full_page_content(item.get('link', '#'))
-                
+                # ДОБАВЛЯЕМ ИЗВЛЕЧЕНИЕ ПОЛНОГО КОНТЕНТА
+                full_content = self.get_full_page_content(item.get('link', ''))
+            
                 results.append({
                     'title': item.get('title', 'Без названия')[:150],
                     'url': item.get('link', '#'),
                     'snippet': item.get('snippet', 'Без описания')[:500],
-                    'full_content': full_content[:5000]  # Ограничиваем объем
+                    'full_content': full_content  # Сохраняем полный контент
                 })
-            
+        
             return results
         except Exception as e:
             logger.error(f"Ошибка Google CSE: {str(e)}")
             return []
 
-    def get_full_page_content(self, url: str) -> str:
-        """Получение полного текста страницы"""
+    def get_full_page_content(url: str) -> str:
+        """Получение полного текста страницы с улучшенным парсингом"""
         try:
             headers = {'User-Agent': random.choice(USER_AGENTS)}
             response = requests.get(url, headers=headers, timeout=15)
             response.raise_for_status()
-            
+        
             # Определяем кодировку
             if response.encoding == 'ISO-8859-1':
                 response.encoding = 'utf-8'
-            
-            # Парсим основной контент
+        
+            # Упрощенный парсинг основного контента
             soup = BeautifulSoup(response.text, 'html.parser')
-            
+        
             # Удаляем ненужные элементы
             for tag in soup(['script', 'style', 'footer', 'nav', 'aside', 'header']):
                 tag.decompose()
-            
+        
+            # Удаляем пустые элементы
+            for tag in soup.find_all():
+                if len(tag.get_text(strip=True)) == 0:
+                    tag.decompose()
+        
             # Извлекаем текст
-            text = soup.get_text(separator=' ', strip=True)
-            
+            text = ' '.join(soup.stripped_strings)
+        
             # Удаляем лишние пробелы
             text = re.sub(r'\s+', ' ', text)
-            
-            return text
-            
+        
+            return text[:15000]  # Ограничение до 15k символов
+        
         except Exception as e:
-            logger.error(f"Ошибка получения контента: {str(e)}")
+            logger.error(f"Ошибка получения контента для {url}: {str(e)}")
             return ""
 
 # ИНИЦИАЛИЗАЦИЯ СЕССИИ (ОБНОВЛЕННАЯ)
@@ -648,6 +651,29 @@ if st.session_state.get('llm_response') and st.session_state.get('last_query') =
         for i, chunk in enumerate(st.session_state.additional_chunks):
             unique_key = f"add_chunk_{int(time.time())}_{i}"
             st.text_area(label="", value=chunk[:2000], height=150, key=unique_key)
+
+    # После блока с выводами LLM добавьте:
+    if st.session_state.get('web_search_results'):
+        st.subheader("Результаты веб-поиска")
+    
+        for i, result in enumerate(st.session_state.web_search_results):
+            with st.expander(f"{i+1}. {result['title']}", expanded=False):
+                st.markdown(f"**URL:** [{result['url']}]({result['url']})")
+            
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    st.image("https://via.placeholder.com/150?text=Preview", width=150)
+                
+                with col2:
+                    st.markdown("**Сниппет:**")
+                    st.info(result.get('snippet', ''))
+            
+                if result.get('full_content'):
+                    st.markdown("**Извлеченное содержимое:**")
+                    st.text_area("", 
+                                value=result['full_content'][:3000] + ("..." if len(result['full_content']) > 3000 else ""), 
+                                height=200,
+                                key=f"web_content_{i}")
 
 # Обновленный блок истории
 if st.session_state.chat_log:
