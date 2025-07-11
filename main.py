@@ -398,10 +398,10 @@ if st.button("Отправить"):
             st.stop()
         
         if st.button("Отправить"):
-    if not user_input.strip():
-        st.error("Введите текст вопроса")
-        st.stop()
-    st.session_state.last_query = user_input
+            if not user_input.strip():
+                st.error("Введите текст вопроса")
+                st.stop()
+            st.session_state.last_query = user_input
     
         
         # ШАГ 1: Генерация дополнительных запросов
