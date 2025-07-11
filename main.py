@@ -19,7 +19,7 @@ from typing import List, Dict, Any
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-initialize_session()
+
 
 # Конфигурация приложения
 SYSTEM_PROMPT = """
@@ -176,6 +176,8 @@ def initialize_session():
     for key, value in default_state.items():
         if key not in st.session_state:
             st.session_state[key] = value
+
+initialize_session()
 
 def process_text(text: str) -> List[str]:
     """Разделение текста на чанки с перекрытием"""
