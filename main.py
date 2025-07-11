@@ -282,6 +282,7 @@ def generate_queries(user_query: str, keywords: List[str]) -> List[str]:
                     "maxOutputTokens": 5000
                 }
             }
+       )
 
             try:
                 response = requests.post(
