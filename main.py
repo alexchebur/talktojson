@@ -71,6 +71,22 @@ API_TIMEOUT = 60
 CHUNK_SIZE = 10000
 CHUNK_OVERLAP = 1000
 
+
+def check_gemini_api_key():
+    test_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro?key={GEMINI_API_KEY}"
+    try:
+        response = requests.get(test_url, timeout=10)
+        if response.status_code == 200:
+            return True
+        return False
+    except:
+        return False
+
+# В начале скрипта
+if not check_gemini_api_key():
+    st.error("⚠️ Неверный API ключ для Gemini. Пожалуйста, проверьте конфигурацию.")
+    st.stop()
+
 # ДОБАВЛЯЕМ КЛАСС ДЛЯ ВЕБ-ПОИСКА
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.78 Safari/537.36",
