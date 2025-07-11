@@ -436,7 +436,7 @@ if st.button("Отправить", key="send_button_unique"):
     if not user_input.strip():
         st.error("Введите текст вопроса")
         st.stop()
-       if st.session_state.get('web_search_results'):
+        if st.session_state.get('web_search_results'):
         st.subheader("Результаты веб-поиска")
     
         for i, result in enumerate(st.session_state.web_search_results):
