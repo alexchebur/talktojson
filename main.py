@@ -258,17 +258,40 @@ def generate_queries(user_query: str, keywords: List[str]) -> List[str]:
         
         response = requests.post(
             API_URL,
-            headers={"Authorization": f"Bearer {API_KEY}"},
-            json={
-                "model": "models/gemini-2.5-flash-lite-preview-06-17",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.4,
-                "max_tokens": 300
-            },
-            timeout=API_TIMEOUT
-        )
-        response.raise_for_status()
-        response_data = response.json()
+            headers = {
+                "Content-Type": "application/json"
+            }
+
+            params = {
+                "key": API_KEY  # Ключ передается как параметр, а не в заголовках
+            }
+
+            data = {
+                "contents": [
+                    {
+                        "parts": [
+                            {"text": SYSTEM_PROMPT.format(
+                                user_query=user_input,
+                                context=full_context
+                            )}
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.3,
+                    "maxOutputTokens": 5000
+                }
+            }
+
+            try:
+                response = requests.post(
+                    API_URL,
+                    headers=headers,
+                    params=params,  # Ключ передается здесь
+                    json=data,
+                    timeout=API_TIMEOUT
+                )
+                response.raise_for_status()
         
         # Обработка ответа
         if 'choices' in response_data:
