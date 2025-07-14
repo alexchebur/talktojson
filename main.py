@@ -19,7 +19,7 @@ from typing import List, Dict, Any
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-
+full_prompt = ""
 
 # Конфигурация приложения
 SYSTEM_PROMPT = """
