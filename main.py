@@ -234,7 +234,8 @@ def send_to_gemini(prompt: str, context: str) -> str:
                     }]
                 })
             else:
-                final_response = candidate['content']['parts'][0]['text']
+                if 'content' in candidate and 'parts' in candidate['content']:
+                    final_response = candidate['content']['parts'][0]['text']
                 break
 
         except Exception as e:
