@@ -19,7 +19,7 @@ from typing import List, Dict, Any
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-full_prompt = ""
+
 
 # Конфигурация приложения
 SYSTEM_PROMPT = """
@@ -67,22 +67,7 @@ SYSTEM_PROMPT = """
 8. Объем заключения: не менее 5000 знаков (не указывайте в ответе объем)
 
 **Важно:** Заключение должно быть готово к использованию в суде или для представления клиенту.
-
-**Доступные инструменты:**
-1. Режим мышления (thinking_mode): 
-   - Используйте для глубокого анализа сложных аспектов проблемы
-   - Укажите max_tokens (100-1000) для контроля глубины анализа
-   
-2. Веб-поиск (google_search):
-   - Используйте для поиска актуальной информации
-   - Формулируйте конкретные поисковые запросы
-
-**Важно:** 
-- Всегда используйте thinking_mode перед формулированием окончательного ответа
-- Используйте google_search только при отсутствии информации в контексте
-- Максимальная глубина анализа: 3 итерации
 """
-
 
 QUERY_GENERATION_PROMPT = """
 Как опытный юрист, сгенерируй 3-5 дополнительных уточняющих запросов для поиска правовой информации 
@@ -104,50 +89,6 @@ QUERY_GENERATION_PROMPT = """
 API_TIMEOUT = 60
 CHUNK_SIZE = 10000
 CHUNK_OVERLAP = 1000
-
-
-# Определение инструментов для Gemini API
-TOOLS = [
-    {
-        "function_declarations": [
-            {
-                "name": "thinking_mode",
-                "description": "Активирует режим глубокого анализа проблемы перед формулированием ответа",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "max_tokens": {
-                            "type": "integer",
-                            "description": "Максимальное число токенов для внутреннего анализа"
-                        }
-                    },
-                    "required": ["max_tokens"]
-                }
-            },
-            {
-                "name": "google_search",
-                "description": "Выполняет поиск в интернете для получения актуальной информации",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Поисковый запрос"
-                        }
-                    },
-                    "required": ["query"]
-                }
-            }
-        ]
-    }
-]
-
-
-def call_thinking_mode(max_tokens: int) -> str:
-    """Обработка виртуального режима мышления"""
-    return f"Режим мышления активирован. Использовано токенов: {max_tokens}. Анализ завершен."
-
-
 
 
 def check_gemini_api_key():
@@ -172,14 +113,13 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0"
 ]
 
-# First, define the WebSearcher class at the top of your code
 class WebSearcher:
     def __init__(self, delay_range=(1.0, 3.0)):
         self.delay_range = delay_range
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': random.choice(USER_AGENTS)})
         
-        # Google CSE settings
+        # Настройки Google CSE (ЗАМЕНИТЕ НА СВОИ КЛЮЧИ!)
         self.api_key = "AIzaSyCNVeNmUgrt-kL5ZI4EkHFoTjTzRSWATX4"
         self.cse_id = "a4f17489c6a0a4414"
         
@@ -201,150 +141,56 @@ class WebSearcher:
         
             results = []
             for item in data.get('items', [])[:max_results]:
+                # ДОБАВЛЯЕМ ИЗВЛЕЧЕНИЕ ПОЛНОГО КОНТЕНТА
                 full_content = self.get_full_page_content(item.get('link', ''))
             
                 results.append({
-                    'title': item.get('title', 'No title')[:150],
+                    'title': item.get('title', 'Без названия')[:150],
                     'url': item.get('link', '#'),
-                    'snippet': item.get('snippet', 'No description')[:500],
-                    'full_content': full_content
+                    'snippet': item.get('snippet', 'Без описания')[:500],
+                    'full_content': full_content  # Сохраняем полный контент
                 })
         
             return results
         except Exception as e:
-            logger.error(f"Google CSE error: {str(e)}")
+            logger.error(f"Ошибка Google CSE: {str(e)}")
             return []
 
-    def get_full_page_content(self, url: str) -> str:
-        """Get full page content with improved parsing"""
+    def get_full_page_content(url: str) -> str:
+        """Получение полного текста страницы с улучшенным парсингом"""
         try:
             headers = {'User-Agent': random.choice(USER_AGENTS)}
             response = requests.get(url, headers=headers, timeout=15)
             response.raise_for_status()
         
-            # Detect encoding
+            # Определяем кодировку
             if response.encoding == 'ISO-8859-1':
                 response.encoding = 'utf-8'
         
+            # Упрощенный парсинг основного контента
             soup = BeautifulSoup(response.text, 'html.parser')
         
-            # Remove unwanted elements
+            # Удаляем ненужные элементы
             for tag in soup(['script', 'style', 'footer', 'nav', 'aside', 'header']):
                 tag.decompose()
         
-            # Remove empty elements
+            # Удаляем пустые элементы
             for tag in soup.find_all():
                 if len(tag.get_text(strip=True)) == 0:
                     tag.decompose()
         
+            # Извлекаем текст
             text = ' '.join(soup.stripped_strings)
+        
+            # Удаляем лишние пробелы
             text = re.sub(r'\s+', ' ', text)
         
-            return text[:15000]  # Limit to 15k characters
+            return text[:15000]  # Ограничение до 15k символов
         
         except Exception as e:
-            logger.error(f"Error getting content for {url}: {str(e)}")
+            logger.error(f"Ошибка получения контента для {url}: {str(e)}")
             return ""
 
-def send_to_gemini(prompt: str, context: str, web_searcher: WebSearcher) -> str:
-    """Send request to Gemini API with tools support"""
-    full_prompt = SYSTEM_PROMPT.format(
-        user_query=prompt,
-        context=context
-    )
-    
-    messages = [{"role": "user", "parts": [{"text": full_prompt}]}]
-    generation_config = {
-        "temperature": 0.3,
-        "topP": 0.7,
-        "maxOutputTokens": 5000
-    }
-    
-    max_rounds = 3
-    final_response = ""
-    
-    for current_round in range(max_rounds):
-        request_data = {
-            "contents": messages,
-            "tools": TOOLS,
-            "generationConfig": generation_config
-        }
-
-        try:
-            response = requests.post(
-                API_URL,
-                headers={"Content-Type": "application/json"},
-                params={"key": GEMINI_API_KEY},
-                json=request_data,
-                timeout=API_TIMEOUT
-            )
-            response.raise_for_status()
-            response_data = response.json()
-            
-            candidate = response_data.get('candidates', [{}])[0]
-            content = candidate.get('content', {})
-            parts = content.get('parts', [{}])
-            
-            function_call = next((p.get('functionCall') for p in parts if 'functionCall' in p), None)
-            
-            if function_call:
-                func_name = function_call['name']
-                args = function_call.get('args', {})
-                
-                if func_name == "thinking_mode":
-                    result = f"🔍 Analysis complete (used tokens: {args.get('max_tokens', 1000)})"
-                elif func_name == "google_search":
-                    query = args.get('query', '')
-                    if query and web_searcher:
-                        with st.spinner(f"Searching: {query[:30]}..."):
-                            result = call_google_search(web_searcher, query)
-                    else:
-                        result = "⚠️ Invalid search query or searcher not available"
-                else:
-                    result = f"⚠️ Unknown function: {func_name}"
-                
-                messages.extend([
-                    {"role": "model", "parts": [{"functionCall": function_call}]},
-                    {"role": "function", "parts": [{"functionResponse": {
-                        "name": func_name,
-                        "response": {"content": result}
-                    }}]}
-                ])
-            else:
-                final_response = parts[0].get('text', '')
-                if final_response:
-                    break
-
-        except Exception as e:
-            logger.error(f"API error: {str(e)}")
-            return f"⚠️ Request processing error: {str(e)}"
-
-    return final_response or "🚫 Could not get meaningful response"
-
-
-def call_google_search(searcher: WebSearcher, query: str) -> str:
-    """Perform web search and format results"""
-    try:
-        results = searcher.perform_search(query, max_results=3)
-        if not results:
-            return "🔎 No relevant results found"
-            
-        formatted = ["🌐 Search Results:"]
-        for i, res in enumerate(results):
-            title = res.get('title', 'No title')[:100]
-            url = res.get('url', '#')
-            snippet = res.get('snippet', 'No snippet')[:200]
-            
-            formatted.append(
-                f"\n{i+1}. **{title}**\n"
-                f"   - URL: {url}\n"
-                f"   - {snippet}..."
-            )
-        return "\n".join(formatted)
-    except Exception as e:
-        logger.error(f"Search failed: {str(e)}")
-        return f"⚠️ Search error: {str(e)}"
-           
 # ИНИЦИАЛИЗАЦИЯ СЕССИИ (ОБНОВЛЕННАЯ)
 def initialize_session():
     """Инициализация всех необходимых переменных в session_state"""
@@ -604,7 +450,7 @@ user_input = st.text_area(
     "Введите ваш вопрос:", 
     height=150,
     max_chars=600,
-    key="user_input_unique"
+    key="user_input_unique"  # Фиксированный ключ
 )
 
 # Кнопка с фиксированным ключом
@@ -612,9 +458,27 @@ if st.button("Отправить", key="send_button_unique"):
     if not user_input.strip():
         st.error("Введите текст вопроса")
         st.stop()
+    if st.session_state.get('web_search_results'):
+        st.subheader("Результаты веб-поиска")
+        for i, result in enumerate(st.session_state.web_search_results):
+            with st.expander(f"{i+1}. {result['title']}"):
+                st.markdown(f"**URL**: [{result['url']}]({result['url']})")
+                if result.get('snippet'):
+                   
+                    st.markdown("**Сниппет:**")
+                    st.info(result['snippet'])
+            
+                if result.get('full_content'):
+                    st.markdown("**Извлеченный контент:**")
+                    st.text_area("", 
+                                value=result['full_content'][:3000] + "...", 
+                                height=200,
+                                key=f"web_content_{i}")
+    
+    st.session_state.last_query = user_input
     
     with st.spinner("Обработка запроса..."):
-        # ВСЁ, ЧТО НИЖЕ — ДОЛЖНО БЫТЬ ЗДЕСЬ
+        # Создание индекса и обработка запроса
         bm25_index, original_chunks = create_bm25_index()
         if not bm25_index or not original_chunks:
             st.error("Не удалось создать поисковый индекс")
@@ -626,33 +490,62 @@ if st.button("Отправить", key="send_button_unique"):
             st.error("Не удалось извлечь ключевые слова из запроса")
             st.stop()
         
+        if st.button("Отправить"):
+            if not user_input.strip():
+                st.error("Введите текст вопроса")
+                st.stop()
+            st.session_state.last_query = user_input
+    
+        
         # ШАГ 1: Генерация дополнительных запросов
         generated_queries = generate_queries(user_input, query_keywords)
-        st.session_state.generated_queries = generated_queries
+        st.session_state.generated_queries = generated_queries  # Сохраняем для отображения
         
         # ШАГ 2: Поиск по сгенерированным запросам
         all_knowledge_chunks = st.session_state.query_relevant_chunks.copy()
         additional_chunks = []
+        
         for query in generated_queries:
             with st.spinner(f"Поиск по запросу: '{query[:30]}...'"):
+                # Извлечение ключевых слов для сгенерированного запроса
                 q_keywords = extract_keywords(query, bm25_index)
                 if not q_keywords:
                     continue
+                
+                # Поиск релевантных фрагментов
                 q_chunks = search_relevant_chunks(bm25_index, original_chunks, q_keywords)
+                
+                # Фильтрация дубликатов
                 unique_chunks = get_unique_chunks(all_knowledge_chunks, q_chunks)
                 additional_chunks.extend(unique_chunks)
                 all_knowledge_chunks.extend(unique_chunks)
-        st.session_state.additional_chunks = additional_chunks
         
-        # Формирование контекста
+        st.session_state.additional_chunks = additional_chunks  # Сохраняем для отображения
+        
+        # Формирование контекста с расширенными данными
         context_parts = []
+        
+        # Контекст из документа (если есть)
         if st.session_state.document_relevant_chunks:
-            context_parts.append("Контекст из документа:\n" + "\n".join(st.session_state.document_relevant_chunks[:3]))
+            context_parts.append(
+                "Контекст из документа:\n" + 
+                "\n\n".join(st.session_state.document_relevant_chunks[:3])
+            )
+        
+        # Основной контекст из базы знаний
         if st.session_state.query_relevant_chunks:
-            context_parts.append("Основной контекст из базы знаний:\n" + "\n".join(st.session_state.query_relevant_chunks[:3]))
+            context_parts.append(
+                "Основной контекст из базы знаний:\n" + 
+                "\n\n".join(st.session_state.query_relevant_chunks[:3])
+            )
+        
+        # Дополнительный контекст из сгенерированных запросов
         if additional_chunks:
-            context_parts.append("Дополнительный контекст из базы знаний:\n" + "\n".join(additional_chunks[:3]))
-        full_context = "\n".join(context_parts)
+            context_parts.append(
+                "Дополнительный контекст из базы знаний:\n" + 
+                "\n\n".join(additional_chunks[:3])
+            )
+
         
         # ШАГ 3: ВЕБ-ПОИСК ПО СГЕНЕРИРОВАННЫМ ЗАПРОСАМ
         web_results = []
@@ -660,127 +553,79 @@ if st.button("Отправить", key="send_button_unique"):
             with st.spinner(f"Веб-поиск: '{query[:30]}...'"):
                 results = st.session_state.web_searcher.perform_search(query)
                 web_results.extend(results)
+        
+        # Извлекаем фрагменты контента
         web_chunks = [result['full_content'] for result in web_results if result['full_content']]
+        
+        # Фильтруем дубликаты
         unique_web_chunks = []
         seen_chunks = set()
         for chunk in web_chunks:
+            # Хэшируем для быстрого сравнения
             chunk_hash = hash(chunk[:1000])
             if chunk_hash not in seen_chunks:
                 seen_chunks.add(chunk_hash)
                 unique_web_chunks.append(chunk)
+        
         st.session_state.web_search_results = web_results
-        st.session_state.web_search_chunks = unique_web_chunks[:3]
+        st.session_state.web_search_chunks = unique_web_chunks[:3]  # Берем 3 уникальных фрагмента
         
+        # ДОБАВЛЯЕМ ВЕБ-ФРАГМЕНТЫ В КОНТЕКСТ
         if st.session_state.web_search_chunks:
-            context_parts.append("Контекст из веб-поиска:\n" + "\n".join(st.session_state.web_search_chunks))
-        full_context = "\n".join(context_parts)
+            context_parts.append(
+                "Контекст из веб-поиска:\n" + 
+                "\n\n".join(st.session_state.web_search_chunks)
+            )
+
+
+        full_context = "\n\n".join(context_parts)
         
-        # Отправка запроса в Gemini
-        answer = send_to_gemini(user_input, full_context)
-        st.session_state.llm_response = answer
-        st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
-
-
-
-
-
-
-
-
-       
         # Формирование ПРАВИЛЬНОГО запроса к LLM
-# Подготовка истории сообщений
-messages = [
-    {
-        "role": "user",
-        "parts": [{"text": full_prompt}]
-    }
-]
+        # Формируем полный промпт
+        full_prompt = SYSTEM_PROMPT.format(
+            user_query=user_input,
+            context=full_context
+        ) + "\n\nСформируйте подробное юридическое заключение."
 
-# Конфигурация генерации
-generation_config = {
-    "temperature": 0.3,
-    "maxOutputTokens": 5000
-}
-
-# Обработка вызовов функций (максимум 3 итерации)
-max_rounds = 3
-current_round = 0
-final_response = ""
-
-while current_round < max_rounds:
-    current_round += 1
-    
-    # Формирование запроса
-    request_data = {
-        "contents": messages,
-        "tools": TOOLS,
-        "generationConfig": generation_config
-    }
-
-    # Отправка запроса
-    response = requests.post(
-        API_URL,
-        headers={"Content-Type": "application/json"},
-        params={"key": GEMINI_API_KEY},
-        json=request_data,
-        timeout=API_TIMEOUT
-    )
-    
-    # Обработка ответа
-    if response.status_code != 200:
-        st.error(f"Ошибка API: {response.status_code} - {response.text}")
-        break
-
-    response_data = response.json()
-    
-    # Проверка наличия вызова функции
-    function_call = None
-    if 'candidates' in response_data and response_data['candidates']:
-        candidate = response_data['candidates'][0]
-        if 'content' in candidate and 'parts' in candidate['content']:
-            for part in candidate['content']['parts']:
-                if 'functionCall' in part:
-                    function_call = part['functionCall']
-                    break
-    
-    # Обработка вызова функции
-    if function_call:
-        func_name = function_call['name']
-        args = function_call.get('args', {})
-        
-        # Выполнение функции
-        if func_name == "thinking_mode":
-            result = call_thinking_mode(args.get("max_tokens", 1000))
-        elif func_name == "google_search":
-            result = call_google_search(args.get("query", ""))
-        else:
-            result = f"Неизвестная функция: {func_name}"
-        
-        # Добавление результатов в историю
-        messages.append({
-            "role": "model",
-            "parts": [{"functionCall": function_call}]
-        })
-        messages.append({
-            "role": "function",
-            "parts": [{
-                "functionResponse": {
-                    "name": func_name,
-                    "response": {"content": result}
+        # Подготовка данных для запроса
+        request_data = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": full_prompt}
+                    ]
                 }
-            }]
-        })
-    else:
-        # Получение финального ответа
-        final_response = candidate['content']['parts'][0]['text']
-        break
+            ],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": 5000
+            }
+        }
 
-# Сохранение результата
-if not final_response and 'candidates' in response_data:
-    final_response = response_data['candidates'][0]['content']['parts'][0]['text']
-
-st.session_state.llm_response = final_response or "Не удалось получить ответ"
+        try:
+            response = requests.post(
+                API_URL,
+                headers={"Content-Type": "application/json"},
+                params={"key": GEMINI_API_KEY},
+                json=request_data,
+                timeout=API_TIMEOUT
+            )
+            response.raise_for_status()
+            response_data = response.json()
+    
+            # Правильная обработка ответа Gemini
+            if 'candidates' in response_data and response_data['candidates']:
+                answer = response_data['candidates'][0]['content']['parts'][0]['text']
+            else:
+                answer = "Не удалось получить ответ от API"
+    
+            st.session_state.llm_response = answer
+            st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
+    
+        except Exception as e:
+            st.error(f"Ошибка API: {str(e)}")
+            if hasattr(e, 'response') and e.response:
+                st.error(f"Тело ответа: {e.response.text}")
 
 # Отображение ответа ПОСЛЕ обработки кнопки
 if st.session_state.get('llm_response') and st.session_state.get('last_query') == user_input:
