@@ -246,33 +246,7 @@ class WebSearcher:
             logger.error(f"Error getting content for {url}: {str(e)}")
             return ""
 
-# Then define the functions that use WebSearcher
-def call_google_search(searcher: WebSearcher, query: str) -> str:
-    """Improved web search function"""
-    try:
-        results = searcher.perform_search(query, max_results=3)
-        if not results:
-            return "🔎 No results found"
-            
-        formatted = ["🌐 Relevant sources found:"]
-        for i, res in enumerate(results):
-            title = res.get('title', 'No title')
-            url = res.get('url', '#')
-            snippet = res.get('snippet', 'No description')[:250]
-            content = res.get('full_content', '')[:500]
-            
-            formatted.append(
-                f"\n{i+1}. **{title}**\n"
-                f"   - URL: {url}\n"
-                f"   - Snippet: {snippet}...\n"
-                f"   - Content: {content}..."
-            )
-        return "\n".join(formatted)
-    except Exception as e:
-        logger.error(f"Search error: {str(e)}")
-        return f"⚠️ Search error: {str(e)}"
-
-def send_to_gemini(prompt: str, context: str) -> str:
+def send_to_gemini(prompt: str, context: str, web_searcher: WebSearcher) -> str:
     """Send request to Gemini API with tools support"""
     full_prompt = SYSTEM_PROMPT.format(
         user_query=prompt,
@@ -285,9 +259,6 @@ def send_to_gemini(prompt: str, context: str) -> str:
         "topP": 0.7,
         "maxOutputTokens": 5000
     }
-    
-    # Initialize web searcher only if needed
-    web_searcher = WebSearcher() if 'google_search' in [t['name'] for t in TOOLS[0]['function_declarations']] else None
     
     max_rounds = 3
     final_response = ""
@@ -322,9 +293,13 @@ def send_to_gemini(prompt: str, context: str) -> str:
                 
                 if func_name == "thinking_mode":
                     result = f"🔍 Analysis complete (used tokens: {args.get('max_tokens', 1000)})"
-                elif func_name == "google_search" and web_searcher:
-                    with st.spinner(f"Searching: {args.get('query', '')[:30]}..."):
-                        result = call_google_search(web_searcher, args.get('query', ''))
+                elif func_name == "google_search":
+                    query = args.get('query', '')
+                    if query and web_searcher:
+                        with st.spinner(f"Searching: {query[:30]}..."):
+                            result = call_google_search(web_searcher, query)
+                    else:
+                        result = "⚠️ Invalid search query or searcher not available"
                 else:
                     result = f"⚠️ Unknown function: {func_name}"
                 
@@ -345,6 +320,30 @@ def send_to_gemini(prompt: str, context: str) -> str:
             return f"⚠️ Request processing error: {str(e)}"
 
     return final_response or "🚫 Could not get meaningful response"
+
+
+def call_google_search(searcher: WebSearcher, query: str) -> str:
+    """Perform web search and format results"""
+    try:
+        results = searcher.perform_search(query, max_results=3)
+        if not results:
+            return "🔎 No relevant results found"
+            
+        formatted = ["🌐 Search Results:"]
+        for i, res in enumerate(results):
+            title = res.get('title', 'No title')[:100]
+            url = res.get('url', '#')
+            snippet = res.get('snippet', 'No snippet')[:200]
+            
+            formatted.append(
+                f"\n{i+1}. **{title}**\n"
+                f"   - URL: {url}\n"
+                f"   - {snippet}..."
+            )
+        return "\n".join(formatted)
+    except Exception as e:
+        logger.error(f"Search failed: {str(e)}")
+        return f"⚠️ Search error: {str(e)}"
            
 # ИНИЦИАЛИЗАЦИЯ СЕССИИ (ОБНОВЛЕННАЯ)
 def initialize_session():
