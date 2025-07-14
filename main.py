@@ -168,7 +168,80 @@ def call_google_search(query: str) -> str:
     except Exception as e:
         return f"⚠️ Ошибка поиска: {str(e)}"
 
+# Модифицированная функция отправки запроса к Gemini
+def send_to_gemini(prompt: str, context: str) -> str:
+    """Отправка запроса к Gemini API с поддержкой инструментов"""
+    full_prompt = SYSTEM_PROMPT.format(
+        user_query=prompt,
+        context=context
+    )
+    
+    messages = [{"role": "user", "parts": [{"text": full_prompt}]}]
+    generation_config = {"temperature": 0.3, "maxOutputTokens": 5000}
+    
+    max_rounds = 3
+    current_round = 0
+    final_response = ""
 
+    while current_round < max_rounds:
+        current_round += 1
+        
+        request_data = {
+            "contents": messages,
+            "tools": TOOLS,
+            "generationConfig": generation_config
+        }
+
+        try:
+            response = requests.post(
+                API_URL,
+                headers={"Content-Type": "application/json"},
+                params={"key": GEMINI_API_KEY},
+                json=request_data,
+                timeout=API_TIMEOUT
+            )
+            response.raise_for_status()
+            response_data = response.json()
+            
+            function_call = None
+            if 'candidates' in response_data and response_data['candidates']:
+                candidate = response_data['candidates'][0]
+                if 'content' in candidate and 'parts' in candidate['content']:
+                    for part in candidate['content']['parts']:
+                        if 'functionCall' in part:
+                            function_call = part['functionCall']
+                            break
+            
+            if function_call:
+                func_name = function_call['name']
+                args = function_call.get('args', {})
+                
+                if func_name == "thinking_mode":
+                    result = call_thinking_mode(args.get("max_tokens", 1000))
+                elif func_name == "google_search":
+                    result = call_google_search(args.get("query", ""))
+                else:
+                    result = f"Неизвестная функция: {func_name}"
+                
+                messages.append({"role": "model", "parts": [{"functionCall": function_call}]})
+                messages.append({
+                    "role": "function",
+                    "parts": [{
+                        "functionResponse": {
+                            "name": func_name,
+                            "response": {"content": result}
+                        }
+                    }]
+                })
+            else:
+                final_response = candidate['content']['parts'][0]['text']
+                break
+
+        except Exception as e:
+            logger.error(f"Ошибка API: {str(e)}")
+            return f"Ошибка при обработке запроса: {str(e)}"
+
+    return final_response or "Не удалось получить ответ"
 
 
 def check_gemini_api_key():
@@ -538,24 +611,8 @@ if st.button("Отправить", key="send_button_unique"):
     if not user_input.strip():
         st.error("Введите текст вопроса")
         st.stop()
-    if st.session_state.get('web_search_results'):
-        st.subheader("Результаты веб-поиска")
-        for i, result in enumerate(st.session_state.web_search_results):
-            with st.expander(f"{i+1}. {result['title']}"):
-                st.markdown(f"**URL**: [{result['url']}]({result['url']})")
-                if result.get('snippet'):
-                   
-                    st.markdown("**Сниппет:**")
-                    st.info(result['snippet'])
-            
-                if result.get('full_content'):
-                    st.markdown("**Извлеченный контент:**")
-                    st.text_area("", 
-                                value=result['full_content'][:3000] + "...", 
-                                height=200,
-                                key=f"web_content_{i}")
-    
-    st.session_state.last_query = user_input
+        
+   
     
     with st.spinner("Обработка запроса..."):
         # Создание индекса и обработка запроса
@@ -575,6 +632,15 @@ if st.button("Отправить", key="send_button_unique"):
                 st.error("Введите текст вопроса")
                 st.stop()
             st.session_state.last_query = user_input
+
+            # Используем новую функцию для отправки запроса
+            answer = send_to_gemini(user_input, full_context)
+            st.session_state.llm_response = answer
+            st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
+
+
+        
+
     
         
         # ШАГ 1: Генерация дополнительных запросов
