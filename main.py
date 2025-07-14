@@ -67,6 +67,21 @@ SYSTEM_PROMPT = """
 8. Объем заключения: не менее 5000 знаков (не указывайте в ответе объем)
 
 **Важно:** Заключение должно быть готово к использованию в суде или для представления клиенту.
+
+**Доступные инструменты:**
+1. Режим мышления (thinking_mode): 
+   - Используйте для глубокого анализа сложных аспектов проблемы
+   - Укажите max_tokens (100-1000) для контроля глубины анализа
+   
+2. Веб-поиск (google_search):
+   - Используйте для поиска актуальной информации
+   - Формулируйте конкретные поисковые запросы
+
+**Важно:** 
+- Всегда используйте thinking_mode перед формулированием окончательного ответа
+- Используйте google_search только при отсутствии информации в контексте
+- Максимальная глубина анализа: 3 итерации
+"""
 """
 
 QUERY_GENERATION_PROMPT = """
@@ -89,6 +104,71 @@ QUERY_GENERATION_PROMPT = """
 API_TIMEOUT = 60
 CHUNK_SIZE = 10000
 CHUNK_OVERLAP = 1000
+
+
+# Определение инструментов для Gemini API
+TOOLS = [
+    {
+        "function_declarations": [
+            {
+                "name": "thinking_mode",
+                "description": "Активирует режим глубокого анализа проблемы перед формулированием ответа",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "max_tokens": {
+                            "type": "integer",
+                            "description": "Максимальное число токенов для внутреннего анализа"
+                        }
+                    },
+                    "required": ["max_tokens"]
+                }
+            },
+            {
+                "name": "google_search",
+                "description": "Выполняет поиск в интернете для получения актуальной информации",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Поисковый запрос"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        ]
+    }
+]
+
+
+def call_thinking_mode(max_tokens: int) -> str:
+    """Обработка виртуального режима мышления"""
+    return f"Режим мышления активирован. Использовано токенов: {max_tokens}. Анализ завершен."
+
+def call_google_search(query: str) -> str:
+    """Выполнение веб-поиска по запросу с улучшенным форматированием"""
+    try:
+        results = st.session_state.web_searcher.perform_search(query, max_results=3)
+        if not results:
+            return "Поиск не дал результатов"
+            
+        formatted = ["Результаты поиска:"]
+        for i, res in enumerate(results):
+            title = res.get('title', 'Без названия')
+            url = res.get('url', '#')
+            snippet = res.get('snippet', 'Без описания')[:250]
+            
+            formatted.append(
+                f"\n🔍 **Результат {i+1}:** [{title}]({url})\n"
+                f"*Сниппет:* {snippet}..."
+            )
+        return "\n".join(formatted)
+    except Exception as e:
+        return f"⚠️ Ошибка поиска: {str(e)}"
+
+
 
 
 def check_gemini_api_key():
@@ -579,53 +659,108 @@ if st.button("Отправить", key="send_button_unique"):
 
 
         full_context = "\n\n".join(context_parts)
-        
+
+
+
+
+
+
+
+
+       
         # Формирование ПРАВИЛЬНОГО запроса к LLM
-        # Формируем полный промпт
-        full_prompt = SYSTEM_PROMPT.format(
-            user_query=user_input,
-            context=full_context
-        ) + "\n\nСформируйте подробное юридическое заключение."
+# Подготовка истории сообщений
+messages = [
+    {
+        "role": "user",
+        "parts": [{"text": full_prompt}]
+    }
+]
 
-        # Подготовка данных для запроса
-        request_data = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": full_prompt}
-                    ]
+# Конфигурация генерации
+generation_config = {
+    "temperature": 0.3,
+    "maxOutputTokens": 5000
+}
+
+# Обработка вызовов функций (максимум 3 итерации)
+max_rounds = 3
+current_round = 0
+final_response = ""
+
+while current_round < max_rounds:
+    current_round += 1
+    
+    # Формирование запроса
+    request_data = {
+        "contents": messages,
+        "tools": TOOLS,
+        "generationConfig": generation_config
+    }
+
+    # Отправка запроса
+    response = requests.post(
+        API_URL,
+        headers={"Content-Type": "application/json"},
+        params={"key": GEMINI_API_KEY},
+        json=request_data,
+        timeout=API_TIMEOUT
+    )
+    
+    # Обработка ответа
+    if response.status_code != 200:
+        st.error(f"Ошибка API: {response.status_code} - {response.text}")
+        break
+
+    response_data = response.json()
+    
+    # Проверка наличия вызова функции
+    function_call = None
+    if 'candidates' in response_data and response_data['candidates']:
+        candidate = response_data['candidates'][0]
+        if 'content' in candidate and 'parts' in candidate['content']:
+            for part in candidate['content']['parts']:
+                if 'functionCall' in part:
+                    function_call = part['functionCall']
+                    break
+    
+    # Обработка вызова функции
+    if function_call:
+        func_name = function_call['name']
+        args = function_call.get('args', {})
+        
+        # Выполнение функции
+        if func_name == "thinking_mode":
+            result = call_thinking_mode(args.get("max_tokens", 1000))
+        elif func_name == "google_search":
+            result = call_google_search(args.get("query", ""))
+        else:
+            result = f"Неизвестная функция: {func_name}"
+        
+        # Добавление результатов в историю
+        messages.append({
+            "role": "model",
+            "parts": [{"functionCall": function_call}]
+        })
+        messages.append({
+            "role": "function",
+            "parts": [{
+                "functionResponse": {
+                    "name": func_name,
+                    "response": {"content": result}
                 }
-            ],
-            "generationConfig": {
-                "temperature": 0.3,
-                "maxOutputTokens": 5000
-            }
-        }
+            }]
+        })
+    else:
+        # Получение финального ответа
+        final_response = candidate['content']['parts'][0]['text']
+        break
 
-        try:
-            response = requests.post(
-                API_URL,
-                headers={"Content-Type": "application/json"},
-                params={"key": GEMINI_API_KEY},
-                json=request_data,
-                timeout=API_TIMEOUT
-            )
-            response.raise_for_status()
-            response_data = response.json()
-    
-            # Правильная обработка ответа Gemini
-            if 'candidates' in response_data and response_data['candidates']:
-                answer = response_data['candidates'][0]['content']['parts'][0]['text']
-            else:
-                answer = "Не удалось получить ответ от API"
-    
-            st.session_state.llm_response = answer
-            st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
-    
-        except Exception as e:
-            st.error(f"Ошибка API: {str(e)}")
-            if hasattr(e, 'response') and e.response:
-                st.error(f"Тело ответа: {e.response.text}")
+# Сохранение результата
+if not final_response and 'candidates' in response_data:
+    final_response = response_data['candidates'][0]['content']['parts'][0]['text']
+
+st.session_state.llm_response = final_response or "Не удалось получить ответ"
 
 # Отображение ответа ПОСЛЕ обработки кнопки
 if st.session_state.get('llm_response') and st.session_state.get('last_query') == user_input:
