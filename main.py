@@ -603,7 +603,7 @@ user_input = st.text_area(
     "Введите ваш вопрос:", 
     height=150,
     max_chars=600,
-    key="user_input_unique"  # Фиксированный ключ
+    key="user_input_unique"
 )
 
 # Кнопка с фиксированным ключом
@@ -611,11 +611,9 @@ if st.button("Отправить", key="send_button_unique"):
     if not user_input.strip():
         st.error("Введите текст вопроса")
         st.stop()
-        
-   
     
     with st.spinner("Обработка запроса..."):
-        # Создание индекса и обработка запроса
+        # ВСЁ, ЧТО НИЖЕ — ДОЛЖНО БЫТЬ ЗДЕСЬ
         bm25_index, original_chunks = create_bm25_index()
         if not bm25_index or not original_chunks:
             st.error("Не удалось создать поисковый индекс")
@@ -627,71 +625,33 @@ if st.button("Отправить", key="send_button_unique"):
             st.error("Не удалось извлечь ключевые слова из запроса")
             st.stop()
         
-        if st.button("Отправить"):
-            if not user_input.strip():
-                st.error("Введите текст вопроса")
-                st.stop()
-            st.session_state.last_query = user_input
-
-            # Используем новую функцию для отправки запроса
-            answer = send_to_gemini(user_input, full_context)
-            st.session_state.llm_response = answer
-            st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
-
-
-        
-
-    
-        
         # ШАГ 1: Генерация дополнительных запросов
         generated_queries = generate_queries(user_input, query_keywords)
-        st.session_state.generated_queries = generated_queries  # Сохраняем для отображения
+        st.session_state.generated_queries = generated_queries
         
         # ШАГ 2: Поиск по сгенерированным запросам
         all_knowledge_chunks = st.session_state.query_relevant_chunks.copy()
         additional_chunks = []
-        
         for query in generated_queries:
             with st.spinner(f"Поиск по запросу: '{query[:30]}...'"):
-                # Извлечение ключевых слов для сгенерированного запроса
                 q_keywords = extract_keywords(query, bm25_index)
                 if not q_keywords:
                     continue
-                
-                # Поиск релевантных фрагментов
                 q_chunks = search_relevant_chunks(bm25_index, original_chunks, q_keywords)
-                
-                # Фильтрация дубликатов
                 unique_chunks = get_unique_chunks(all_knowledge_chunks, q_chunks)
                 additional_chunks.extend(unique_chunks)
                 all_knowledge_chunks.extend(unique_chunks)
+        st.session_state.additional_chunks = additional_chunks
         
-        st.session_state.additional_chunks = additional_chunks  # Сохраняем для отображения
-        
-        # Формирование контекста с расширенными данными
+        # Формирование контекста
         context_parts = []
-        
-        # Контекст из документа (если есть)
         if st.session_state.document_relevant_chunks:
-            context_parts.append(
-                "Контекст из документа:\n" + 
-                "\n\n".join(st.session_state.document_relevant_chunks[:3])
-            )
-        
-        # Основной контекст из базы знаний
+            context_parts.append("Контекст из документа:\n" + "\n".join(st.session_state.document_relevant_chunks[:3]))
         if st.session_state.query_relevant_chunks:
-            context_parts.append(
-                "Основной контекст из базы знаний:\n" + 
-                "\n\n".join(st.session_state.query_relevant_chunks[:3])
-            )
-        
-        # Дополнительный контекст из сгенерированных запросов
+            context_parts.append("Основной контекст из базы знаний:\n" + "\n".join(st.session_state.query_relevant_chunks[:3]))
         if additional_chunks:
-            context_parts.append(
-                "Дополнительный контекст из базы знаний:\n" + 
-                "\n\n".join(additional_chunks[:3])
-            )
-
+            context_parts.append("Дополнительный контекст из базы знаний:\n" + "\n".join(additional_chunks[:3]))
+        full_context = "\n".join(context_parts)
         
         # ШАГ 3: ВЕБ-ПОИСК ПО СГЕНЕРИРОВАННЫМ ЗАПРОСАМ
         web_results = []
@@ -699,32 +659,25 @@ if st.button("Отправить", key="send_button_unique"):
             with st.spinner(f"Веб-поиск: '{query[:30]}...'"):
                 results = st.session_state.web_searcher.perform_search(query)
                 web_results.extend(results)
-        
-        # Извлекаем фрагменты контента
         web_chunks = [result['full_content'] for result in web_results if result['full_content']]
-        
-        # Фильтруем дубликаты
         unique_web_chunks = []
         seen_chunks = set()
         for chunk in web_chunks:
-            # Хэшируем для быстрого сравнения
             chunk_hash = hash(chunk[:1000])
             if chunk_hash not in seen_chunks:
                 seen_chunks.add(chunk_hash)
                 unique_web_chunks.append(chunk)
-        
         st.session_state.web_search_results = web_results
-        st.session_state.web_search_chunks = unique_web_chunks[:3]  # Берем 3 уникальных фрагмента
+        st.session_state.web_search_chunks = unique_web_chunks[:3]
         
-        # ДОБАВЛЯЕМ ВЕБ-ФРАГМЕНТЫ В КОНТЕКСТ
         if st.session_state.web_search_chunks:
-            context_parts.append(
-                "Контекст из веб-поиска:\n" + 
-                "\n\n".join(st.session_state.web_search_chunks)
-            )
-
-
-        full_context = "\n\n".join(context_parts)
+            context_parts.append("Контекст из веб-поиска:\n" + "\n".join(st.session_state.web_search_chunks))
+        full_context = "\n".join(context_parts)
+        
+        # Отправка запроса в Gemini
+        answer = send_to_gemini(user_input, full_context)
+        st.session_state.llm_response = answer
+        st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
 
 
 
