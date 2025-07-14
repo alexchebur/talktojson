@@ -273,7 +273,7 @@ class WebSearcher:
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': random.choice(USER_AGENTS)})
         
-        # Настройки Google CSE (ЗАМЕНИТЕ НА СВОИ КЛЮЧИ!)
+        # Настройки Google CSE
         self.api_key = "AIzaSyCNVeNmUgrt-kL5ZI4EkHFoTjTzRSWATX4"
         self.cse_id = "a4f17489c6a0a4414"
         
@@ -295,14 +295,13 @@ class WebSearcher:
         
             results = []
             for item in data.get('items', [])[:max_results]:
-                # ДОБАВЛЯЕМ ИЗВЛЕЧЕНИЕ ПОЛНОГО КОНТЕНТА
                 full_content = self.get_full_page_content(item.get('link', ''))
             
                 results.append({
                     'title': item.get('title', 'Без названия')[:150],
                     'url': item.get('link', '#'),
                     'snippet': item.get('snippet', 'Без описания')[:500],
-                    'full_content': full_content  # Сохраняем полный контент
+                    'full_content': full_content
                 })
         
             return results
@@ -310,7 +309,7 @@ class WebSearcher:
             logger.error(f"Ошибка Google CSE: {str(e)}")
             return []
 
-    def get_full_page_content(url: str) -> str:
+    def get_full_page_content(self, url: str) -> str:
         """Получение полного текста страницы с улучшенным парсингом"""
         try:
             headers = {'User-Agent': random.choice(USER_AGENTS)}
@@ -344,7 +343,7 @@ class WebSearcher:
         except Exception as e:
             logger.error(f"Ошибка получения контента для {url}: {str(e)}")
             return ""
-
+           
 # ИНИЦИАЛИЗАЦИЯ СЕССИИ (ОБНОВЛЕННАЯ)
 def initialize_session():
     """Инициализация всех необходимых переменных в session_state"""
