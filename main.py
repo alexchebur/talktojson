@@ -490,11 +490,11 @@ if st.button("Отправить", key="send_button_unique"):
             st.error("Не удалось извлечь ключевые слова из запроса")
             st.stop()
         
-        if st.button("Отправить"):
-            if not user_input.strip():
-                st.error("Введите текст вопроса")
-                st.stop()
-            st.session_state.last_query = user_input
+        #if st.button("Отправить"):
+            #if not user_input.strip():
+                #st.error("Введите текст вопроса")
+                #st.stop()
+            #st.session_state.last_query = user_input
     
         
         # ШАГ 1: Генерация дополнительных запросов
