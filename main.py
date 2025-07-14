@@ -121,7 +121,6 @@ class WebSearcher:
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': random.choice(USER_AGENTS)})
         
-        # Настройки Google CSE (ЗАМЕНИТЕ НА СВОИ КЛЮЧИ!)
         self.api_key = "AIzaSyCNVeNmUgrt-kL5ZI4EkHFoTjTzRSWATX4"
         self.cse_id = "a4f17489c6a0a4414"
         
@@ -143,14 +142,14 @@ class WebSearcher:
         
             results = []
             for item in data.get('items', [])[:max_results]:
-                # ДОБАВЛЯЕМ ИЗВЛЕЧЕНИЕ ПОЛНОГО КОНТЕНТА
-                full_content = self.get_full_page_content(item.get('link', ''))
+                # ИСПРАВЛЕННЫЙ ВЫЗОВ
+                full_content = WebSearcher.get_full_page_content(item.get('link', ''))
             
                 results.append({
                     'title': item.get('title', 'Без названия')[:150],
                     'url': item.get('link', '#'),
                     'snippet': item.get('snippet', 'Без описания')[:500],
-                    'full_content': full_content  # Сохраняем полный контент
+                    'full_content': full_content
                 })
         
             return results
@@ -158,6 +157,8 @@ class WebSearcher:
             logger.error(f"Ошибка Google CSE: {str(e)}")
             return []
 
+    # ДОБАВЛЕН ДЕКОРАТОР И ОБРАБОТКА ОШИБОК
+    @staticmethod
     def get_full_page_content(url: str) -> str:
         """Получение полного текста страницы с улучшенным парсингом"""
         try:
@@ -165,32 +166,28 @@ class WebSearcher:
             response = requests.get(url, headers=headers, timeout=15)
             response.raise_for_status()
         
-            # Определяем кодировку
             if response.encoding == 'ISO-8859-1':
                 response.encoding = 'utf-8'
         
-            # Упрощенный парсинг основного контента
             soup = BeautifulSoup(response.text, 'html.parser')
         
-            # Удаляем ненужные элементы
             for tag in soup(['script', 'style', 'footer', 'nav', 'aside', 'header']):
                 tag.decompose()
         
-            # Удаляем пустые элементы
             for tag in soup.find_all():
                 if len(tag.get_text(strip=True)) == 0:
                     tag.decompose()
         
-            # Извлекаем текст
             text = ' '.join(soup.stripped_strings)
-        
-            # Удаляем лишние пробелы
             text = re.sub(r'\s+', ' ', text)
         
-            return text[:15000]  # Ограничение до 15k символов
+            return text[:15000]
         
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ошибка соединения для {url}: {str(e)}")
+            return ""
         except Exception as e:
-            logger.error(f"Ошибка получения контента для {url}: {str(e)}")
+            logger.error(f"Общая ошибка для {url}: {str(e)}")
             return ""
 
 # ИНИЦИАЛИЗАЦИЯ СЕССИИ (ОБНОВЛЕННАЯ)
