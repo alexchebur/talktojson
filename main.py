@@ -147,41 +147,27 @@ def call_thinking_mode(max_tokens: int) -> str:
     """Обработка виртуального режима мышления"""
     return f"Режим мышления активирован. Использовано токенов: {max_tokens}. Анализ завершен."
 
-def call_google_search(query: str) -> str:
-    """Выполнение веб-поиска по запросу с улучшенным форматированием"""
-    try:
-        results = st.session_state.web_searcher.perform_search(query, max_results=3)
-        if not results:
-            return "Поиск не дал результатов"
-            
-        formatted = ["Результаты поиска:"]
-        for i, res in enumerate(results):
-            title = res.get('title', 'Без названия')
-            url = res.get('url', '#')
-            snippet = res.get('snippet', 'Без описания')[:250]
-            
-            formatted.append(
-                f"\n🔍 **Результат {i+1}:** [{title}]({url})\n"
-                f"*Сниппет:* {snippet}..."
-            )
-        return "\n".join(formatted)
-    except Exception as e:
-        return f"⚠️ Ошибка поиска: {str(e)}"
 
-# Модифицированная функция отправки запроса к Gemini
 def send_to_gemini(prompt: str, context: str) -> str:
-    """Отправка запроса к Gemini API с поддержкой инструментов"""
+    """Отправка запроса к Gemini API с интеллектуальным использованием инструментов"""
     full_prompt = SYSTEM_PROMPT.format(
         user_query=prompt,
         context=context
     )
     
     messages = [{"role": "user", "parts": [{"text": full_prompt}]}]
-    generation_config = {"temperature": 0.3, "maxOutputTokens": 5000}
+    generation_config = {
+        "temperature": 0.3,
+        "topP": 0.7,
+        "maxOutputTokens": 5000
+    }
     
     max_rounds = 3
     current_round = 0
     final_response = ""
+    
+    # Инициализация веб-поиска только при необходимости
+    web_searcher = WebSearcher() if any(tool['name'] == 'google_search' for tool in TOOLS[0]['function_declarations']) else None
 
     while current_round < max_rounds:
         current_round += 1
@@ -203,46 +189,77 @@ def send_to_gemini(prompt: str, context: str) -> str:
             response.raise_for_status()
             response_data = response.json()
             
-            function_call = None
-            if 'candidates' in response_data and response_data['candidates']:
-                candidate = response_data['candidates'][0]
-                if 'content' in candidate and 'parts' in candidate['content']:
-                    for part in candidate['content']['parts']:
-                        if 'functionCall' in part:
-                            function_call = part['functionCall']
-                            break
+            # Обработка ответа с учетом разных форматов Gemini API
+            candidate = response_data.get('candidates', [{}])[0] if 'candidates' in response_data else {}
+            content = candidate.get('content', {})
+            parts = content.get('parts', [{}]) if content else [{}]
+            
+            # Проверяем, есть ли вызов функции в ответе
+            function_call = next((part.get('functionCall') for part in parts if 'functionCall' in part), None)
             
             if function_call:
                 func_name = function_call['name']
                 args = function_call.get('args', {})
                 
+                # Обработка режима мышления
                 if func_name == "thinking_mode":
-                    result = call_thinking_mode(args.get("max_tokens", 1000))
-                elif func_name == "google_search":
-                    result = call_google_search(args.get("query", ""))
-                else:
-                    result = f"Неизвестная функция: {func_name}"
+                    result = f"🔍 Анализ выполнен (использовано токенов: {args.get('max_tokens', 1000)})"
                 
-                messages.append({"role": "model", "parts": [{"functionCall": function_call}]})
-                messages.append({
-                    "role": "function",
-                    "parts": [{
-                        "functionResponse": {
-                            "name": func_name,
-                            "response": {"content": result}
-                        }
-                    }]
-                })
+                # Обработка веб-поиска
+                elif func_name == "google_search" and web_searcher:
+                    query = args.get('query', '')
+                    if query:
+                        with st.spinner(f"Выполняю поиск: {query[:30]}..."):
+                            result = call_google_search(web_searcher, query)
+                    else:
+                        result = "⚠️ Не указан поисковый запрос"
+                else:
+                    result = f"⚠️ Неизвестная функция: {func_name}"
+                
+                # Добавляем результаты в историю сообщений
+                messages.extend([
+                    {"role": "model", "parts": [{"functionCall": function_call}]},
+                    {"role": "function", "parts": [{"functionResponse": {
+                        "name": func_name,
+                        "response": {"content": result}
+                    }}]}
+                ])
             else:
-                if 'content' in candidate and 'parts' in candidate['content']:
-                    final_response = candidate['content']['parts'][0]['text']
-                break
+                # Получаем финальный ответ
+                final_response = parts[0].get('text', '')
+                if final_response:
+                    break
 
         except Exception as e:
             logger.error(f"Ошибка API: {str(e)}")
-            return f"Ошибка при обработке запроса: {str(e)}"
+            return f"⚠️ Ошибка при обработке запроса: {str(e)}"
 
-    return final_response or "Не удалось получить ответ"
+    return final_response or "🚫 Не удалось получить содержательный ответ"
+
+def call_google_search(searcher: WebSearcher, query: str) -> str:
+    """Улучшенная функция веб-поиска"""
+    try:
+        results = searcher.perform_search(query, max_results=3)
+        if not results:
+            return "🔎 Поиск не дал результатов"
+            
+        formatted = ["🌐 Найдены следующие релевантные источники:"]
+        for i, res in enumerate(results):
+            title = res.get('title', 'Без названия')
+            url = res.get('url', '#')
+            snippet = res.get('snippet', 'Без описания')[:250]
+            content = res.get('full_content', '')[:500]
+            
+            formatted.append(
+                f"\n{i+1}. **{title}**\n"
+                f"   - Ссылка: {url}\n"
+                f"   - Фрагмент: {snippet}...\n"
+                f"   - Контент: {content}..."
+            )
+        return "\n".join(formatted)
+    except Exception as e:
+        logger.error(f"Ошибка поиска: {str(e)}")
+        return f"⚠️ Ошибка при выполнении поиска: {str(e)}"
 
 
 def check_gemini_api_key():
