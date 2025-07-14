@@ -481,7 +481,7 @@ def extract_keywords(text: str, bm25: BM25Okapi) -> List[str]:
         return []
 
 def search_relevant_chunks(bm25: BM25Okapi, original_chunks: List[str], keywords: List[str]) -> List[str]:
-    """Поиск релевантных фрагментов"""
+    #"""Поиск релевантных фрагментов"""
     try:
         query_weights = {term: 2 for term in keywords}
         weighted_query = []
