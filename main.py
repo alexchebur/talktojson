@@ -419,7 +419,7 @@ def search_relevant_chunks(bm25: BM25Okapi, original_chunks: List[str], keywords
         return []
 
 # Интерфейс
-st.title("Юридический консультант AI")
+st.title("Генератор правовых заключений")
 uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 
 if uploaded_file:
