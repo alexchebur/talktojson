@@ -71,7 +71,7 @@ SYSTEM_PROMPT = """
 
 QUERY_GENERATION_PROMPT = """
 Как опытный юрист, руководствуясь подзадачами по разрешению сформулированной проблемы, сгенерируй 3-5 дополнительных уточняющих запросов для поиска правовой информации 
-на основе ключевых терминов из исходного запроса. Запросы должны быть краткими (10-15 слов) и 
+на основе ключевых терминов из исходного запроса. Запросы должны быть краткими (не более 15 слов каждый) и 
 охватывать различные аспекты проблемы.
 
 **Исходный запрос:**
@@ -674,7 +674,7 @@ if st.session_state.get('llm_response') and st.session_state.get('last_query') =
             st.write(f"{i+1}. {query}")
 
     if st.session_state.get('additional_chunks'):
-        st.subheader("Дополнительные релевантные фрагменты:")
+        st.subheader("Дополнительные релевантные фрагменты из базы знаний:")
         for i, chunk in enumerate(st.session_state.additional_chunks):
             unique_key = f"add_chunk_{int(time.time())}_{i}"
             st.text_area(label="", value=chunk[:2000], height=150, key=unique_key)
