@@ -446,7 +446,7 @@ if uploaded_file:
 
 # Блок чата
 user_input = st.text_area(
-    "Введите ваш вопрос:", 
+    "Введите вопрос, по которому необходимо заключение:", 
     height=150,
     max_chars=600,
     key="user_input_unique"  # Фиксированный ключ
