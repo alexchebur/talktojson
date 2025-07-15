@@ -36,14 +36,13 @@ SYSTEM_PROMPT = """
 
 **Требования к заключению:**
 1. Проведите детальный анализ правовой проблемы, разбейте проблему на подзадачи и решайте пошагово
-2. Ссылайтесь на конкретные нормы законов и подзаконных актов (запрещено приводить несуществующие или отсутствующие в контексте нормы)
-3. Учитывайте релевантную судебную практику (запрещено приводить несуществующую или отсутствующую в контексте судебную практику)
+2. Ссылайтесь на конкретные нормы законов и подзаконных актов (запрещено приводить несуществующие нормы)
+3. Учитывайте релевантную судебную практику (запрещено приводить несуществующую судебную практику)
 4. Структурируйте заключение по следующему плану:
    - Поставленный на исследование вопрос, соответствующий {user_query}
    - Фактические обстоятельства дела
    - Правовая квалификация ситуации и анализ применимых норм права с перечнем нормативных актов, относящихся к проблеме
-   - Возможные риски
-   - Выводы и рекомендации по устранению рисков
+   - Выводы и рекомендации
 5. Избегайте избыточной информации, не относящейся к делу. Запрещено ссылаться на нормативные акты или судебные решения, не относящиеся к вопросу, даже если они представлены в контексте
 6. Используйте профессиональную юридическую терминологию
 7. Не допускайте ошибок в указании реквизитов нормативных актов:
@@ -72,7 +71,7 @@ SYSTEM_PROMPT = """
 
 QUERY_GENERATION_PROMPT = """
 Как опытный юрист, руководствуясь подзадачами по разрешению сформулированной проблемы, сгенерируй 3-5 дополнительных уточняющих запросов для поиска правовой информации 
-на основе ключевых терминов из исходного запроса. Запросы должны быть краткими (10-15 слов) и 
+на основе ключевых терминов из исходного запроса. Запросы должны быть краткими (5-10 слов) и 
 охватывать различные аспекты проблемы.
 
 **Исходный запрос:**
@@ -83,14 +82,13 @@ QUERY_GENERATION_PROMPT = """
 
 **Требования:**
 1. Каждый запрос должен быть самостоятельным вопросом или тезисом, направленным на проверку гипотез
-2. При формулировании запросов приоритет отдается более специальным нормативным актам над более общими нормативными актами (для конкретизации и углубления поиска)
-3. Используй профессиональную юридическую терминологию
+2. Используй профессиональную юридическую терминологию
 
 """
 
 API_TIMEOUT = 60
-CHUNK_SIZE = 15000
-CHUNK_OVERLAP = 2000
+CHUNK_SIZE = 10000
+CHUNK_OVERLAP = 1000
 
 
 def check_gemini_api_key():
@@ -121,6 +119,7 @@ class WebSearcher:
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': random.choice(USER_AGENTS)})
         
+        # Настройки Google CSE (ЗАМЕНИТЕ НА СВОИ КЛЮЧИ!)
         self.api_key = "AIzaSyCNVeNmUgrt-kL5ZI4EkHFoTjTzRSWATX4"
         self.cse_id = "a4f17489c6a0a4414"
         
@@ -142,14 +141,14 @@ class WebSearcher:
         
             results = []
             for item in data.get('items', [])[:max_results]:
-                # ИСПРАВЛЕННЫЙ ВЫЗОВ
-                full_content = WebSearcher.get_full_page_content(item.get('link', ''))
+                # ДОБАВЛЯЕМ ИЗВЛЕЧЕНИЕ ПОЛНОГО КОНТЕНТА
+                full_content = self.get_full_page_content(item.get('link', ''))
             
                 results.append({
                     'title': item.get('title', 'Без названия')[:150],
                     'url': item.get('link', '#'),
                     'snippet': item.get('snippet', 'Без описания')[:500],
-                    'full_content': full_content
+                    'full_content': full_content  # Сохраняем полный контент
                 })
         
             return results
@@ -157,8 +156,6 @@ class WebSearcher:
             logger.error(f"Ошибка Google CSE: {str(e)}")
             return []
 
-    # ДОБАВЛЕН ДЕКОРАТОР И ОБРАБОТКА ОШИБОК
-    @staticmethod
     def get_full_page_content(url: str) -> str:
         """Получение полного текста страницы с улучшенным парсингом"""
         try:
@@ -166,28 +163,32 @@ class WebSearcher:
             response = requests.get(url, headers=headers, timeout=15)
             response.raise_for_status()
         
+            # Определяем кодировку
             if response.encoding == 'ISO-8859-1':
                 response.encoding = 'utf-8'
         
+            # Упрощенный парсинг основного контента
             soup = BeautifulSoup(response.text, 'html.parser')
         
+            # Удаляем ненужные элементы
             for tag in soup(['script', 'style', 'footer', 'nav', 'aside', 'header']):
                 tag.decompose()
         
+            # Удаляем пустые элементы
             for tag in soup.find_all():
                 if len(tag.get_text(strip=True)) == 0:
                     tag.decompose()
         
+            # Извлекаем текст
             text = ' '.join(soup.stripped_strings)
+        
+            # Удаляем лишние пробелы
             text = re.sub(r'\s+', ' ', text)
         
-            return text[:15000]
+            return text[:15000]  # Ограничение до 15k символов
         
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Ошибка соединения для {url}: {str(e)}")
-            return ""
         except Exception as e:
-            logger.error(f"Общая ошибка для {url}: {str(e)}")
+            logger.error(f"Ошибка получения контента для {url}: {str(e)}")
             return ""
 
 # ИНИЦИАЛИЗАЦИЯ СЕССИИ (ОБНОВЛЕННАЯ)
@@ -416,7 +417,7 @@ def search_relevant_chunks(bm25: BM25Okapi, original_chunks: List[str], keywords
         return []
 
 # Интерфейс
-st.title("Генератор правовых заключений")
+st.title("Юридический консультант AI")
 uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 
 if uploaded_file:
@@ -446,7 +447,7 @@ if uploaded_file:
 
 # Блок чата
 user_input = st.text_area(
-    "Введите вопрос, по которому необходимо заключение:", 
+    "Введите ваш вопрос:", 
     height=150,
     max_chars=600,
     key="user_input_unique"  # Фиксированный ключ
