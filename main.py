@@ -192,38 +192,44 @@ class WebSearcher:
 
     @staticmethod
     def get_full_page_content(url: str) -> str:
-        """Получение полного текста страницы с улучшенным парсингом"""
+        """Получение полного текста страницы с увеличенным лимитом"""
         try:
             headers = {'User-Agent': random.choice(USER_AGENTS)}
-            response = requests.get(url, headers=headers, timeout=15)
+            response = requests.get(url, headers=headers, timeout=20)  # Увеличен таймаут
             response.raise_for_status()
-        
-            # Определяем кодировку
+
+            # Определение кодировки с увеличенным размером выборки
             if response.encoding == 'ISO-8859-1':
-                response.encoding = 'utf-8'
-        
-            # Упрощенный парсинг основного контента
+                raw_data = response.content[:50000]  # Анализ первых 50k байт
+                encoding = chardet.detect(raw_data)['encoding']
+                response.encoding = encoding if encoding else 'utf-8'
+
             soup = BeautifulSoup(response.text, 'html.parser')
-        
-            # Удаляем ненужные элементы
-            for tag in soup(['script', 'style', 'footer', 'nav', 'aside', 'header']):
+
+            # Удаляем ненужные элементы (расширенный список)
+            for tag in soup(['script', 'style', 'footer', 'nav', 'aside', 'header', 
+                            'iframe', 'form', 'button', 'noscript']):
                 tag.decompose()
+
+            # Извлекаем контент из основных тегов (добавлены новые)
+            content_tags = ['main', 'article', 'section', 'div.content', 
+                           'div.article', 'div.text', 'p', 'pre']
+            text_parts = []
         
-            # Удаляем пустые элементы
-            for tag in soup.find_all():
-                if len(tag.get_text(strip=True)) == 0:
-                    tag.decompose()
+            for tag in soup.find_all(content_tags):
+                text = tag.get_text(' ', strip=True)
+                if len(text) > 100:  # Фильтрация коротких фрагментов
+                    text_parts.append(text)
+
+            # Собираем и очищаем текст
+            full_text = ' '.join(text_parts)
+            full_text = re.sub(r'\s+', ' ', full_text)  # Удаляем лишние пробелы
         
-            # Извлекаем текст
-            text = ' '.join(soup.stripped_strings)
-        
-            # Удаляем лишние пробелы
-            text = re.sub(r'\s+', ' ', text)
-        
-            return text[:15000]  # Ограничение до 15k символов
-        
+            # Увеличиваем лимит до 30k символов (было 15k)
+            return full_text[:30000] if full_text else ""
+
         except Exception as e:
-            logger.error(f"Ошибка получения контента для {url}: {str(e)}")
+            logger.error(f"Ошибка получения контента: {str(e)}")
             return ""
 
 # ИНИЦИАЛИЗАЦИЯ СЕССИИ (ОБНОВЛЕННАЯ)
