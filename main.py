@@ -455,228 +455,128 @@ user_input = st.text_area(
     "Введите ваш вопрос:", 
     height=150,
     max_chars=600,
-    key="user_input_unique"  # Фиксированный ключ
+    key="user_input_unique"
 )
 
-# Кнопка с фиксированным ключом
 if st.button("Отправить", key="send_button_unique"):
     if not user_input.strip():
         st.error("Введите текст вопроса")
         st.stop()
-    if st.session_state.get('web_search_results'):
-        st.subheader("Результаты веб-поиска")
-        for i, result in enumerate(st.session_state.web_search_results):
-            with st.expander(f"{i+1}. {result['title']}"):
-                st.markdown(f"**URL**: [{result['url']}]({result['url']})")
-                if result.get('snippet'):
-                   
-                    st.markdown("**Сниппет:**")
-                    st.info(result['snippet'])
-            
-                if result.get('full_content'):
-                    st.markdown("**Извлеченный контент:**")
-                    st.text_area("", 
-                                value=result['full_content'][:3000] + "...", 
-                                height=200,
-                                key=f"web_content_{i}")
     
     st.session_state.last_query = user_input
     
     with st.spinner("Обработка запроса..."):
-        # Создание индекса и обработка запроса
+        # 1. Подготовка данных и индекса
         bm25_index, original_chunks = create_bm25_index()
         if not bm25_index or not original_chunks:
             st.error("Не удалось создать поисковый индекс")
             st.stop()
         
-        # Извлечение ключевых слов из запроса
         query_keywords = extract_keywords(user_input, bm25_index)
         if not query_keywords:
             st.error("Не удалось извлечь ключевые слова из запроса")
             st.stop()
         
-        #if st.button("Отправить"):
-            #if not user_input.strip():
-                #st.error("Введите текст вопроса")
-                #st.stop()
-            #st.session_state.last_query = user_input
-    
-        
-        # ШАГ 1: Генерация дополнительных запросов
+        # 2. Генерация дополнительных запросов
         generated_queries = generate_queries(user_input, query_keywords)
-        st.session_state.generated_queries = generated_queries  # Сохраняем для отображения
+        st.session_state.generated_queries = generated_queries
         
-        # ШАГ 2: Поиск по сгенерированным запросам
-        all_knowledge_chunks = st.session_state.query_relevant_chunks.copy()
-        additional_chunks = []
+        # 3. Выполнение веб-поиска по всем запросам (основному + сгенерированным)
+        all_queries = [user_input] + generated_queries
+        web_results = []
         
-        for query in generated_queries:
-            with st.spinner(f"Поиск по запросу: '{query[:30]}...'"):
-                # Извлечение ключевых слов для сгенерированного запроса
-                q_keywords = extract_keywords(query, bm25_index)
-                if not q_keywords:
+        for query in all_queries:
+            with st.spinner(f"Выполнение веб-поиска: '{query[:30]}...'"):
+                try:
+                    results = st.session_state.web_searcher.perform_search(query)
+                    web_results.extend(results)
+                except Exception as e:
+                    st.error(f"Ошибка при поиске по запросу '{query}': {str(e)}")
                     continue
-                
-                # Поиск релевантных фрагментов
-                q_chunks = search_relevant_chunks(bm25_index, original_chunks, q_keywords)
-                
-                # Фильтрация дубликатов
-                unique_chunks = get_unique_chunks(all_knowledge_chunks, q_chunks)
-                additional_chunks.extend(unique_chunks)
-                all_knowledge_chunks.extend(unique_chunks)
         
-        st.session_state.additional_chunks = additional_chunks  # Сохраняем для отображения
+        # Сохраняем результаты
+        st.session_state.web_search_results = web_results
         
-        # Формирование контекста с расширенными данными
+        # 4. Извлечение контента из результатов поиска
+        web_chunks = []
+        for result in web_results:
+            if result.get('full_content'):
+                web_chunks.append(result['full_content'])
+        
+        st.session_state.web_search_chunks = web_chunks[:5]  # Берем первые 5 результатов
+        
+        # 5. Формирование полного контекста для LLM
         context_parts = []
         
-        # Контекст из документа (если есть)
         if st.session_state.document_relevant_chunks:
             context_parts.append(
                 "Контекст из документа:\n" + 
                 "\n\n".join(st.session_state.document_relevant_chunks[:3])
             )
         
-        # Основной контекст из базы знаний
-        if st.session_state.query_relevant_chunks:
-            context_parts.append(
-                "Основной контекст из базы знаний:\n" + 
-                "\n\n".join(st.session_state.query_relevant_chunks[:3])
-            )
-        
-        # Дополнительный контекст из сгенерированных запросов
-        if additional_chunks:
-            context_parts.append(
-                "Дополнительный контекст из базы знаний:\n" + 
-                "\n\n".join(additional_chunks[:3])
-            )
-
-        
-        # ШАГ 3: ВЕБ-ПОИСК ПО СГЕНЕРИРОВАННЫМ ЗАПРОСАМ
-        web_results = []
-        for query in generated_queries:
-            with st.spinner(f"Веб-поиск: '{query[:30]}...'"):
-                results = st.session_state.web_searcher.perform_search(query)
-                web_results.extend(results)
-        
-        # Извлекаем фрагменты контента
-        web_chunks = [result['full_content'] for result in web_results if result['full_content']]
-        
-        # Фильтруем дубликаты
-        unique_web_chunks = []
-        seen_chunks = set()
-        for chunk in web_chunks:
-            # Хэшируем для быстрого сравнения
-            chunk_hash = hash(chunk[:1000])
-            if chunk_hash not in seen_chunks:
-                seen_chunks.add(chunk_hash)
-                unique_web_chunks.append(chunk)
-        
-        st.session_state.web_search_results = web_results
-        st.session_state.web_search_chunks = unique_web_chunks[:3]  # Берем 3 уникальных фрагмента
-        
-        # ДОБАВЛЯЕМ ВЕБ-ФРАГМЕНТЫ В КОНТЕКСТ
         if st.session_state.web_search_chunks:
             context_parts.append(
                 "Контекст из веб-поиска:\n" + 
-                "\n\n".join(st.session_state.web_search_chunks)
+                "\n\n".join(st.session_state.web_search_chunks[:3])
             )
-
-
+        
         full_context = "\n\n".join(context_parts)
         
-        # Формирование ПРАВИЛЬНОГО запроса к LLM
-        # Формируем полный промпт
+        # 6. Запрос к LLM с полным контекстом
         full_prompt = SYSTEM_PROMPT.format(
             user_query=user_input,
             context=full_context
-        ) + "\n\nСформируйте подробное юридическое заключение."
-
-        # Подготовка данных для запроса
-        request_data = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": full_prompt}
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.3,
-                "maxOutputTokens": 5000
-            }
-        }
-
+        )
+        
         try:
             response = requests.post(
                 API_URL,
                 headers={"Content-Type": "application/json"},
                 params={"key": GEMINI_API_KEY},
-                json=request_data,
+                json={
+                    "contents": [{"parts": [{"text": full_prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.3,
+                        "maxOutputTokens": 5000
+                    }
+                },
                 timeout=API_TIMEOUT
             )
             response.raise_for_status()
             response_data = response.json()
-    
-            # Правильная обработка ответа Gemini
+            
             if 'candidates' in response_data and response_data['candidates']:
                 answer = response_data['candidates'][0]['content']['parts'][0]['text']
             else:
                 answer = "Не удалось получить ответ от API"
-    
+            
             st.session_state.llm_response = answer
             st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
-    
+            
         except Exception as e:
             st.error(f"Ошибка API: {str(e)}")
-            if hasattr(e, 'response') and e.response:
-                st.error(f"Тело ответа: {e.response.text}")
 
-# Отображение ответа ПОСЛЕ обработки кнопки
-if st.session_state.get('llm_response') and st.session_state.get('last_query') == user_input:
+# Отображение результатов
+if st.session_state.get('llm_response'):
     st.subheader("Ответ юридического ассистента:")
     st.markdown(st.session_state.llm_response)
     
-    # Отображение релевантных фрагментов с УНИКАЛЬНЫМИ ключами
-    if st.session_state.get('query_relevant_chunks'):
-        st.subheader("Релевантные фрагменты из базы знаний:")
-        for i, chunk in enumerate(st.session_state.query_relevant_chunks):
-            unique_key = f"chunk_{int(time.time())}_{i}"
-            st.text_area(label="", value=chunk[:2000], height=150, key=unique_key)
-
-
-    # ВСТАВЛЯЕМ НОВЫЕ БЛОКИ ЗДЕСЬ
     if st.session_state.get('generated_queries'):
-        st.subheader("Сгенерированные уточняющие запросы:")
+        st.subheader("Сгенерированные поисковые запросы:")
         for i, query in enumerate(st.session_state.generated_queries):
             st.write(f"{i+1}. {query}")
-
-    if st.session_state.get('additional_chunks'):
-        st.subheader("Дополнительные релевантные фрагменты:")
-        for i, chunk in enumerate(st.session_state.additional_chunks):
-            unique_key = f"add_chunk_{int(time.time())}_{i}"
-            st.text_area(label="", value=chunk[:2000], height=150, key=unique_key)
-
-    # После блока с выводами LLM добавьте:
+    
     if st.session_state.get('web_search_results'):
         st.subheader("Результаты веб-поиска")
-    
-        for i, result in enumerate(st.session_state.web_search_results):
-            with st.expander(f"{i+1}. {result['title']}", expanded=False):
+        for i, result in enumerate(st.session_state.web_search_results[:3]):  # Показываем первые 3 результата
+            with st.expander(f"{i+1}. {result['title']}"):
                 st.markdown(f"**URL:** [{result['url']}]({result['url']})")
-            
-                col1, col2 = st.columns([1, 3])
-                with col1:
-                    st.image("https://via.placeholder.com/150?text=Preview", width=150)
-                
-                with col2:
-                    st.markdown("**Сниппет:**")
-                    st.info(result.get('snippet', ''))
-            
+                st.markdown("**Сниппет:**")
+                st.info(result.get('snippet', ''))
                 if result.get('full_content'):
-                    st.markdown("**Извлеченное содержимое:**")
+                    st.markdown("**Извлеченный контент:**")
                     st.text_area("", 
-                                value=result['full_content'][:3000] + ("..." if len(result['full_content']) > 3000 else ""), 
+                                value=result['full_content'][:3000] + "...", 
                                 height=200,
                                 key=f"web_content_{i}")
 
