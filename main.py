@@ -152,7 +152,7 @@ class WebSearcher:
             if len(final_results) < max_results:
                 general_results = self._execute_search(
                     query, 
-                    max_results - len(final_results)
+                    max_results - len(final_results))
                 final_results.extend(general_results)
 
             return final_results[:max_results]
