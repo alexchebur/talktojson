@@ -418,95 +418,85 @@ def search_relevant_chunks(bm25: BM25Okapi, original_chunks: List[str], keywords
 
 
 # НОВАЯ ФУНКЦИЯ: Генерация ответа с инструментами анализа
-def generate_response(user_input: str, full_context: str, 
-                     thinking_mode: bool = True, 
-                     show_reasoning: bool = True,
-                     thinking_tokens: int = 1500) -> Tuple[str, List[str]]:
-    """Генерация ответа с поддержкой thinking-режима и демонстрацией рассуждений"""
-    # Формируем полный промпт с явным указанием на необходимость показать рассуждения
-    full_prompt = (
-        "Вы - опытный юрист. Вам необходимо подготовить правовое заключение по следующему запросу:\n\n"
-        f"**Запрос клиента:**\n{user_input}\n\n"
-        f"**Контекст:**\n{full_context}\n\n"
-        "**Инструкции:**\n"
-        "1. Сначала подробно объясните ход ваших мыслей и анализ проблемы (это будет показано пользователю)\n"
-        "2. Затем сформулируйте итоговое заключение\n"
-        "3. Используйте профессиональную юридическую терминологию\n"
-        "4. Ссылайтесь только на предоставленный контекст\n\n"
-        "**Начните с раздела 'РАССУЖДЕНИЯ И АНАЛИЗ', затем предоставьте 'ИТОГОВОЕ ЗАКЛЮЧЕНИЕ'**"
-    )
+def generate_response(
+    user_input: str,
+    full_context: str,
+    thinking_mode: bool = True,
+    thinking_tokens: int = 1500,
+) -> tuple[str, list[str]]:
+    # Формируем промпт с явным указанием использовать инструменты
+    prompt = f"""
+    Ты — опытный юрист. Проанализируй запрос и контекст, используя инструменты для глубокого анализа.
     
-    # Подготовка данных для запроса
-    request_data = {
-        "contents": [{
-            "parts": [{"text": full_prompt}],
-            "role": "user"
-        }],
-        "generationConfig": {
-            "temperature": 0.3,
-            "maxOutputTokens": 5000
-        }
-    }
+    **Запрос:** {user_input}
+    **Контекст:** {full_context}
     
-    reasoning_steps = []
-    answer = ""
-    
-    try:
-        with st.spinner("🔍 Анализирую запрос..."):
-            response = requests.post(
-                API_URL,
-                headers={"Content-Type": "application/json"},
-                params={"key": GEMINI_API_KEY},
-                json=request_data,
-                timeout=API_TIMEOUT
-            )
-            response.raise_for_status()
-            response_data = response.json()
+    Инструкции:
+    1. {"Активируй thinking_mode на " + str(thinking_tokens) + " токенов для анализа. " if thinking_mode else ""}
+    2. Разбей проблему на этапы.
+    3. Сформулируй итоговое заключение.
+    """
 
-        # Обработка ответа
-        if 'candidates' in response_data and response_data['candidates']:
-            candidate = response_data['candidates'][0]
-            if 'content' in candidate and 'parts' in candidate['content']:
-                full_response = "\n".join([part['text'] for part in candidate['content']['parts'] if 'text' in part])
-                
-                # Разделяем ответ на рассуждения и заключение
-                reasoning_part = ""
-                conclusion_part = ""
-                
-                # Ищем разделы по меткам
-                reasoning_match = re.search(r"РАССУЖДЕНИЯ И АНАЛИЗ[:]?(.*?)(ИТОГОВОЕ ЗАКЛЮЧЕНИЕ|$)", 
-                                          full_response, re.DOTALL | re.IGNORECASE)
-                conclusion_match = re.search(r"ИТОГОВОЕ ЗАКЛЮЧЕНИЕ[:]?(.*)", 
-                                           full_response, re.DOTALL | re.IGNORECASE)
-                
-                if reasoning_match:
-                    reasoning_part = reasoning_match.group(1).strip()
-                if conclusion_match:
-                    conclusion_part = conclusion_match.group(1).strip()
-                
-                # Если не нашли разделы, пробуем другие варианты
-                if not reasoning_part and not conclusion_part:
-                    if "\n\n" in full_response:
-                        parts = full_response.split("\n\n")
-                        reasoning_part = "\n\n".join(parts[:-1])
-                        conclusion_part = parts[-1]
-                    else:
-                        conclusion_part = full_response
-                
-                # Формируем шаги рассуждений
-                if reasoning_part:
-                    reasoning_steps = [s.strip() for s in reasoning_part.split("\n") if s.strip()]
-                
-                answer = conclusion_part if conclusion_part else full_response
-        
-        if not answer:
-            answer = "Не удалось получить ответ от API"
-        
-        return answer, reasoning_steps
+    # Подготовка запроса с инструментами
+    request_data = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "tools": [
+            {
+                "function_declarations": [
+                    {
+                        "name": "thinking_mode",
+                        "description": "Активирует режим глубокого анализа",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "max_tokens": {
+                                    "type": "integer",
+                                    "description": "Токены для анализа",
+                                }
+                            },
+                            "required": ["max_tokens"],
+                        },
+                    }
+                ]
+            }
+        ],
+        # Важно: указываем, что инструменты можно вызывать
+        "tool_config": {
+            "function_calling_config": {
+                "mode": "ANY",  # Разрешаем вызов инструментов
+            }
+        },
+    }
+
+    try:
+        response = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+            params={"key": GEMINI_API_KEY},
+            json=request_data,
+            timeout=API_TIMEOUT,
+        )
+        response.raise_for_status()
+        response_data = response.json()
+
+        # Обработка ответа с инструментами
+        reasoning_steps = []
+        final_answer = ""
+
+        if "candidates" in response_data:
+            for part in response_data["candidates"][0]["content"]["parts"]:
+                if "text" in part:
+                    final_answer += part["text"]
+                elif "functionCall" in part:  # Обрабатываем вызов инструмента
+                    if part["functionCall"]["name"] == "thinking_mode":
+                        reasoning_steps.append(
+                            f"🔍 Анализ (использовано {part['functionCall']['args']['max_tokens']} токенов)"
+                        )
+
+        return final_answer, reasoning_steps
 
     except Exception as e:
-        logger.error(f"Ошибка API: {str(e)}")
-        return f"Ошибка при обработке запроса: {str(e)}", []
+        logger.error(f"Ошибка API: {e}")
+        return f"Ошибка: {str(e)}", []
 
 # Интерфейс (остаётся без изменений до блока кнопки)
 st.title("Генератор правовых заключений")
