@@ -7,7 +7,7 @@ import numpy as np
 import streamlit as st
 from docx import Document
 from PyPDF2 import PdfReader
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional
 from rank_bm25 import BM25Okapi
 from config import GEMINI_API_KEY, API_URL
 import logging
@@ -15,6 +15,7 @@ import random
 from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
 from urllib.parse import unquote, urlparse, parse_qs
+from typing import List, Dict, Any
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -22,11 +23,9 @@ logging.basicConfig(level=logging.INFO)
 
 # Конфигурация приложения
 SYSTEM_PROMPT = """
-### РОЛЬ
 Вы - опытный юрист, специализирующийся на подготовке правовых заключений. 
-### ИНСТРУКЦИЯ
 На основе предоставленных данных подготовьте подробное правовое заключение по запросу пользователя:
-### КОНТЕКСТ
+
 **Запрос клиента:**
 {user_query}
 
@@ -34,7 +33,7 @@ SYSTEM_PROMPT = """
 Извлеченные данные поиска:
 {context}
 
-### ТРЕБОВАНИЯ И ЗАПРЕТЫ
+
 **Требования к заключению:**
 1. Проведите детальный анализ правовой проблемы, разбейте проблему на подзадачи и решайте пошагово
 2. Ссылайтесь на конкретные нормы законов и подзаконных актов (запрещено приводить несуществующие или отсутствующие в контексте нормы)
@@ -72,8 +71,8 @@ SYSTEM_PROMPT = """
 """
 
 QUERY_GENERATION_PROMPT = """
-Как опытный юрист, руководствуясь предоставленным контекстом, сгенерируй 3-5 дополнительных уточняющих запросов для поиска правовой информации 
-на основе ключевых терминов из исходного запроса. Запросы должны быть краткими (не более 15 слов каждый) и 
+Как опытный юрист, руководствуясь подзадачами по разрешению сформулированной проблемы, сгенерируй 3-5 дополнительных уточняющих запросов для поиска правовой информации 
+на основе ключевых терминов из исходного запроса. Запросы должны быть краткими (10-15 слов) и 
 охватывать различные аспекты проблемы.
 
 **Исходный запрос:**
@@ -208,8 +207,7 @@ def initialize_session():
         "web_search_results": [],
         "web_search_chunks": [],
         "generated_queries": [],
-        "additional_chunks": [],
-        "reasoning_steps": []  # Добавлено для хранения шагов рассуждений
+        "additional_chunks": []
     }
     
     for key, value in default_state.items():
@@ -417,90 +415,7 @@ def search_relevant_chunks(bm25: BM25Okapi, original_chunks: List[str], keywords
         st.error(f"Ошибка поиска: {str(e)}")
         return []
 
-
-
-# НОВАЯ ФУНКЦИЯ: Генерация ответа с инструментами анализа
-def generate_response(
-    user_input: str,
-    full_context: str,
-    thinking_mode: bool = True,
-    thinking_tokens: int = 1500,
-) -> tuple[str, list[str]]:
-    # Формируем промпт с явным указанием использовать инструменты
-    prompt = f"""
-    Ты — опытный юрист. Проанализируй запрос и контекст, используя инструменты для глубокого анализа.
-    
-    **Запрос:** {user_input}
-    **Контекст:** {full_context}
-    
-    Инструкции:
-    1. {"Активируй thinking_mode на " + str(thinking_tokens) + " токенов для анализа. " if thinking_mode else ""}
-    2. Разбей проблему на этапы.
-    3. Сформулируй итоговое заключение.
-    """
-
-    # Подготовка запроса с инструментами
-    request_data = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "tools": [
-            {
-                "function_declarations": [
-                    {
-                        "name": "thinking_mode",
-                        "description": "Активирует режим глубокого анализа",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "max_tokens": {
-                                    "type": "integer",
-                                    "description": "Токены для анализа",
-                                }
-                            },
-                            "required": ["max_tokens"],
-                        },
-                    }
-                ]
-            }
-        ],
-        # Важно: указываем, что инструменты можно вызывать
-        "tool_config": {
-            "function_calling_config": {
-                "mode": "ANY",  # Разрешаем вызов инструментов
-            }
-        },
-    }
-
-    try:
-        response = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
-            params={"key": GEMINI_API_KEY},
-            json=request_data,
-            timeout=API_TIMEOUT,
-        )
-        response.raise_for_status()
-        response_data = response.json()
-
-        # Обработка ответа с инструментами
-        reasoning_steps = []
-        final_answer = ""
-
-        if "candidates" in response_data:
-            for part in response_data["candidates"][0]["content"]["parts"]:
-                if "text" in part:
-                    final_answer += part["text"]
-                elif "functionCall" in part:  # Обрабатываем вызов инструмента
-                    if part["functionCall"]["name"] == "thinking_mode":
-                        reasoning_steps.append(
-                            f"🔍 Анализ (использовано {part['functionCall']['args']['max_tokens']} токенов)"
-                        )
-
-        return final_answer, reasoning_steps
-
-    except Exception as e:
-        logger.error(f"Ошибка API: {e}")
-        return f"Ошибка: {str(e)}", []
-
-# Интерфейс (остаётся без изменений до блока кнопки)
+# Интерфейс
 st.title("Генератор правовых заключений")
 uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 
@@ -534,17 +449,32 @@ user_input = st.text_area(
     "Введите ваш вопрос:", 
     height=150,
     max_chars=600,
-    key="user_input_unique"
+    key="user_input_unique"  # Фиксированный ключ
 )
 
-# ОБНОВЛЕННЫЙ БЛОК КНОПКИ
+# Кнопка с фиксированным ключом
 if st.button("Отправить", key="send_button_unique"):
     if not user_input.strip():
         st.error("Введите текст вопроса")
         st.stop()
+    if st.session_state.get('web_search_results'):
+        st.subheader("Результаты веб-поиска")
+        for i, result in enumerate(st.session_state.web_search_results):
+            with st.expander(f"{i+1}. {result['title']}"):
+                st.markdown(f"**URL**: [{result['url']}]({result['url']})")
+                if result.get('snippet'):
+                   
+                    st.markdown("**Сниппет:**")
+                    st.info(result['snippet'])
+            
+                if result.get('full_content'):
+                    st.markdown("**Извлеченный контент:**")
+                    st.text_area("", 
+                                value=result['full_content'][:3000] + "...", 
+                                height=200,
+                                key=f"web_content_{i}")
     
     st.session_state.last_query = user_input
-    st.session_state.reasoning_steps = []  # Сбрасываем предыдущие шаги
     
     with st.spinner("Обработка запроса..."):
         # Создание индекса и обработка запроса
@@ -559,129 +489,184 @@ if st.button("Отправить", key="send_button_unique"):
             st.error("Не удалось извлечь ключевые слова из запроса")
             st.stop()
         
-        # Генерация дополнительных запросов
-        generated_queries = generate_queries(user_input, query_keywords)
-        st.session_state.generated_queries = generated_queries
+        #if st.button("Отправить"):
+            #if not user_input.strip():
+                #st.error("Введите текст вопроса")
+                #st.stop()
+            #st.session_state.last_query = user_input
+    
         
-        # Поиск по сгенерированным запросам
+        # ШАГ 1: Генерация дополнительных запросов
+        generated_queries = generate_queries(user_input, query_keywords)
+        st.session_state.generated_queries = generated_queries  # Сохраняем для отображения
+        
+        # ШАГ 2: Поиск по сгенерированным запросам
         all_knowledge_chunks = st.session_state.query_relevant_chunks.copy()
         additional_chunks = []
         
         for query in generated_queries:
             with st.spinner(f"Поиск по запросу: '{query[:30]}...'"):
+                # Извлечение ключевых слов для сгенерированного запроса
                 q_keywords = extract_keywords(query, bm25_index)
                 if not q_keywords:
                     continue
                 
+                # Поиск релевантных фрагментов
                 q_chunks = search_relevant_chunks(bm25_index, original_chunks, q_keywords)
+                
+                # Фильтрация дубликатов
                 unique_chunks = get_unique_chunks(all_knowledge_chunks, q_chunks)
                 additional_chunks.extend(unique_chunks)
                 all_knowledge_chunks.extend(unique_chunks)
         
-        st.session_state.additional_chunks = additional_chunks
+        st.session_state.additional_chunks = additional_chunks  # Сохраняем для отображения
         
-        # Формирование контекста
+        # Формирование контекста с расширенными данными
         context_parts = []
         
+        # Контекст из документа (если есть)
         if st.session_state.document_relevant_chunks:
             context_parts.append(
                 "Контекст из документа:\n" + 
                 "\n\n".join(st.session_state.document_relevant_chunks[:3])
             )
         
+        # Основной контекст из базы знаний
         if st.session_state.query_relevant_chunks:
             context_parts.append(
                 "Основной контекст из базы знаний:\n" + 
                 "\n\n".join(st.session_state.query_relevant_chunks[:3])
             )
         
+        # Дополнительный контекст из сгенерированных запросов
         if additional_chunks:
             context_parts.append(
                 "Дополнительный контекст из базы знаний:\n" + 
                 "\n\n".join(additional_chunks[:3])
             )
 
-        # Веб-поиск по сгенерированным запросам
+        
+        # ШАГ 3: ВЕБ-ПОИСК ПО СГЕНЕРИРОВАННЫМ ЗАПРОСАМ
         web_results = []
         for query in generated_queries:
             with st.spinner(f"Веб-поиск: '{query[:30]}...'"):
                 results = st.session_state.web_searcher.perform_search(query)
                 web_results.extend(results)
         
+        # Извлекаем фрагменты контента
         web_chunks = [result['full_content'] for result in web_results if result['full_content']]
+        
+        # Фильтруем дубликаты
         unique_web_chunks = []
         seen_chunks = set()
         for chunk in web_chunks:
+            # Хэшируем для быстрого сравнения
             chunk_hash = hash(chunk[:1000])
             if chunk_hash not in seen_chunks:
                 seen_chunks.add(chunk_hash)
                 unique_web_chunks.append(chunk)
         
         st.session_state.web_search_results = web_results
-        st.session_state.web_search_chunks = unique_web_chunks[:3]
+        st.session_state.web_search_chunks = unique_web_chunks[:3]  # Берем 3 уникальных фрагмента
         
+        # ДОБАВЛЯЕМ ВЕБ-ФРАГМЕНТЫ В КОНТЕКСТ
         if st.session_state.web_search_chunks:
             context_parts.append(
                 "Контекст из веб-поиска:\n" + 
                 "\n\n".join(st.session_state.web_search_chunks)
             )
 
+
         full_context = "\n\n".join(context_parts)
         
-        # ВЫЗОВ НОВОЙ ФУНКЦИИ ГЕНЕРАЦИИ ОТВЕТА
-        answer, reasoning_steps = generate_response(
-            user_input=user_input,
-            full_context=full_context,
-            thinking_mode=True,
-            show_reasoning=True,
-            thinking_tokens=2000
-        )
-        
-        st.session_state.llm_response = answer
-        st.session_state.reasoning_steps = reasoning_steps
-        st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
+        # Формирование ПРАВИЛЬНОГО запроса к LLM
+        # Формируем полный промпт
+        full_prompt = SYSTEM_PROMPT.format(
+            user_query=user_input,
+            context=full_context
+        ) + "\n\nСформируйте подробное юридическое заключение."
 
-# Отображение ответа и рассуждений
-if st.session_state.get('llm_response') and st.session_state.get('last_query') == user_input:
-    # Показываем процесс рассуждений если есть
-    if st.session_state.reasoning_steps:
-        with st.expander("🔎 Процесс анализа", expanded=True):
-            st.markdown("### Ход рассуждений:")
-            for step in st.session_state.reasoning_steps:
-                st.markdown(f"- {step}")
+        # Подготовка данных для запроса
+        request_data = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": full_prompt}
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": 5000
+            }
+        }
+
+        try:
+            response = requests.post(
+                API_URL,
+                headers={"Content-Type": "application/json"},
+                params={"key": GEMINI_API_KEY},
+                json=request_data,
+                timeout=API_TIMEOUT
+            )
+            response.raise_for_status()
+            response_data = response.json()
     
+            # Правильная обработка ответа Gemini
+            if 'candidates' in response_data and response_data['candidates']:
+                answer = response_data['candidates'][0]['content']['parts'][0]['text']
+            else:
+                answer = "Не удалось получить ответ от API"
+    
+            st.session_state.llm_response = answer
+            st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
+    
+        except Exception as e:
+            st.error(f"Ошибка API: {str(e)}")
+            if hasattr(e, 'response') and e.response:
+                st.error(f"Тело ответа: {e.response.text}")
+
+# Отображение ответа ПОСЛЕ обработки кнопки
+if st.session_state.get('llm_response') and st.session_state.get('last_query') == user_input:
     st.subheader("Ответ юридического ассистента:")
     st.markdown(st.session_state.llm_response)
     
-    # Отображение остальных блоков (релевантные фрагменты и т.д.)
+    # Отображение релевантных фрагментов с УНИКАЛЬНЫМИ ключами
     if st.session_state.get('query_relevant_chunks'):
         st.subheader("Релевантные фрагменты из базы знаний:")
         for i, chunk in enumerate(st.session_state.query_relevant_chunks):
             unique_key = f"chunk_{int(time.time())}_{i}"
             st.text_area(label="", value=chunk[:2000], height=150, key=unique_key)
 
+
+    # ВСТАВЛЯЕМ НОВЫЕ БЛОКИ ЗДЕСЬ
     if st.session_state.get('generated_queries'):
         st.subheader("Сгенерированные уточняющие запросы:")
         for i, query in enumerate(st.session_state.generated_queries):
             st.write(f"{i+1}. {query}")
 
     if st.session_state.get('additional_chunks'):
-        st.subheader("Дополнительные релевантные фрагменты из базы знаний:")
+        st.subheader("Дополнительные релевантные фрагменты:")
         for i, chunk in enumerate(st.session_state.additional_chunks):
             unique_key = f"add_chunk_{int(time.time())}_{i}"
             st.text_area(label="", value=chunk[:2000], height=150, key=unique_key)
 
+    # После блока с выводами LLM добавьте:
     if st.session_state.get('web_search_results'):
         st.subheader("Результаты веб-поиска")
+    
         for i, result in enumerate(st.session_state.web_search_results):
             with st.expander(f"{i+1}. {result['title']}", expanded=False):
                 st.markdown(f"**URL:** [{result['url']}]({result['url']})")
+            
                 col1, col2 = st.columns([1, 3])
                 with col1:
                     st.image("https://via.placeholder.com/150?text=Preview", width=150)
+                
                 with col2:
                     st.markdown("**Сниппет:**")
                     st.info(result.get('snippet', ''))
+            
                 if result.get('full_content'):
                     st.markdown("**Извлеченное содержимое:**")
                     st.text_area("", 
