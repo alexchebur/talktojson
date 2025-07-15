@@ -423,66 +423,31 @@ def generate_response(user_input: str, full_context: str,
                      show_reasoning: bool = True,
                      thinking_tokens: int = 1500) -> Tuple[str, List[str]]:
     """Генерация ответа с поддержкой thinking-режима и демонстрацией рассуждений"""
-    # Формируем полный промпт
-    full_prompt = SYSTEM_PROMPT.format(
-        user_query=user_input,
-        context=full_context
+    # Формируем полный промпт с явным указанием на необходимость показать рассуждения
+    full_prompt = (
+        "Вы - опытный юрист. Вам необходимо подготовить правовое заключение по следующему запросу:\n\n"
+        f"**Запрос клиента:**\n{user_input}\n\n"
+        f"**Контекст:**\n{full_context}\n\n"
+        "**Инструкции:**\n"
+        "1. Сначала подробно объясните ход ваших мыслей и анализ проблемы (это будет показано пользователю)\n"
+        "2. Затем сформулируйте итоговое заключение\n"
+        "3. Используйте профессиональную юридическую терминологию\n"
+        "4. Ссылайтесь только на предоставленный контекст\n\n"
+        "**Начните с раздела 'РАССУЖДЕНИЯ И АНАЛИЗ', затем предоставьте 'ИТОГОВОЕ ЗАКЛЮЧЕНИЕ'**"
     )
-    
-    # Добавляем инструкции для thinking-режима
-    if thinking_mode:
-        full_prompt += f"\n\nИспользуйте thinking-режим с {thinking_tokens} токенами для глубокого анализа."
     
     # Подготовка данных для запроса
     request_data = {
-        "contents": [{"parts": [{"text": full_prompt}]}],
+        "contents": [{
+            "parts": [{"text": full_prompt}],
+            "role": "user"
+        }],
         "generationConfig": {
             "temperature": 0.3,
             "maxOutputTokens": 5000
         }
     }
     
-    # Добавляем инструменты для thinking-режима и веб-поиска
-    if thinking_mode or show_reasoning:
-        request_data["tools"] = [{
-            "function_declarations": [
-                {
-                    "name": "thinking_mode",
-                    "description": "Активирует глубокий анализ с указанным количеством токенов",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "max_tokens": {
-                                "type": "integer",
-                                "description": "Количество токенов для анализа"
-                            }
-                        },
-                        "required": ["max_tokens"]
-                    }
-                },
-                {
-                    "name": "google_search",
-                    "description": "Выполняет поиск в интернете по запросу",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "Поисковый запрос"
-                            }
-                        },
-                        "required": ["query"]
-                    }
-                }
-            ]
-        }]
-        request_data["generationConfig"]["toolConfig"] = {
-            "functionCallingConfig": {
-                "mode": "AUTO",
-                "allowedFunctionNames": ["thinking_mode", "google_search"]
-            }
-        }
-
     reasoning_steps = []
     answer = ""
     
@@ -498,27 +463,42 @@ def generate_response(user_input: str, full_context: str,
             response.raise_for_status()
             response_data = response.json()
 
-        # Обработка ответа с демонстрацией рассуждений
+        # Обработка ответа
         if 'candidates' in response_data and response_data['candidates']:
             candidate = response_data['candidates'][0]
-            
-            # Извлекаем цепочку рассуждений
             if 'content' in candidate and 'parts' in candidate['content']:
-                answer_parts = []
-                for part in candidate['content']['parts']:
-                    if 'text' in part:
-                        answer_parts.append(part['text'])
-                    elif 'functionCall' in part:
-                        func_call = part['functionCall']
-                        if func_call['name'] == "thinking_mode":
-                            tokens = func_call['args'].get('max_tokens', 1000)
-                            reasoning_steps.append(f"🤔 Активирован режим глубокого анализа ({tokens} токенов)")
-                        elif func_call['name'] == "google_search":
-                            query = func_call['args'].get('query', '')
-                            reasoning_steps.append(f"🌐 Выполняется поиск: '{query}'")
-                answer = "".join(answer_parts)
+                full_response = "\n".join([part['text'] for part in candidate['content']['parts'] if 'text' in part])
+                
+                # Разделяем ответ на рассуждения и заключение
+                reasoning_part = ""
+                conclusion_part = ""
+                
+                # Ищем разделы по меткам
+                reasoning_match = re.search(r"РАССУЖДЕНИЯ И АНАЛИЗ[:]?(.*?)(ИТОГОВОЕ ЗАКЛЮЧЕНИЕ|$)", 
+                                          full_response, re.DOTALL | re.IGNORECASE)
+                conclusion_match = re.search(r"ИТОГОВОЕ ЗАКЛЮЧЕНИЕ[:]?(.*)", 
+                                           full_response, re.DOTALL | re.IGNORECASE)
+                
+                if reasoning_match:
+                    reasoning_part = reasoning_match.group(1).strip()
+                if conclusion_match:
+                    conclusion_part = conclusion_match.group(1).strip()
+                
+                # Если не нашли разделы, пробуем другие варианты
+                if not reasoning_part and not conclusion_part:
+                    if "\n\n" in full_response:
+                        parts = full_response.split("\n\n")
+                        reasoning_part = "\n\n".join(parts[:-1])
+                        conclusion_part = parts[-1]
+                    else:
+                        conclusion_part = full_response
+                
+                # Формируем шаги рассуждений
+                if reasoning_part:
+                    reasoning_steps = [s.strip() for s in reasoning_part.split("\n") if s.strip()]
+                
+                answer = conclusion_part if conclusion_part else full_response
         
-        # Если не удалось извлечь ответ
         if not answer:
             answer = "Не удалось получить ответ от API"
         
