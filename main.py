@@ -526,6 +526,14 @@ if st.button("Отправить", key="send_button_unique"):
         # ШАГ 2: Поиск по уточняющим запросам
         st.session_state.second_search_results = []
         additional_chunks = []
+
+        if generated_queries:
+            st.session_state.web_search_results = []  # Очищаем предыдущие результаты
+            for query in generated_queries:
+                with st.spinner(f"Поиск в Google: '{query}'..."):
+                    search_results = st.session_state.web_searcher.perform_search(query)
+                    if search_results:
+                        st.session_state.web_search_results.extend(search_results)
         
         if st.session_state.generated_queries:
             for query in st.session_state.generated_queries:
