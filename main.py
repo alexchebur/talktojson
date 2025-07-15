@@ -521,7 +521,7 @@ if st.button("Отправить", key="send_button_unique"):
 
         # ШАГ 1: Генерация уточняющих запросов
         generated_queries_raw = generate_queries(user_input, query_keywords)
-        st.session_state.generated_queries = parse_generated_queries(generated_queries_raw)
+        st.session_state.generated_queries = parse_generated_queries
         
         # ШАГ 2: Поиск по уточняющим запросам
         st.session_state.second_search_results = []
