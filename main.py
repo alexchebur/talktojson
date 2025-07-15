@@ -16,7 +16,7 @@ from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
 from urllib.parse import unquote, urlparse, parse_qs
 from typing import List, Dict, Any
-import faiss-cpu
+import faiss
 from sentence_transformers import SentenceTransformer
 import torch
 
