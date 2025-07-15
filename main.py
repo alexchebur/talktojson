@@ -132,7 +132,9 @@ class WebSearcher:
         self.priority_sites = [
             "rosteplo.ru",
             "consultant.ru",
-            "garant.ru"
+            "garant.ru",
+            "zakon.ru",
+            "zhane.ru"
         ]
         
     def perform_search(self, query: str, max_results: int = 3) -> List[Dict]:
