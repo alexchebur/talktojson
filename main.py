@@ -7,7 +7,7 @@ import numpy as np
 import streamlit as st
 from docx import Document
 from PyPDF2 import PdfReader
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from rank_bm25 import BM25Okapi
 from config import GEMINI_API_KEY, API_URL
 import logging
