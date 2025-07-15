@@ -124,43 +124,71 @@ class WebSearcher:
         self.session = requests.Session()
         self.session.headers.update({'User-Agent': random.choice(USER_AGENTS)})
         
-        # Настройки Google CSE (ЗАМЕНИТЕ НА СВОИ КЛЮЧИ!)
+        # Настройки Google CSE
         self.api_key = "AIzaSyCNVeNmUgrt-kL5ZI4EkHFoTjTzRSWATX4"
         self.cse_id = "a4f17489c6a0a4414"
         
+        # Приоритетные домены для юридического поиска
+        self.priority_sites = [
+            "rosteplo.ru",
+            "consultant.ru",
+            "garant.ru"
+        ]
+        
     def perform_search(self, query: str, max_results: int = 3) -> List[Dict]:
         try:
-            url = "https://www.googleapis.com/customsearch/v1"
-            params = {
-                'key': self.api_key,
-                'cx': self.cse_id,
-                'q': query,
-                'num': max_results,
-                'lr': 'lang_ru',
-                'hl': 'ru'
-            }
-        
-            response = self.session.get(url, params=params, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-        
-            results = []
-            for item in data.get('items', [])[:max_results]:
-                # ДОБАВЛЯЕМ ИЗВЛЕЧЕНИЕ ПОЛНОГО КОНТЕНТА
-                full_content = self.get_full_page_content(item.get('link', ''))
-            
-                results.append({
-                    'title': item.get('title', 'Без названия')[:150],
-                    'url': item.get('link', '#'),
-                    'snippet': item.get('snippet', 'Без описания')[:500],
-                    'full_content': full_content  # Сохраняем полный контент
-                })
-        
-            return results
+            # ШАГ 1: Поиск по приоритетным сайтам
+            priority_results = []
+            for site in self.priority_sites:
+                if len(priority_results) >= max_results:
+                    break
+                    
+                site_query = f"site:{site} {query}"
+                results = self._execute_search(site_query, max_results - len(priority_results))
+                priority_results.extend(results)
+
+            # ШАГ 2: Общий поиск если не набрано достаточно результатов
+            final_results = priority_results
+            if len(final_results) < max_results:
+                general_results = self._execute_search(
+                    query, 
+                    max_results - len(final_results)
+                final_results.extend(general_results)
+
+            return final_results[:max_results]
+
         except Exception as e:
             logger.error(f"Ошибка Google CSE: {str(e)}")
             return []
 
+    def _execute_search(self, query: str, max_results: int) -> List[Dict]:
+        """Внутренний метод для выполнения запроса к API"""
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {
+            'key': self.api_key,
+            'cx': self.cse_id,
+            'q': query,
+            'num': max_results if max_results <= 3 else 3,  # Ограничение API
+            'lr': 'lang_ru',
+            'hl': 'ru'
+        }
+        
+        response = self.session.get(url, params=params, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        
+        results = []
+        for item in data.get('items', [])[:max_results]:
+            full_content = self.get_full_page_content(item.get('link', ''))
+            results.append({
+                'title': item.get('title', 'Без названия')[:150],
+                'url': item.get('link', '#'),
+                'snippet': item.get('snippet', 'Без описания')[:500],
+                'full_content': full_content
+            })
+        return results
+
+    @staticmethod
     def get_full_page_content(url: str) -> str:
         """Получение полного текста страницы с улучшенным парсингом"""
         try:
