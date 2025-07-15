@@ -7,7 +7,7 @@ import numpy as np
 import streamlit as st
 from docx import Document
 from PyPDF2 import PdfReader
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from rank_bm25 import BM25Okapi
 from config import GEMINI_API_KEY, API_URL
 import logging
@@ -16,6 +16,10 @@ from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
 from urllib.parse import unquote, urlparse, parse_qs
 from typing import List, Dict, Any
+import faiss
+from sentence_transformers import SentenceTransformer
+import torch
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -94,6 +98,8 @@ QUERY_GENERATION_PROMPT = """
 API_TIMEOUT = 60
 CHUNK_SIZE = 10000
 CHUNK_OVERLAP = 1000
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+EMBEDDING_DIM = 768
 
 
 def check_gemini_api_key():
@@ -421,6 +427,232 @@ def search_relevant_chunks(bm25: BM25Okapi, original_chunks: List[str], keywords
         st.error(f"Ошибка поиска: {str(e)}")
         return []
 
+
+class VectorIndex:
+    def __init__(self):
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = SentenceTransformer(EMBEDDING_MODEL, device=self.device)
+        self.index = faiss.IndexFlatIP(EMBEDDING_DIM)
+        self.chunks = []
+        
+    def add_documents(self, documents: List[str]):
+        """Добавление документов в индекс"""
+        self.chunks.extend(documents)
+        embeddings = self.model.encode(documents, convert_to_tensor=True, device=self.device)
+        embeddings = embeddings.cpu().numpy()
+        faiss.normalize_L2(embeddings)
+        self.index.add(embeddings)
+        
+    def search(self, query: str, k: int = 5) -> Tuple[List[str], List[float]]:
+        """Поиск по индексу"""
+        query_embedding = self.model.encode(query, convert_to_tensor=True, device=self.device)
+        query_embedding = query_embedding.cpu().numpy().reshape(1, -1)
+        faiss.normalize_L2(query_embedding)
+        
+        distances, indices = self.index.search(query_embedding, k)
+        results = [self.chunks[i] for i in indices[0]]
+        return results, distances[0].tolist()
+
+def create_faiss_index(documents: List[str]) -> VectorIndex:
+    """Создание FAISS индекса"""
+    index = VectorIndex()
+    index.add_documents(documents)
+    return index
+
+def create_bm25_index() -> Tuple[Optional[BM25Okapi], Optional[List[str]], Optional[VectorIndex]]:
+    """Создание BM25 и FAISS индексов"""
+    all_chunks = []
+    original_texts = []
+    
+    try:
+        if not os.path.exists("documents"):
+            os.makedirs("documents")
+
+        txt_files = [f for f in os.listdir("documents") if f.endswith(".txt")]
+        if not txt_files:
+            return None, None, None
+
+        for filename in txt_files:
+            file_path = os.path.join("documents", filename)
+            try:
+                encoding = detect_file_encoding(file_path)
+                with open(file_path, 'r', encoding=encoding, errors='replace') as f:
+                    text = f.read()
+                chunks = process_text(text)
+                all_chunks.extend(chunks)
+                original_texts.extend(chunks)
+            except Exception as e:
+                st.error(f"Ошибка чтения {filename}: {str(e)}")
+                continue
+
+        if not all_chunks:
+            return None, None, None
+
+        # Создаем BM25 индекс
+        tokenized_chunks = [doc.split() for doc in all_chunks]
+        bm25_index = BM25Okapi(tokenized_chunks, k1=1.8, b=0.75)
+        
+        # Создаем FAISS индекс
+        with st.spinner("Создание векторного индекса..."):
+            faiss_index = create_faiss_index(all_chunks)
+            
+        return bm25_index, original_texts, faiss_index
+
+    except Exception as e:
+        st.error(f"Ошибка создания индекса: {str(e)}")
+        return None, None, None
+
+def search_in_both_indexes(
+    query: str, 
+    bm25: BM25Okapi, 
+    original_chunks: List[str], 
+    faiss_index: VectorIndex,
+    top_k: int = 5
+) -> List[str]:
+    """Поиск в обоих индексах и объединение результатов"""
+    # Поиск в BM25
+    query_weights = {term: 2 for term in query.split()}
+    weighted_query = []
+    for term, weight in query_weights.items():
+        weighted_query.extend([term] * weight)
+    
+    doc_scores = np.array(bm25.get_scores(weighted_query))
+    bm25_indices = sorted(range(len(doc_scores)), key=lambda i: doc_scores[i], reverse=True)[:top_k]
+    bm25_results = [original_chunks[i] for i in bm25_indices if doc_scores[i] > 0.0]
+    
+    # Поиск в FAISS
+    faiss_results, _ = faiss_index.search(query, top_k)
+    
+    # Объединение результатов с устранением дубликатов
+    combined_results = []
+    seen = set()
+    
+    for result in faiss_results + bm25_results:
+        text_hash = hash(result[:1000])  # Хэшируем начало для сравнения
+        if text_hash not in seen:
+            seen.add(text_hash)
+            combined_results.append(result)
+    
+    return combined_results[:top_k]
+
+# Модифицируем основную функцию обработки запроса
+if st.button("Отправить", key="send_button_unique"):
+    if not user_input.strip():
+        st.error("Введите текст вопроса")
+        st.stop()
+    
+    st.session_state.last_query = user_input
+    
+    with st.spinner("Обработка запроса..."):
+        # Создание индексов
+        bm25_index, original_chunks, faiss_index = create_bm25_index()
+        if not bm25_index or not original_chunks or not faiss_index:
+            st.error("Не удалось создать поисковые индексы")
+            st.stop()
+        
+        # Извлечение ключевых слов
+        query_keywords = extract_keywords(user_input, bm25_index)
+        if not query_keywords:
+            st.error("Не удалось извлечь ключевые слова из запроса")
+            st.stop()
+        
+        # Генерация дополнительных запросов
+        generated_queries = generate_queries(user_input, query_keywords)
+        st.session_state.generated_queries = generated_queries
+        
+        # Поиск в индексах по основному запросу
+        main_results = search_in_both_indexes(
+            user_input, 
+            bm25_index, 
+            original_chunks, 
+            faiss_index
+        )
+        
+        # Поиск по сгенерированным запросам
+        additional_results = []
+        for query in generated_queries:
+            results = search_in_both_indexes(
+                query,
+                bm25_index,
+                original_chunks,
+                faiss_index
+            )
+            additional_results.extend(results)
+        
+        # Удаление дубликатов
+        unique_additional = get_unique_chunks(main_results, additional_results)
+        st.session_state.additional_chunks = unique_additional
+        
+        # Веб-поиск
+        web_results = []
+        for query in [user_input] + generated_queries:
+            with st.spinner(f"Веб-поиск: '{query[:30]}...'"):
+                results = st.session_state.web_searcher.perform_search(query)
+                web_results.extend(results)
+        
+        st.session_state.web_search_results = web_results
+        web_chunks = [r['full_content'] for r in web_results if r.get('full_content')]
+        st.session_state.web_search_chunks = web_chunks[:3]
+        
+        # Формирование контекста
+        context_parts = []
+        
+        if main_results:
+            context_parts.append(
+                "Основные релевантные фрагменты:\n" +
+                "\n\n".join(main_results[:3])
+            )
+        
+        if unique_additional:
+            context_parts.append(
+                "Дополнительные релевантные фрагменты:\n" +
+                "\n\n".join(unique_additional[:3])
+            )
+        
+        if web_chunks:
+            context_parts.append(
+                "Результаты веб-поиска:\n" +
+                "\n\n".join(web_chunks[:3])
+            )
+        
+        full_context = "\n\n".join(context_parts)
+        
+        # Запрос к LLM
+        full_prompt = SYSTEM_PROMPT.format(
+            user_query=user_input,
+            context=full_context
+        )
+        
+        try:
+            response = requests.post(
+                API_URL,
+                headers={"Content-Type": "application/json"},
+                params={"key": GEMINI_API_KEY},
+                json={
+                    "contents": [{"parts": [{"text": full_prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.3,
+                        "maxOutputTokens": 5000
+                    }
+                },
+                timeout=API_TIMEOUT
+            )
+            response.raise_for_status()
+            response_data = response.json()
+            
+            if 'candidates' in response_data and response_data['candidates']:
+                answer = response_data['candidates'][0]['content']['parts'][0]['text']
+            else:
+                answer = "Не удалось получить ответ от API"
+            
+            st.session_state.llm_response = answer
+            st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
+            
+        except Exception as e:
+            st.error(f"Ошибка API: {str(e)}")
+
+
+
 # Интерфейс
 st.title("Юридический консультант AI")
 uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
@@ -579,6 +811,246 @@ if st.session_state.get('llm_response'):
                                 value=result['full_content'][:3000] + "...", 
                                 height=200,
                                 key=f"web_content_{i}")
+
+
+class VectorIndex:
+    def __init__(self):
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = SentenceTransformer(EMBEDDING_MODEL, device=self.device)
+        self.index = faiss.IndexFlatIP(EMBEDDING_DIM)
+        self.chunks = []
+        
+    def add_documents(self, documents: List[str]):
+        """Добавление документов в индекс"""
+        self.chunks.extend(documents)
+        embeddings = self.model.encode(documents, convert_to_tensor=True, device=self.device)
+        embeddings = embeddings.cpu().numpy()
+        faiss.normalize_L2(embeddings)
+        self.index.add(embeddings)
+        
+    def search(self, query: str, k: int = 5) -> Tuple[List[str], List[float]]:
+        """Поиск по индексу"""
+        query_embedding = self.model.encode(query, convert_to_tensor=True, device=self.device)
+        query_embedding = query_embedding.cpu().numpy().reshape(1, -1)
+        faiss.normalize_L2(query_embedding)
+        
+        distances, indices = self.index.search(query_embedding, k)
+        results = [self.chunks[i] for i in indices[0]]
+        return results, distances[0].tolist()
+
+def create_faiss_index(documents: List[str]) -> VectorIndex:
+    """Создание FAISS индекса"""
+    index = VectorIndex()
+    index.add_documents(documents)
+    return index
+
+def create_bm25_index() -> Tuple[Optional[BM25Okapi], Optional[List[str]], Optional[VectorIndex]]:
+    """Создание BM25 и FAISS индексов"""
+    all_chunks = []
+    original_texts = []
+    
+    try:
+        if not os.path.exists("documents"):
+            os.makedirs("documents")
+
+        txt_files = [f for f in os.listdir("documents") if f.endswith(".txt")]
+        if not txt_files:
+            return None, None, None
+
+        for filename in txt_files:
+            file_path = os.path.join("documents", filename)
+            try:
+                encoding = detect_file_encoding(file_path)
+                with open(file_path, 'r', encoding=encoding, errors='replace') as f:
+                    text = f.read()
+                chunks = process_text(text)
+                all_chunks.extend(chunks)
+                original_texts.extend(chunks)
+            except Exception as e:
+                st.error(f"Ошибка чтения {filename}: {str(e)}")
+                continue
+
+        if not all_chunks:
+            return None, None, None
+
+        # Создаем BM25 индекс
+        tokenized_chunks = [doc.split() for doc in all_chunks]
+        bm25_index = BM25Okapi(tokenized_chunks, k1=1.8, b=0.75)
+        
+        # Создаем FAISS индекс
+        with st.spinner("Создание векторного индекса..."):
+            faiss_index = create_faiss_index(all_chunks)
+            
+        return bm25_index, original_texts, faiss_index
+
+    except Exception as e:
+        st.error(f"Ошибка создания индекса: {str(e)}")
+        return None, None, None
+
+def search_in_both_indexes(
+    query: str, 
+    bm25: BM25Okapi, 
+    original_chunks: List[str], 
+    faiss_index: VectorIndex,
+    top_k: int = 5
+) -> List[str]:
+    """Поиск в обоих индексах и объединение результатов"""
+    # Поиск в BM25
+    query_weights = {term: 2 for term in query.split()}
+    weighted_query = []
+    for term, weight in query_weights.items():
+        weighted_query.extend([term] * weight)
+    
+    doc_scores = np.array(bm25.get_scores(weighted_query))
+    bm25_indices = sorted(range(len(doc_scores)), key=lambda i: doc_scores[i], reverse=True)[:top_k]
+    bm25_results = [original_chunks[i] for i in bm25_indices if doc_scores[i] > 0.0]
+    
+    # Поиск в FAISS
+    faiss_results, _ = faiss_index.search(query, top_k)
+    
+    # Объединение результатов с устранением дубликатов
+    combined_results = []
+    seen = set()
+    
+    for result in faiss_results + bm25_results:
+        text_hash = hash(result[:1000])  # Хэшируем начало для сравнения
+        if text_hash not in seen:
+            seen.add(text_hash)
+            combined_results.append(result)
+    
+    return combined_results[:top_k]
+
+# Модифицируем основную функцию обработки запроса
+if st.button("Отправить", key="send_button_unique"):
+    if not user_input.strip():
+        st.error("Введите текст вопроса")
+        st.stop()
+    
+    st.session_state.last_query = user_input
+    
+    with st.spinner("Обработка запроса..."):
+        # Создание индексов
+        bm25_index, original_chunks, faiss_index = create_bm25_index()
+        if not bm25_index or not original_chunks or not faiss_index:
+            st.error("Не удалось создать поисковые индексы")
+            st.stop()
+        
+        # Извлечение ключевых слов
+        query_keywords = extract_keywords(user_input, bm25_index)
+        if not query_keywords:
+            st.error("Не удалось извлечь ключевые слова из запроса")
+            st.stop()
+        
+        # Генерация дополнительных запросов
+        generated_queries = generate_queries(user_input, query_keywords)
+        st.session_state.generated_queries = generated_queries
+        
+        # Поиск в индексах по основному запросу
+        main_results = search_in_both_indexes(
+            user_input, 
+            bm25_index, 
+            original_chunks, 
+            faiss_index
+        )
+        
+        # Поиск по сгенерированным запросам
+        additional_results = []
+        for query in generated_queries:
+            results = search_in_both_indexes(
+                query,
+                bm25_index,
+                original_chunks,
+                faiss_index
+            )
+            additional_results.extend(results)
+        
+        # Удаление дубликатов
+        unique_additional = get_unique_chunks(main_results, additional_results)
+        st.session_state.additional_chunks = unique_additional
+        
+        # Веб-поиск
+        web_results = []
+        for query in [user_input] + generated_queries:
+            with st.spinner(f"Веб-поиск: '{query[:30]}...'"):
+                results = st.session_state.web_searcher.perform_search(query)
+                web_results.extend(results)
+        
+        st.session_state.web_search_results = web_results
+        web_chunks = [r['full_content'] for r in web_results if r.get('full_content')]
+        st.session_state.web_search_chunks = web_chunks[:3]
+        
+        # Формирование контекста
+        context_parts = []
+        
+        if main_results:
+            context_parts.append(
+                "Основные релевантные фрагменты:\n" +
+                "\n\n".join(main_results[:3])
+            )
+        
+        if unique_additional:
+            context_parts.append(
+                "Дополнительные релевантные фрагменты:\n" +
+                "\n\n".join(unique_additional[:3])
+            )
+        
+        if web_chunks:
+            context_parts.append(
+                "Результаты веб-поиска:\n" +
+                "\n\n".join(web_chunks[:3])
+            )
+        
+        full_context = "\n\n".join(context_parts)
+        
+        # Запрос к LLM
+        full_prompt = SYSTEM_PROMPT.format(
+            user_query=user_input,
+            context=full_context
+        )
+        
+        try:
+            response = requests.post(
+                API_URL,
+                headers={"Content-Type": "application/json"},
+                params={"key": GEMINI_API_KEY},
+                json={
+                    "contents": [{"parts": [{"text": full_prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.3,
+                        "maxOutputTokens": 5000
+                    }
+                },
+                timeout=API_TIMEOUT
+            )
+            response.raise_for_status()
+            response_data = response.json()
+            
+            if 'candidates' in response_data and response_data['candidates']:
+                answer = response_data['candidates'][0]['content']['parts'][0]['text']
+            else:
+                answer = "Не удалось получить ответ от API"
+            
+            st.session_state.llm_response = answer
+            st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
+            
+        except Exception as e:
+            st.error(f"Ошибка API: {str(e)}")
+
+# В блоке отображения результатов добавляем информацию о векторном поиске
+if st.session_state.get('llm_response'):
+    st.subheader("Ответ юридического ассистента:")
+    st.markdown(st.session_state.llm_response)
+    
+    if st.session_state.get('generated_queries'):
+        st.subheader("Сгенерированные поисковые запросы:")
+        for i, query in enumerate(st.session_state.generated_queries):
+            st.write(f"{i+1}. {query}")
+    
+    if st.session_state.get('additional_chunks'):
+        st.subheader("Релевантные фрагменты из векторного поиска:")
+        for i, chunk in enumerate(st.session_state.additional_chunks[:5]):  # Показываем топ-5
+            st.text_area(f"Фрагмент {i+1}", value=chunk[:2000], height=150, key=f"vector_chunk_{i}")
+
 
 # Обновленный блок истории
 if st.session_state.chat_log:
