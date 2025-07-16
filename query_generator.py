@@ -1,8 +1,8 @@
 import requests
 import re
 from typing import List
-from .config import GEMINI_API_KEY, API_URL, API_TIMEOUT
-from .prompts import get_prompt
+from config import GEMINI_API_KEY, API_URL, API_TIMEOUT
+from prompts import get_prompt
 import logging
 
 logger = logging.getLogger(__name__)
