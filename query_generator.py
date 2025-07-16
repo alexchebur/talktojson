@@ -19,6 +19,7 @@ class QueryGenerator:
             prompt = get_prompt("query_generation", {
                 "user_query": user_query,
                 "keywords": ", ".join(keywords)
+            })  # <-- Закрывающая скобка добавлена
             
             # Подготовка данных для запроса
             request_data = {
