@@ -9,7 +9,7 @@ from indexing import IndexBuilder
 from processing import DataProcessor
 from utils import file_to_text, clean_text
 from prompts import get_prompt
-from api import check_gemini_api_key, send_gemini_request
+from config import check_gemini_api_key, send_gemini_request
 
 # Инициализация
 logger = setup_logging()
