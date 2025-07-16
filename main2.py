@@ -97,6 +97,50 @@ if st.button("Отправить"):
     st.subheader("Ответ юридического ассистента:")
     st.markdown(st.session_state.llm_response)
     
-    # [Отображение дополнительной информации]
+    # Отображение релевантных фрагментов с УНИКАЛЬНЫМИ ключами
+    if st.session_state.get('query_relevant_chunks'):
+        st.subheader("Релевантные фрагменты из базы знаний:")
+        for i, chunk in enumerate(st.session_state.query_relevant_chunks):
+            unique_key = f"chunk_{int(time.time())}_{i}"
+            st.text_area(label="", value=chunk[:2000], height=150, key=unique_key)
 
-# [История диалога и другие элементы интерфейса]
+
+    # ВСТАВЛЯЕМ НОВЫЕ БЛОКИ ЗДЕСЬ
+    if st.session_state.get('generated_queries'):
+        st.subheader("Сгенерированные уточняющие запросы:")
+        for i, query in enumerate(st.session_state.generated_queries):
+            st.write(f"{i+1}. {query}")
+
+    if st.session_state.get('additional_chunks'):
+        st.subheader("Дополнительные релевантные фрагменты:")
+        for i, chunk in enumerate(st.session_state.additional_chunks):
+            unique_key = f"add_chunk_{int(time.time())}_{i}"
+            st.text_area(label="", value=chunk[:2000], height=150, key=unique_key)
+
+    # После блока с выводами LLM добавьте:
+    if st.session_state.get('web_search_results'):
+        st.subheader("Результаты веб-поиска")
+    
+        for i, result in enumerate(st.session_state.web_search_results):
+            with st.expander(f"{i+1}. {result['title']}", expanded=False):
+                st.markdown(f"**URL:** [{result['url']}]({result['url']})")
+            
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    st.image("https://via.placeholder.com/150?text=Preview", width=150)
+                
+                with col2:
+                    st.markdown("**Сниппет:**")
+                    st.info(result.get('snippet', ''))
+            
+                if result.get('full_content'):
+                    st.markdown("**Извлеченное содержимое:**")
+                    st.text_area("", 
+                                value=result['full_content'][:3000] + ("..." if len(result['full_content']) > 3000 else ""), 
+                                height=200,
+                                key=f"web_content_{i}")
+
+# Обновленный блок истории
+if st.session_state.chat_log:
+    st.subheader("История диалога")
+    st.text_area(label="", value=st.session_state.chat_log, height=300, key="chat_history", disabled=True)
