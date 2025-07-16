@@ -1,8 +1,8 @@
 import re
 from difflib import SequenceMatcher
 from typing import List
-from .indexing import IndexBuilder
-from .utils import clean_keyword
+from indexing import IndexBuilder
+from utils import clean_keyword
 
 class DataProcessor:
     def __init__(self, index_builder: IndexBuilder):
