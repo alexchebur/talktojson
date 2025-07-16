@@ -1,13 +1,13 @@
 import os
 import chardet
 import re
+import logging
+from typing import Optional
 from docx import Document
 from PyPDF2 import PdfReader
-from typing import Optional
 import streamlit as st
 
 def detect_file_encoding(file_path: str) -> str:
-    
     """Определение кодировки файла"""
     with open(file_path, 'rb') as f:
         raw_data = f.read(10000)
@@ -25,14 +25,21 @@ def file_to_text(uploaded_file) -> Optional[str]:
         
         elif uploaded_file.name.endswith('.pdf'):
             reader = PdfReader(uploaded_file)
-            return "\n".join([page.extract_text() for page in reader.pages])
+            text = "\n".join([page.extract_text() for page in reader.pages])
+            return text if text.strip() else None
         
     except Exception as e:
-        st.error(f"Ошибка обработки файла: {str(e)}")
+        logging.error(f"Ошибка обработки файла: {str(e)}")
         return None
 
+def clean_keyword(word: str) -> str:
+    """Очистка ключевых слов"""
+    while len(word) > 0 and word[-1] in 'аеёийоуыэюя':
+        word = word[:-1]
+    return word
+
 def initialize_session():
-    """Инициализация всех необходимых переменных в session_state"""
+    """Инициализация сессии Streamlit"""
     default_state = {
         "chat_log": "",
         "user_input": "",
@@ -43,18 +50,17 @@ def initialize_session():
         "query_relevant_chunks": [],
         "llm_response": "",
         "last_query": "",
-        "web_searcher": WebSearcher(),
         "web_search_results": [],
         "web_search_chunks": [],
         "generated_queries": [],
         "additional_chunks": []
     }
+    
     for key, value in default_state.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
 def setup_logging():
-    import logging
     logging.basicConfig(level=logging.INFO)
     return logging.getLogger(__name__)
 
