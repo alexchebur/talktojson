@@ -74,7 +74,6 @@ class WebSearcher:
                     'full_content': full_content
                 })
 
-            print(f"Searching: {url} with params: {params}")
             return results
             
         except Exception as e:
