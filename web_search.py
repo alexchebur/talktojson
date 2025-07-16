@@ -73,6 +73,8 @@ class WebSearcher:
                     'snippet': item.get('snippet', 'Без описания')[:500],
                     'full_content': full_content
                 })
+
+            print(f"Searching: {url} with params: {params}")
             return results
             
         except Exception as e:
