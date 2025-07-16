@@ -57,7 +57,7 @@ class QueryGenerator:
             content = ""
         
             if 'choices' in response_data:
-            content = response_data['choices'][0]['message']['content']
+                content = response_data['choices'][0]['message']['content']
             elif 'candidates' in response_data:
                 content = response_data['candidates'][0]['content']['parts'][0]['text']
             else:
