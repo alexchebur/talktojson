@@ -1,7 +1,7 @@
 import streamlit as st
 import time
 import os
-from utils import initialize_session, setup_logger
+from utils import initialize_session, setup_logging
 from config import GEMINI_API_KEY
 from web_search import WebSearcher
 from query_generator import QueryGenerator
@@ -12,7 +12,7 @@ from prompts import get_prompt
 from api import check_gemini_api_key, send_gemini_request
 
 # Инициализация
-logger = setup_logger()
+logger = setup_logging()
 initialize_session()
 
 # Проверка API ключа
