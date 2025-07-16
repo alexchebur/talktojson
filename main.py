@@ -4,7 +4,7 @@ import os
 from utils import initialize_session, setup_logging
 from config import GEMINI_API_KEY
 from web_search import WebSearcher
-from .query_generator import QueryGenerator
+from query_generator import QueryGenerator
 from indexing import IndexBuilder
 from processing import DataProcessor
 from utils import file_to_text, clean_text
