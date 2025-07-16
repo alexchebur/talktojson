@@ -5,7 +5,7 @@ import chardet
 from bs4 import BeautifulSoup
 from urllib.parse import unquote, urlparse, parse_qs
 from typing import List, Dict
-from .config import USER_AGENTS, PRIORITY_SITES, API_TIMEOUT
+from config import USER_AGENTS, PRIORITY_SITES, API_TIMEOUT
 import logging
 
 logger = logging.getLogger(__name__)
