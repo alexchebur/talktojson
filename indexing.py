@@ -2,7 +2,7 @@ import os
 import numpy as np
 from rank_bm25 import BM25Okapi
 from typing import List, Tuple, Optional
-from .config import CHUNK_SIZE, CHUNK_OVERLAP
+from config import CHUNK_SIZE, CHUNK_OVERLAP
 import logging
 
 logger = logging.getLogger(__name__)
