@@ -1,7 +1,7 @@
 import re
 import numpy as np  # Добавлено: для работы с массивами
 from difflib import SequenceMatcher
-from typing import List
+from typing import List, Dict, Any
 from indexing import IndexBuilder
 from utils import clean_keyword
 from rank_bm25 import BM25Okapi  # Добавлено: если используется BM25
