@@ -61,11 +61,13 @@ if uploaded_file:
         st.session_state.document_relevant_chunks = data_processor.search_relevant_chunks(
             bm25_index, original_chunks, keywords)
         
-        # Отображение результатов
         if st.session_state.document_relevant_chunks:
             st.subheader("Релевантные фрагменты из документа:")
             for i, chunk in enumerate(st.session_state.document_relevant_chunks):
-                st.text_area(f"Фрагмент {i+1}", value=chunk[:5000], height=150, key=f"doc_chunk_{i}")
+                st.text_area(f"Фрагмент {i+1}", 
+                            value=chunk[:5000], 
+                            height=150,
+                            key=f"doc_chunk_{i}_{hash(chunk[:50])}")  # Уникальный ключ
 
 # Блок чата
 user_input = st.text_area("Введите ваш вопрос:", height=150, max_chars=600, key="user_input")
@@ -191,10 +193,19 @@ if st.session_state.get('llm_response'):
                 st.markdown(f"**URL:** [{result['url']}]({result['url']})")
                 st.markdown("**Сниппет:**")
                 st.info(result.get('snippet', ''))
+            
                 if result.get('full_content'):
-                    st.text_area("Контент", value=result['full_content'][:3000], height=200)
+                    # Уникальный ключ для каждого text_area
+                    st.text_area("Контент", 
+                                value=result['full_content'][:3000], 
+                                height=200,
+                                key=f"web_content_{i}_{hash(result['url'])}")
 
 # История диалога
 if st.session_state.chat_log:
     st.subheader("История диалога")
-    st.text_area(label="", value=st.session_state.chat_log, height=300, key="chat_history", disabled=True)
+    st.text_area(label="История", 
+                value=st.session_state.chat_log, 
+                height=300, 
+                key="chat_history_unique",
+                disabled=True)
