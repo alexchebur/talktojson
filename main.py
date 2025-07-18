@@ -29,6 +29,8 @@ if not check_gemini_api_key():
     st.stop()
 
 index_builder = IndexBuilder()
+print(f"Путь к папке эмбеддингов: {os.path.abspath(index_builder.EMBEDDINGS_CACHE_DIR)}")
+print(f"Папка существует: {os.path.exists(index_builder.EMBEDDINGS_CACHE_DIR)}")
 data_processor = DataProcessor(index_builder)
 query_generator = QueryGenerator()
 web_searcher = WebSearcher()
