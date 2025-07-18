@@ -17,7 +17,8 @@ class IndexBuilder:
         self.original_chunks = []
         self.embeddings_index: Dict[str, List[float]] = {}
         self.document_graph: Dict[str, List[str]] = {}
-        self.EMBEDDINGS_CACHE_DIR = "data/embeddings"
+        #self.EMBEDDINGS_CACHE_DIR = "data/embeddings"
+        self.EMBEDDINGS_CACHE_DIR = os.path.abspath("data/embeddings")
         self.EMBEDDING_MODEL = "models/embedding-001"
         self.MAX_BATCH_SIZE = 5
         self.RATE_LIMIT_DELAY = 60
