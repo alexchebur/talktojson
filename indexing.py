@@ -84,12 +84,15 @@ class IndexBuilder:
 
     def _save_embedding_to_cache(self, filename: str, embedding: List[float]):
         cache_path = os.path.join(self.EMBEDDINGS_CACHE_DIR, f"{filename}.json")
-        with open(cache_path, "w") as f:
-            json.dump({
-                "filename": filename,
-                "embedding": embedding,
-                "timestamp": datetime.now().isoformat()
-            }, f)
+        print(f"[DEBUG] Попытка сохранения в: {cache_path}")
+    
+        try:
+            with open(cache_path, "w") as f:
+                json.dump({"embedding": embedding}, f, indent=2)
+            print(f"[DEBUG] Файл успешно сохранен: {cache_path}")
+        except Exception as e:
+            print(f"[ERROR] Ошибка записи файла: {str(e)}")
+            raise
 
     def _build_document_graph(self, filename: str, text: str):
         referenced_docs = []
