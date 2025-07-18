@@ -1,9 +1,10 @@
-#main.py
+import os
 import streamlit as st
 import time
-import os
 import requests
 import numpy as np
+import networkx as nx
+import matplotlib.pyplot as plt
 from utils import initialize_session, setup_logging, file_to_text, clean_text
 from config import GEMINI_API_KEY, API_URL, API_TIMEOUT
 from web_search import WebSearcher
@@ -12,11 +13,9 @@ from indexing import IndexBuilder
 from processing import DataProcessor
 from prompts import get_prompt
 
-# Инициализация
 logger = setup_logging()
 initialize_session()
 
-# Проверка API ключа
 def check_gemini_api_key():
     test_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17?key={GEMINI_API_KEY}"
     try:
@@ -29,17 +28,17 @@ if not check_gemini_api_key():
     st.error("⚠️ Неверный API ключ для Gemini. Пожалуйста, проверьте конфигурацию.")
     st.stop()
 
-# Инициализация компонентов
 index_builder = IndexBuilder()
 data_processor = DataProcessor(index_builder)
 query_generator = QueryGenerator()
 web_searcher = WebSearcher()
 
-# Сохраняем в сессию для повторного использования
 if "web_searcher" not in st.session_state:
     st.session_state.web_searcher = web_searcher
 
-# Интерфейс
+if not index_builder.load_full_index():
+    print("Полный индекс не найден, будет построен при обработке документа")
+
 st.title("Юридический консультант AI")
 uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 
@@ -49,7 +48,6 @@ if uploaded_file:
         if not file_text:
             st.stop()
         
-        # Обработка документа
         st.session_state.document_text = clean_text(file_text)
         bm25_index, original_chunks = index_builder.create_bm25_index()
         
@@ -57,10 +55,31 @@ if uploaded_file:
             st.error("Не удалось создать поисковый индекс")
             st.stop()
         
+        if not index_builder.embeddings_index:
+            index_builder.build_embeddings_index("documents")
+        else:
+            st.info("Использован кэшированный индекс эмбеддингов")
+        
         keywords = data_processor.extract_keywords(st.session_state.document_text, bm25_index)
         st.session_state.document_keywords = keywords
-        st.session_state.document_relevant_chunks = data_processor.search_relevant_chunks(
+        
+        if uploaded_file.name.endswith(".txt"):
+            st.session_state.main_doc_name = uploaded_file.name
+        else:
+            st.session_state.main_doc_name = uploaded_file.name.split('.')[0] + ".txt"
+        
+        relevant_chunks = data_processor.search_relevant_chunks(
             bm25_index, original_chunks, keywords)
+        
+        enhanced_chunks = data_processor.enhance_with_semantic_search(
+            " ".join(keywords), relevant_chunks)
+        
+        final_chunks = data_processor.enhance_with_graph_context(
+            st.session_state.get('main_doc_name'),
+            enhanced_chunks
+        )
+        
+        st.session_state.document_relevant_chunks = final_chunks
         
         if st.session_state.document_relevant_chunks:
             st.subheader("Релевантные фрагменты из документа:")
@@ -68,9 +87,8 @@ if uploaded_file:
                 st.text_area(f"Фрагмент {i+1}", 
                             value=chunk[:5000], 
                             height=150,
-                            key=f"doc_chunk_{i}_{hash(chunk[:50])}")  # Уникальный ключ
+                            key=f"doc_chunk_{i}_{hash(chunk[:50])}")
 
-# Блок чата
 user_input = st.text_area("Введите ваш вопрос:", height=150, max_chars=600, key="user_input")
 
 if st.button("Отправить", key="send_btn"):
@@ -81,19 +99,15 @@ if st.button("Отправить", key="send_btn"):
     st.session_state.last_query = user_input
     
     with st.spinner("Обработка запроса..."):
-        # Шаг 1: Подготовка данных
         bm25_index, original_chunks = index_builder.create_bm25_index()
         if not bm25_index:
             st.error("Ошибка индексации")
             st.stop()
             
         query_keywords = data_processor.extract_keywords(user_input, bm25_index)
-        
-        # Шаг 2: Генерация дополнительных запросов
         generated_queries = query_generator.generate(user_input, query_keywords)
         st.session_state.generated_queries = generated_queries
         
-        # Шаг 3: Поиск по сгенерированным запросам
         all_knowledge_chunks = []
         additional_chunks = []
         
@@ -109,7 +123,6 @@ if st.button("Отправить", key="send_btn"):
         
         st.session_state.additional_chunks = additional_chunks
         
-        # Шаг 4: Веб-поиск
         web_results = []
         for query in generated_queries:
             results = st.session_state.web_searcher.perform_search(query)
@@ -119,7 +132,6 @@ if st.button("Отправить", key="send_btn"):
         st.session_state.web_search_results = web_results
         st.session_state.web_search_chunks = web_chunks[:3]
         
-        # Шаг 5: Построение контекста
         context_parts = []
         
         if st.session_state.document_relevant_chunks:
@@ -140,13 +152,11 @@ if st.button("Отправить", key="send_btn"):
         
         full_context = "\n\n".join(context_parts)
         
-        # Шаг 6: Формирование и отправка промпта
         prompt = get_prompt("system", {
             "user_query": user_input,
-            "context": full_context[:15000]  # Ограничение контекста
+            "context": full_context[:15000]
         })
         
-        # Упрощенный запрос к Gemini
         try:
             response = requests.post(
                 API_URL,
@@ -177,7 +187,6 @@ if st.button("Отправить", key="send_btn"):
         except Exception as e:
             st.error(f"Ошибка API: {str(e)}")
 
-# Отображение ответа
 if st.session_state.get('llm_response'):
     st.subheader("Ответ юридического ассистента:")
     st.markdown(st.session_state.llm_response)
@@ -196,13 +205,39 @@ if st.session_state.get('llm_response'):
                 st.info(result.get('snippet', ''))
             
                 if result.get('full_content'):
-                    # Уникальный ключ для каждого text_area
                     st.text_area("Контент", 
                                 value=result['full_content'][:3000], 
                                 height=200,
                                 key=f"web_content_{i}_{hash(result['url'])}")
 
-# История диалога
+if st.session_state.get('main_doc_name') and index_builder.document_graph:
+    st.subheader("Граф связей документов")
+    
+    try:
+        graph = nx.DiGraph()
+        for doc, refs in index_builder.document_graph.items():
+            for ref in refs:
+                graph.add_edge(doc, ref)
+        
+        fig, ax = plt.subplots(figsize=(10, 8))
+        pos = nx.spring_layout(graph)
+        nx.draw(
+            graph, 
+            pos, 
+            with_labels=True, 
+            node_color='skyblue', 
+            node_size=2000,
+            edge_color='gray',
+            font_size=10,
+            ax=ax
+        )
+        
+        st.pyplot(fig)
+    except ImportError:
+        st.warning("Для отображения графа установите networkx и matplotlib")
+    except Exception as e:
+        st.error(f"Ошибка визуализации графа: {str(e)}")
+
 if st.session_state.chat_log:
     st.subheader("История диалога")
     st.text_area(label="История", 
