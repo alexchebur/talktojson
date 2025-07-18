@@ -1,4 +1,7 @@
 import os
+
+print(f"Текущая рабочая директория: {os.getcwd()}")
+print(f"Список файлов: {os.listdir('.')}")
 import streamlit as st
 import time
 import requests
