@@ -15,9 +15,11 @@ class IndexBuilder:
         self.chunk_overlap = chunk_overlap
         self.bm25_index = None
         self.original_chunks = []
-        self.embeddings_index: Dict[str, List[float]] = {}
-        self.document_graph: Dict[str, List[str]] = {}
+        #self.embeddings_index: Dict[str, List[float]] = {}
+        #self.document_graph: Dict[str, List[str]] = {}
         #self.EMBEDDINGS_CACHE_DIR = "data/embeddings"
+        self.embeddings_index = {}
+        self.document_graph = {}
         self.EMBEDDINGS_CACHE_DIR = os.path.abspath("data/embeddings")
         self.EMBEDDING_MODEL = "models/embedding-001"
         self.MAX_BATCH_SIZE = 5
