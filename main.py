@@ -19,6 +19,13 @@ from prompts import get_prompt
 logger = setup_logging()
 initialize_session()
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+EMBEDDINGS_DIR = os.path.join(REPO_ROOT, "data", "embeddings")
+
+if not os.path.exists(EMBEDDINGS_DIR):
+    os.makedirs(EMBEDDINGS_DIR)
+    st.warning(f"Создана папка для эмбеддингов: {EMBEDDINGS_DIR}")
+
 
 
 #def check_gemini_api_key():
