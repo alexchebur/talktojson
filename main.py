@@ -21,17 +21,17 @@ initialize_session()
 
 
 
-def check_gemini_api_key():
-    test_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17?key={GEMINI_API_KEY}"
-    try:
-        response = requests.get(test_url, timeout=10)
-        return response.status_code == 200
-    except:
-        return False
+#def check_gemini_api_key():
+#    test_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17?key={GEMINI_API_KEY}"
+#    try:
+#        response = requests.get(test_url, timeout=10)
+#        return response.status_code == 200
+#    except:
+#        return False
 
-if not check_gemini_api_key():
-    st.error("⚠️ Неверный API ключ для Gemini. Пожалуйста, проверьте конфигурацию.")
-    st.stop()
+#if not check_gemini_api_key():
+#    st.error("⚠️ Неверный API ключ для Gemini. Пожалуйста, проверьте конфигурацию.")
+#    st.stop()
 
 index_builder = IndexBuilder()
 print(f"Путь к папке эмбеддингов: {os.path.abspath(index_builder.EMBEDDINGS_CACHE_DIR)}")
