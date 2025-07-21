@@ -131,7 +131,7 @@ if st.button("Отправить", key="send_btn"):
                 continue
                 
             q_chunks = data_processor.search_relevant_chunks(bm25_index, original_chunks, q_keywords)
-            unique_chunks = data_processor.get_unique_chunks(all_knowlance_chunks, q_chunks)
+            unique_chunks = data_processor.get_unique_chunks(all_knowledge_chunks, q_chunks)
             additional_chunks.extend(unique_chunks)
             all_knowledge_chunks.extend(unique_chunks)
         
