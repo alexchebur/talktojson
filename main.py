@@ -106,6 +106,13 @@ if st.button("Отправить", key="send_btn"):
     st.session_state.last_query = user_input
     
     with st.spinner("Обработка запроса..."):
+        # === ДОБАВЛЕННЫЙ БЛОК: Веб-поиск по исходному запросу ===
+        initial_web_results = web_searcher.perform_search(user_input)
+        initial_web_chunks = [result['full_content'] for result in initial_web_results if result['full_content']]
+        st.session_state.initial_web_results = initial_web_results
+        st.session_state.initial_web_chunks = initial_web_chunks
+        # === КОНЕЦ ДОБАВЛЕННОГО БЛОКА ===
+        
         bm25_index, original_chunks = index_builder.create_bm25_index()
         if not bm25_index:
             st.error("Ошибка индексации")
@@ -124,7 +131,7 @@ if st.button("Отправить", key="send_btn"):
                 continue
                 
             q_chunks = data_processor.search_relevant_chunks(bm25_index, original_chunks, q_keywords)
-            unique_chunks = data_processor.get_unique_chunks(all_knowledge_chunks, q_chunks)
+            unique_chunks = data_processor.get_unique_chunks(all_knowlance_chunks, q_chunks)
             additional_chunks.extend(unique_chunks)
             all_knowledge_chunks.extend(unique_chunks)
         
@@ -141,6 +148,11 @@ if st.button("Отправить", key="send_btn"):
         
         context_parts = []
         
+        # === ДОБАВЛЕН ВЕБ-КОНТЕКСТ ПО ОСНОВНОМУ ЗАПРОСУ ===
+        if st.session_state.get('initial_web_chunks'):
+            context_parts.append("Веб-контекст по основному запросу:\n" + 
+                                "\n\n".join(st.session_state.initial_web_chunks[:2]))
+        
         if st.session_state.document_relevant_chunks:
             context_parts.append("Контекст из документа:\n" + 
                                 "\n\n".join(st.session_state.document_relevant_chunks[:3]))
@@ -154,7 +166,7 @@ if st.button("Отправить", key="send_btn"):
                                 "\n\n".join(additional_chunks[:3]))
         
         if st.session_state.web_search_chunks:
-            context_parts.append("Контекст из веб-поиска:\n" + 
+            context_parts.append("Контекст из веб-поиска по уточняющим запросам:\n" + 
                                 "\n\n".join(st.session_state.web_search_chunks))
         
         full_context = "\n\n".join(context_parts)
@@ -194,6 +206,7 @@ if st.button("Отправить", key="send_btn"):
         except Exception as e:
             st.error(f"Ошибка API: {str(e)}")
 
+# === ОБНОВЛЕННЫЙ БЛОК ОТОБРАЖЕНИЯ РЕЗУЛЬТАТОВ ===
 if st.session_state.get('llm_response'):
     st.subheader("Ответ юридического ассистента:")
     st.markdown(st.session_state.llm_response)
@@ -203,8 +216,24 @@ if st.session_state.get('llm_response'):
         for i, query in enumerate(st.session_state.generated_queries):
             st.write(f"{i+1}. {query}")
 
+    # Добавлен раздел для веб-результатов по основному запросу
+    if st.session_state.get('initial_web_results'):
+        st.subheader("Результаты веб-поиска по основному запросу")
+        for i, result in enumerate(st.session_state.initial_web_results):
+            with st.expander(f"{i+1}. {result['title']}", expanded=False):
+                st.markdown(f"**URL:** [{result['url']}]({result['url']})")
+                st.markdown("**Сниппет:**")
+                st.info(result.get('snippet', ''))
+            
+                if result.get('full_content'):
+                    st.text_area("Контент", 
+                                value=result['full_content'][:3000], 
+                                height=200,
+                                key=f"initial_web_content_{i}")
+
+    # Переименован раздел для веб-результатов по уточняющим запросам
     if st.session_state.get('web_search_results'):
-        st.subheader("Результаты веб-поиска")
+        st.subheader("Результаты веб-поиска по уточняющим запросам")
         for i, result in enumerate(st.session_state.web_search_results):
             with st.expander(f"{i+1}. {result['title']}", expanded=False):
                 st.markdown(f"**URL:** [{result['url']}]({result['url']})")
