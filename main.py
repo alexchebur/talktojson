@@ -19,12 +19,7 @@ from prompts import get_prompt
 logger = setup_logging()
 initialize_session()
 
-# Проверка работы API эмбеддингов
-test_text = "Тестовый текст для проверки эмбеддингов"
-test_embedding = index_builder._get_embeddings_batch([test_text])[0]
-print(f"[TEST] Тестовый эмбеддинг: {'успешно' if test_embedding else 'не'} получен")
-if test_embedding:
-    print(f"[TEST] Размер эмбеддинга: {len(test_embedding)} значений")
+
 
 def check_gemini_api_key():
     test_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17?key={GEMINI_API_KEY}"
