@@ -88,17 +88,21 @@ class IndexBuilder:
         return False, []
 
     def _save_embedding_to_cache(self, filename: str, embedding: List[float]):
-        cache_path = os.path.join(self.EMBEDDINGS_CACHE_DIR, f"{filename}.json")
-        print(f"Попытка сохранения: {cache_path}")
+        # Нормализуем имя файла для безопасности
+        safe_name = "".join(c for c in filename if c.isalnum() or c in (' ', '.', '_')).rstrip()
+        cache_path = os.path.join(self.EMBEDDINGS_CACHE_DIR, f"{safe_name}.json")
     
         try:
             with open(cache_path, "w") as f:
-                json.dump({"embedding": embedding}, f, indent=2)
-            print(f"✅ Успешно сохранён: {cache_path}")
-            return True
+                json.dump({
+                    "filename": filename,
+                    "embedding": embedding,
+                    "timestamp": datetime.now().isoformat()
+                }, f, indent=2)
+            print(f"Эмбеддинг сохранен в репозитории: {cache_path}")
         except Exception as e:
-            print(f"❌ Ошибка сохранения: {str(e)}")
-            return False
+            print(f"Ошибка сохранения в репозиторий: {str(e)}")
+            raise
 
     def _build_document_graph(self, filename: str, text: str):
         referenced_docs = []
