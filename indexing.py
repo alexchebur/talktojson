@@ -7,6 +7,7 @@ import numpy as np
 import requests
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
+from config import GEMINI_API_KEY, API_URL, API_TIMEOUT
 from rank_bm25 import BM25Okapi
 
 class IndexBuilder:
