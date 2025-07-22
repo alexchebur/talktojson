@@ -63,7 +63,7 @@ class QueryGenerator:
                     if query:
                         queries.append(query)
                         
-            return queries[:5]  # Ограничиваем 5 запросами
+            return queries[:3]  # Ограничиваем 3 запросами
             
         except Exception as e:
             logger.error(f"Ошибка генерации запросов: {str(e)}")
