@@ -165,6 +165,8 @@ if st.button("Отправить", key="send_btn"):
         web_chunks = [result['full_content'] for result in web_results if result['full_content']]
         st.session_state.web_search_results = web_results
         st.session_state.web_search_chunks = web_chunks[:3]
+
+        context_parts = []
         
         # Добавляем поиск в Qdrant по всем запросам
         all_qdrant_chunks = []
@@ -176,7 +178,7 @@ if st.button("Отправить", key="send_btn"):
         if all_qdrant_chunks:
             context_parts.append("Семантический поиск из Qdrant:\n" +
                                "\n\n".join(all_qdrant_chunks[:10]))
-        context_parts = []
+        
         
         # === ДОБАВЛЕН ВЕБ-КОНТЕКСТ ПО ОСНОВНОМУ ЗАПРОСУ ===
         if st.session_state.get('initial_web_chunks'):
