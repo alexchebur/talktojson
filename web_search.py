@@ -108,7 +108,7 @@ class WebSearcher:
                     text_parts.append(text)
 
             full_text = ' '.join(text_parts)
-            return re.sub(r'\s+', ' ', full_text)[:30000] if full_text else ""
+            return re.sub(r'\s+', ' ', full_text)[:50000] if full_text else "Контент не найден"
             
         except Exception as e:
             logger.error(f"Ошибка получения контента: {str(e)}")
