@@ -177,6 +177,7 @@ if st.button("Отправить", key="send_btn"):
         for query in [user_input] + generated_queries:
             q_chunks = data_processor.enhance_with_qdrant_search(query, [])
             all_qdrant_chunks.extend(q_chunks)
+            st.session_state.all_qdrant_chunks = all_qdrant_chunks
     
         # Добавляем в контекст
         if all_qdrant_chunks:
@@ -274,20 +275,28 @@ if st.session_state.get('llm_response'):
                                 height=200,
                                 key=f"initial_web_content_{i}")
 
+    if st.session_state.get('all_qdrant_chunks'):
+        st.subheader("Релевантные фрагменты из базы знаний Qdrant")
+        for i, chunk in enumerate(st.session_state.all_qdrant_chunks[:5]):
+            st.text_area(f"Фрагмент {i+1}", 
+                        value=chunk[:2000], 
+                        height=150,
+                        key=f"qdrant_chunk_{i}")
+
     # Переименован раздел для веб-результатов по уточняющим запросам
-    if st.session_state.get('web_search_results'):
-        st.subheader("Результаты веб-поиска по уточняющим запросам")
-        for i, result in enumerate(st.session_state.web_search_results):
-            with st.expander(f"{i+1}. {result['title']}", expanded=False):
-                st.markdown(f"**URL:** [{result['url']}]({result['url']})")
-                st.markdown("**Сниппет:**")
-                st.info(result.get('snippet', ''))
+        if st.session_state.get('web_search_results'):
+            st.subheader("Результаты веб-поиска по уточняющим запросам")
+            for i, result in enumerate(st.session_state.web_search_results):
+                with st.expander(f"{i+1}. {result['title']}", expanded=False):
+                    st.markdown(f"**URL:** [{result['url']}]({result['url']})")
+                    st.markdown("**Сниппет:**")
+                    st.info(result.get('snippet', ''))
             
-                if result.get('full_content'):
-                    st.text_area("Контент", 
-                                value=result['full_content'][:3000], 
-                                height=200,
-                                key=f"web_content_{i}_{hash(result['url'])}")
+                    if result.get('full_content'):
+                        st.text_area("Контент", 
+                                    value=result['full_content'][:3000], 
+                                    height=200,
+                                    key=f"web_content_{i}_{hash(result['url'])}")
 
 # Замените текущий блок отображения графа на:
 if st.session_state.get('main_doc_name') and index_builder.document_graph:
