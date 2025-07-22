@@ -212,7 +212,7 @@ if st.button("Отправить", key="send_btn"):
                             height=150,
                             key=f"qdrant_chunk_{i}")
         
-        full_context = "\n\n".join(context_parts)
+        full_context = "\n\n".join(st.session_state.context_parts)
         
         prompt = get_prompt("system", {
             "user_query": user_input,
