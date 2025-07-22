@@ -10,6 +10,12 @@ CHUNK_SIZE = 10000
 CHUNK_OVERLAP = 1000
 API_TIMEOUT = 60
 
+# Добавьте в config.py
+QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.I-mmwPtCFKzP-TEDblr6m4TpXKpZMLiF22ohcmZKYZI"
+QDRANT_CLUSTER_ID = "08c8d63b-d40d-4f11-9e44-496551240e66"
+QDRANT_URL = "https://08c8d63b-d40d-4f11-9e44-496551240e66.europe-west3-0.gcp.cloud.qdrant.io"
+QDRANT_COLLECTION = "talk2json"
+
 # Настройки веб-поиска
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.78 Safari/537.36",
