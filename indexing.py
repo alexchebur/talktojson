@@ -232,13 +232,13 @@ class IndexBuilder:
             
             embeddings = self._get_embeddings_batch(batch_texts)
             
-            for j, filename in enumerate(batch_files):
-                if j < len(embeddings):
-                    self.embeddings_index[filename] = embeddings[j]
-                    self._save_embedding_to_cache(filename, embeddings[j])
-                    print(f"Сохранен эмбеддинг для {filename}")
-                else:
-                    print(f"Не удалось получить эмбеддинг для {filename}")
+        for j, filename in enumerate(batch_files):
+            if j < len(embeddings):
+                self.embeddings_index[filename] = embeddings[j]
+                self._save_embedding_to_cache(filename, embeddings[j])
+                print(f"Сохранен эмбеддинг для {filename}")
+            else:
+                print(f"Не удалось получить эмбеддинг для {filename}")
         
         self.embeddings_index.update(cached_embeddings)
 
