@@ -17,6 +17,7 @@ sentence-transformers
 torch
 networkx
 matplotlib
+qdrant-client
 
 
 
