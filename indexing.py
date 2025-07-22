@@ -243,13 +243,13 @@ class IndexBuilder:
         self.embeddings_index.update(cached_embeddings)
 
 
-            for j, filename in enumerate(batch_files):
-                if j < len(embeddings):
-                    self.embeddings_index[filename] = embeddings[j]
-                    self._save_embedding_to_cache(filename, embeddings[j])
-                    # Добавлено: загрузка в Qdrant
-                    self._upload_to_qdrant(filename, batch_texts[j], embeddings[j])
-                    print(f"Сохранен эмбеддинг для {filename} в Qdrant")
+        for j, filename in enumerate(batch_files):
+            if j < len(embeddings):
+                self.embeddings_index[filename] = embeddings[j]
+                self._save_embedding_to_cache(filename, embeddings[j])
+                # Добавлено: загрузка в Qdrant
+                self._upload_to_qdrant(filename, batch_texts[j], embeddings[j])
+                print(f"Сохранен эмбеддинг для {filename} в Qdrant")
         
         for filename in txt_files:
             if filename in file_contents:
