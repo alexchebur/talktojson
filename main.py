@@ -87,6 +87,19 @@ if uploaded_file:
         
         enhanced_chunks = data_processor.enhance_with_semantic_search(
             " ".join(keywords), relevant_chunks)
+
+        
+        # Добавляем поиск в Qdrant по основному запросу
+        qdrant_chunks = data_processor.enhance_with_qdrant_search(
+            " ".join(keywords),
+            relevant_chunks
+        )
+        st.session_state.qdrant_chunks = qdrant_chunks
+        
+        # В сборку контекста добавляем:
+        if st.session_state.get('qdrant_chunks'):
+            context_parts.append("Контекст из базы знаний Qdrant:\n" + 
+                                "\n\n".join(st.session_state.qdrant_chunks[:5]))
         
         final_chunks = data_processor.enhance_with_graph_context(
             st.session_state.get('main_doc_name'),
@@ -153,6 +166,16 @@ if st.button("Отправить", key="send_btn"):
         st.session_state.web_search_results = web_results
         st.session_state.web_search_chunks = web_chunks[:3]
         
+        # Добавляем поиск в Qdrant по всем запросам
+        all_qdrant_chunks = []
+        for query in [user_input] + generated_queries:
+            q_chunks = data_processor.enhance_with_qdrant_search(query, [])
+            all_qdrant_chunks.extend(q_chunks)
+    
+        # Добавляем в контекст
+        if all_qdrant_chunks:
+            context_parts.append("Семантический поиск из Qdrant:\n" +
+                               "\n\n".join(all_qdrant_chunks[:10]))
         context_parts = []
         
         # === ДОБАВЛЕН ВЕБ-КОНТЕКСТ ПО ОСНОВНОМУ ЗАПРОСУ ===
@@ -175,6 +198,13 @@ if st.button("Отправить", key="send_btn"):
         if st.session_state.web_search_chunks:
             context_parts.append("Контекст из веб-поиска по уточняющим запросам:\n" + 
                                 "\n\n".join(st.session_state.web_search_chunks))
+        if st.session_state.get('qdrant_chunks'):
+            st.subheader("Релевантные фрагменты из базы знаний")
+            for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
+                st.text_area(f"Фрагмент из базы {i+1}", 
+                            value=chunk[:2000], 
+                            height=150,
+                            key=f"qdrant_chunk_{i}")
         
         full_context = "\n\n".join(context_parts)
         
