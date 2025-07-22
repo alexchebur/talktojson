@@ -15,7 +15,7 @@ from query_generator import QueryGenerator
 from indexing import IndexBuilder
 from processing import DataProcessor
 from prompts import get_prompt
-
+context_parts = []
 logger = setup_logging()
 initialize_session()
 
@@ -46,6 +46,7 @@ print(f"Папка существует: {os.path.exists(index_builder.EMBEDDING
 data_processor = DataProcessor(index_builder)
 query_generator = QueryGenerator()
 web_searcher = WebSearcher()
+
 
 if "web_searcher" not in st.session_state:
     st.session_state.web_searcher = web_searcher
@@ -95,7 +96,7 @@ if uploaded_file:
             relevant_chunks
         )
         st.session_state.qdrant_chunks = qdrant_chunks
-        context_parts = []
+        
         # В сборку контекста добавляем:
         if st.session_state.get('qdrant_chunks'):
             context_parts.append("Контекст из базы знаний Qdrant:\n" + 
