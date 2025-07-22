@@ -23,13 +23,18 @@ class IndexBuilder:
         self.document_graph = {}
         #self.EMBEDDINGS_CACHE_DIR = os.path.abspath("data/embeddings")
         #self.EMBEDDINGS_CACHE_DIR = os.path.abspath("/tmp/embeddings")
-        self.EMBEDDINGS_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "embeddings")
+        #self.EMBEDDINGS_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "embeddings")
         self.EMBEDDING_MODEL = "models/embedding-001"
         self.MAX_BATCH_SIZE = 5
         self.RATE_LIMIT_DELAY = 60
         #os.makedirs(self.EMBEDDINGS_CACHE_DIR, exist_ok=True)
+        #os.makedirs(self.EMBEDDINGS_CACHE_DIR, exist_ok=True)
+        #print(f"Папка эмбеддингов: {os.path.abspath(self.EMBEDDINGS_CACHE_DIR)}")
+        # Замените существующую строку на:
+        REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        self.EMBEDDINGS_CACHE_DIR = os.path.join(REPO_ROOT, "data", "embeddings")
         os.makedirs(self.EMBEDDINGS_CACHE_DIR, exist_ok=True)
-        print(f"Папка эмбеддингов: {os.path.abspath(self.EMBEDDINGS_CACHE_DIR)}")
+        print(f"Папка эмбеддингов: {self.EMBEDDINGS_CACHE_DIR}")
 
     def _process_text(self, text: str) -> List[str]:
         chunks = []
