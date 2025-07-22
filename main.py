@@ -253,31 +253,34 @@ if st.session_state.get('llm_response'):
                                 height=200,
                                 key=f"web_content_{i}_{hash(result['url'])}")
 
+# Замените текущий блок отображения графа на:
 if st.session_state.get('main_doc_name') and index_builder.document_graph:
-    st.subheader("Граф связей документов")
-    
     try:
         graph = nx.DiGraph()
+        has_edges = False
+        
+        # Добавляем основной документ (даже если нет связей)
+        main_doc = st.session_state.main_doc_name
+        graph.add_node(main_doc)
+        
+        # Добавляем связи
         for doc, refs in index_builder.document_graph.items():
             for ref in refs:
                 graph.add_edge(doc, ref)
+                has_edges = True
         
         fig, ax = plt.subplots(figsize=(10, 8))
-        pos = nx.spring_layout(graph)
-        nx.draw(
-            graph, 
-            pos, 
-            with_labels=True, 
-            node_color='skyblue', 
-            node_size=2000,
-            edge_color='gray',
-            font_size=10,
-            ax=ax
-        )
+        
+        if has_edges:
+            pos = nx.spring_layout(graph)
+            nx.draw(graph, pos, with_labels=True, ...)
+        else:
+            # Специальная визуализация для одного узла
+            nx.draw_networkx_nodes(graph, {main_doc: [0,0]}, nodelist=[main_doc], ...)
+            plt.text(0, 0.1, main_doc, ha='center')
         
         st.pyplot(fig)
-    except ImportError:
-        st.warning("Для отображения графа установите networkx и matplotlib")
+        
     except Exception as e:
         st.error(f"Ошибка визуализации графа: {str(e)}")
 
