@@ -6,6 +6,7 @@ import logging
 from bs4 import BeautifulSoup
 from typing import List, Dict
 from config import USER_AGENTS, PRIORITY_SITES, API_TIMEOUT
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,8 @@ class WebSearcher:
                     'snippet': item.get('snippet', 'Без описания')[:500],
                     'full_content': full_content
                 })
-
+                
+            time.sleep(1.5)
             return results
             
         except Exception as e:
