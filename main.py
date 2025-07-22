@@ -273,11 +273,24 @@ if st.session_state.get('main_doc_name') and index_builder.document_graph:
         
         if has_edges:
             pos = nx.spring_layout(graph)
-            nx.draw(graph, pos, with_labels=True, ...)
+            nx.draw(graph, pos, 
+                   with_labels=True,
+                   node_color='skyblue',
+                   node_size=2000,
+                   edge_color='gray',
+                   font_size=10,
+                   ax=ax)
         else:
             # Специальная визуализация для одного узла
-            nx.draw_networkx_nodes(graph, {main_doc: [0,0]}, nodelist=[main_doc], ...)
-            plt.text(0, 0.1, main_doc, ha='center')
+            nx.draw_networkx_nodes(graph, 
+                                  pos={main_doc: [0,0]}, 
+                                  nodelist=[main_doc],
+                                  node_color='skyblue',
+                                  node_size=2000,
+                                  ax=ax)
+            plt.text(0, 0.1, main_doc, 
+                    ha='center',
+                    bbox=dict(facecolor='white', alpha=0.8))
         
         st.pyplot(fig)
         
