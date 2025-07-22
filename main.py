@@ -53,7 +53,7 @@ if "web_searcher" not in st.session_state:
 if not index_builder.load_full_index():
     print("Полный индекс не найден, будет построен при обработке документа")
 
-st.title("Юридический консультант AI")
+st.title("ИИ-помощник по подготовке правовых заключений")
 uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 
 if uploaded_file:
@@ -245,7 +245,7 @@ if st.button("Отправить", key="send_btn"):
 
 # === ОБНОВЛЕННЫЙ БЛОК ОТОБРАЖЕНИЯ РЕЗУЛЬТАТОВ ===
 if st.session_state.get('llm_response'):
-    st.subheader("Ответ юридического ассистента:")
+    st.subheader("Ответ ассистента:")
     st.markdown(st.session_state.llm_response)
     
     if st.session_state.get('generated_queries'):
