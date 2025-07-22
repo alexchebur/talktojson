@@ -255,64 +255,64 @@ if st.session_state.get('llm_response'):
     st.subheader("Ответ ассистента:")
     st.markdown(st.session_state.llm_response)
     
-    if st.session_state.get('generated_queries'):
-        st.subheader("Сгенерированные уточняющие запросы:")
-        for i, query in enumerate(st.session_state.generated_queries):
-            st.write(f"{i+1}. {query}")
+if st.session_state.get('generated_queries'):
+    st.subheader("Сгенерированные уточняющие запросы:")
+    for i, query in enumerate(st.session_state.generated_queries):
+        st.write(f"{i+1}. {query}")
 
-    # Добавлен раздел для веб-результатов по основному запросу
-    if st.session_state.get('initial_web_results'):
-        st.subheader("Результаты веб-поиска по основному запросу")
-        for i, result in enumerate(st.session_state.initial_web_results):
-            with st.expander(f"{i+1}. {result['title']}", expanded=False):
-                st.markdown(f"**URL:** [{result['url']}]({result['url']})")
-                st.markdown("**Сниппет:**")
-                st.info(result.get('snippet', ''))
+# Добавлен раздел для веб-результатов по основному запросу
+if st.session_state.get('initial_web_results'):
+    st.subheader("Результаты веб-поиска по основному запросу")
+    for i, result in enumerate(st.session_state.initial_web_results):
+        with st.expander(f"{i+1}. {result['title']}", expanded=False):
+            st.markdown(f"**URL:** [{result['url']}]({result['url']})")
+            st.markdown("**Сниппет:**")
+            st.info(result.get('snippet', ''))
             
-                if result.get('full_content'):
-                    st.text_area("Контент", 
-                                value=result['full_content'][:3000], 
-                                height=200,
-                                key=f"initial_web_content_{i}")
+            if result.get('full_content'):
+                st.text_area("Контент", 
+                            value=result['full_content'][:3000], 
+                            height=200,
+                            key=f"initial_web_content_{i}")
 
-    if st.session_state.get('all_qdrant_chunks'):
-        st.subheader("Релевантные фрагменты из базы знаний Qdrant")
-        for i, chunk in enumerate(st.session_state.all_qdrant_chunks[:5]):
-            st.text_area(f"Фрагмент {i+1}", 
-                        value=chunk[:2000], 
-                        height=150,
-                        key=f"qdrant_chunk_{i}")
+if st.session_state.get('all_qdrant_chunks'):
+    st.subheader("Релевантные фрагменты из базы знаний Qdrant")
+    for i, chunk in enumerate(st.session_state.all_qdrant_chunks[:5]):
+        st.text_area(f"Фрагмент {i+1}", 
+                    value=chunk[:2000], 
+                    height=150,
+                    key=f"qdrant_chunk_{i}")
 
-    # Переименован раздел для веб-результатов по уточняющим запросам
-    if st.session_state.get('web_search_results'):
-        st.subheader("Результаты веб-поиска по уточняющим запросам")
-        for i, result in enumerate(st.session_state.web_search_results):
-            with st.expander(f"{i+1}. {result['title']}", expanded=False):
-                st.markdown(f"**URL:** [{result['url']}]({result['url']})")
-                st.markdown("**Сниппет:**")
-                st.info(result.get('snippet', ''))
+# Переименован раздел для веб-результатов по уточняющим запросам
+if st.session_state.get('web_search_results'):
+    st.subheader("Результаты веб-поиска по уточняющим запросам")
+    for i, result in enumerate(st.session_state.web_search_results):
+        with st.expander(f"{i+1}. {result['title']}", expanded=False):
+            st.markdown(f"**URL:** [{result['url']}]({result['url']})")
+            st.markdown("**Сниппет:**")
+            st.info(result.get('snippet', ''))
             
-                if result.get('full_content'):
-                    st.text_area("Контент", 
-                                value=result['full_content'][:3000], 
-                                height=200,
-                                key=f"web_content_{i}_{hash(result['url'])}")
-    # После блока отображения веб-результатов
-    if st.session_state.get('bm25_chunks'):
-        st.subheader("Релевантные фрагменты из документа (BM25)")
-        for i, chunk in enumerate(st.session_state.bm25_chunks[:5]):
-            st.text_area(f"Фрагмент {i+1}", 
-                        value=chunk[:2000], 
-                        height=150,
-                        key=f"bm25_chunk_{i}")
+            if result.get('full_content'):
+                st.text_area("Контент", 
+                            value=result['full_content'][:3000], 
+                            height=200,
+                            key=f"web_content_{i}_{hash(result['url'])}")
+# После блока отображения веб-результатов
+if st.session_state.get('bm25_chunks'):
+    st.subheader("Релевантные фрагменты из документа (BM25)")
+    for i, chunk in enumerate(st.session_state.bm25_chunks[:5]):
+        st.text_area(f"Фрагмент {i+1}", 
+                    value=chunk[:2000], 
+                    height=150,
+                    key=f"bm25_chunk_{i}")
 
-    if st.session_state.get('qdrant_chunks'):
-        st.subheader("Релевантные фрагменты из базы знаний (Qdrant)")
-        for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
-            st.text_area(f"Фрагмент {i+1}", 
-                        value=chunk[:2000], 
-                        height=150,
-                        key=f"qdrant_chunk_{i}")
+if st.session_state.get('qdrant_chunks'):
+    st.subheader("Релевантные фрагменты из базы знаний (Qdrant)")
+    for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
+        st.text_area(f"Фрагмент {i+1}", 
+                    value=chunk[:2000], 
+                    height=150,
+                    key=f"qdrant_chunk_{i}")
 
 # Замените текущий блок отображения графа на:
 if st.session_state.get('main_doc_name') and index_builder.document_graph:
