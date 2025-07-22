@@ -95,7 +95,7 @@ if uploaded_file:
             relevant_chunks
         )
         st.session_state.qdrant_chunks = qdrant_chunks
-        
+        context_parts = []
         # В сборку контекста добавляем:
         if st.session_state.get('qdrant_chunks'):
             context_parts.append("Контекст из базы знаний Qdrant:\n" + 
@@ -166,7 +166,7 @@ if st.button("Отправить", key="send_btn"):
         st.session_state.web_search_results = web_results
         st.session_state.web_search_chunks = web_chunks[:3]
 
-        context_parts = []
+        
         
         # Добавляем поиск в Qdrant по всем запросам
         all_qdrant_chunks = []
