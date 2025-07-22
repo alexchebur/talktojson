@@ -110,11 +110,14 @@ class IndexBuilder:
             raise
 
     def _build_document_graph(self, filename: str, text: str):
-        referenced_docs = []
+        # Всегда добавляем документ в граф
+        if filename not in self.document_graph:
+            self.document_graph[filename] = []
+    
+        # Поиск ссылок
         for doc_name in self.embeddings_index.keys():
-            if doc_name != filename and doc_name in text:
-                referenced_docs.append(doc_name)
-        self.document_graph[filename] = referenced_docs
+            if doc_name != filename and re.search(r"\b" + re.escape(doc_name) + r"\b", text):
+                self.document_graph[filename].append(doc_name)
 
     def _save_full_index(self):
         index_path = os.path.join(self.EMBEDDINGS_CACHE_DIR, "full_index.json")
