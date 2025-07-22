@@ -15,9 +15,12 @@ from query_generator import QueryGenerator
 from indexing import IndexBuilder
 from processing import DataProcessor
 from prompts import get_prompt
-context_parts = []
+
 logger = setup_logging()
 initialize_session()
+
+if "context_parts" not in st.session_state:
+    st.session_state.context_parts = []
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMBEDDINGS_DIR = os.path.join(REPO_ROOT, "data", "embeddings")
@@ -99,7 +102,7 @@ if uploaded_file:
         
         # В сборку контекста добавляем:
         if st.session_state.get('qdrant_chunks'):
-            context_parts.append("Контекст из базы знаний Qdrant:\n" + 
+            st.session_state.context_parts.append("Контекст из базы знаний Qdrant:\n" + 
                                 "\n\n".join(st.session_state.qdrant_chunks[:5]))
         
         final_chunks = data_processor.enhance_with_graph_context(
@@ -177,29 +180,29 @@ if st.button("Отправить", key="send_btn"):
     
         # Добавляем в контекст
         if all_qdrant_chunks:
-            context_parts.append("Семантический поиск из Qdrant:\n" +
+            st.session_state.context_parts.append("Семантический поиск из Qdrant:\n" +
                                "\n\n".join(all_qdrant_chunks[:10]))
         
         
         # === ДОБАВЛЕН ВЕБ-КОНТЕКСТ ПО ОСНОВНОМУ ЗАПРОСУ ===
         if st.session_state.get('initial_web_chunks'):
-            context_parts.append("Веб-контекст по основному запросу:\n" + 
+            st.session_state.context_parts.append("Веб-контекст по основному запросу:\n" + 
                                 "\n\n".join(st.session_state.initial_web_chunks[:2]))
         
         if st.session_state.document_relevant_chunks:
-            context_parts.append("Контекст из документа:\n" + 
+            st.session_state.context_parts.append("Контекст из документа:\n" + 
                                 "\n\n".join(st.session_state.document_relevant_chunks[:3]))
         
         if all_knowledge_chunks:
-            context_parts.append("Основной контекст из базы знаний:\n" + 
+            st.session_state.context_parts.append("Основной контекст из базы знаний:\n" + 
                                 "\n\n".join(all_knowledge_chunks[:3]))
         
         if additional_chunks:
-            context_parts.append("Дополнительный контекст:\n" + 
+            st.session_state.context_parts.append("Дополнительный контекст:\n" + 
                                 "\n\n".join(additional_chunks[:3]))
         
         if st.session_state.web_search_chunks:
-            context_parts.append("Контекст из веб-поиска по уточняющим запросам:\n" + 
+            st.session_state.context_parts.append("Контекст из веб-поиска по уточняющим запросам:\n" + 
                                 "\n\n".join(st.session_state.web_search_chunks))
         if st.session_state.get('qdrant_chunks'):
             st.subheader("Релевантные фрагменты из базы знаний")
