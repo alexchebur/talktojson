@@ -140,11 +140,11 @@ class DataProcessor:
     ) -> List[str]:
         try:
             qdrant_results = self.index_builder.semantic_search_in_qdrant(query, top_k)
-            qdrant_chunks = [result["text"] for result in qdrant_results]
-            return self.get_unique_chunks(original_chunks, qdrant_chunks)
+            # Возвращаем текст результатов, а не сравниваем с оригинальными чанками
+            return [result["text"] for result in qdrant_results]
         except Exception as e:
             print(f"Ошибка поиска в Qdrant: {str(e)}")
-            return original_chunks
+            return []  # Возвращаем пустой список вместо original_chunks
     
     def build_context(self, *chunk_sources: List[str]) -> str:
         context_parts = []
