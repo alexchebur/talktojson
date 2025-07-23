@@ -94,9 +94,10 @@ if uploaded_file:
         enhanced_chunks = data_processor.enhance_with_semantic_search(
             " ".join(keywords), relevant_chunks)
         
-        # Добавляем поиск в Qdrant по основному запросу
+        keywords = data_processor.extract_keywords(st.session_state.document_text, bm25_index)
         qdrant_chunks = data_processor.enhance_with_qdrant_search(
-            " ".join(keywords),
+            " ".join(keywords),  # Запрос для векторного поиска
+            keywords,            # Ключевые слова для фильтрации
             relevant_chunks
         )
         st.session_state.qdrant_chunks = qdrant_chunks
