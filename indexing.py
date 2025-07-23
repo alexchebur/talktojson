@@ -104,7 +104,7 @@ class IndexBuilder:
             query_embedding = self._get_embeddings_batch([query])[0]
             if not query_embedding:
                 return []
-            
+        
             # Создаем фильтр для ключевых слов
             should_conditions = []
             for keyword in keywords:
@@ -112,14 +112,16 @@ class IndexBuilder:
                     models.FieldCondition(
                         key="text",
                         match=models.MatchText(text=keyword)
-                    )
                 )
-            
+        
             query_filter = models.Filter(
                 should=should_conditions,
-                min_should=1  # Хотя бы одно ключевое слово должно совпадать
+                min_should=models.MinShould(  # Исправлено здесь
+                    conditions_count=1,  # Хотя бы одно ключевое слово должно совпадать
+                    min_count=1
+                )
             )
-            
+        
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
                 query_vector=query_embedding,
@@ -127,13 +129,12 @@ class IndexBuilder:
                 limit=top_k,
                 with_payload=True
             )
-            
+        
             return [{"text": hit.payload["text"]} for hit in results]
-            
+        
         except Exception as e:
             print(f"Ошибка поиска в Qdrant: {str(e)}")
             return []
-    
 
     def _process_text(self, text: str) -> List[str]:
         chunks = []
