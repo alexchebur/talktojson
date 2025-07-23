@@ -73,6 +73,23 @@ if uploaded_file:
         # Сохраняем индекс для последующего использования
         st.session_state.bm25_index = bm25_index
         st.session_state.original_chunks = original_chunks
+
+        # Получаем ключевые слова из документа
+        keywords = data_processor.extract_keywords(st.session_state.document_text, bm25_index)
+        st.session_state.document_keywords = keywords
+        
+        # Гибридный поиск в Qdrant по ключевым словам из документа
+        qdrant_chunks = data_processor.enhance_with_qdrant_search(
+            " ".join(keywords),
+            keywords,  # Передаем ключевые слова для полнотекстового поиска
+            top_k=5
+        )
+        st.session_state.qdrant_chunks = qdrant_chunks
+                # Добавляем в контекст
+        if st.session_state.get('qdrant_chunks'):
+            st.session_state.context_parts.append("Контекст из базы знаний Qdrant:\n" + 
+                                "\n\n".join(st.session_state.qdrant_chunks[:5]))
+
         
         # Только специфичные для документа действия
         if uploaded_file.name.endswith(".txt"):
