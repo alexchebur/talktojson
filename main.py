@@ -52,6 +52,14 @@ if not index_builder.load_full_index():
 st.title("ИИ-помощник по подготовке правовых заключений")
 uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 
+def perform_bm25_search(query: str, bm25_index, original_chunks) -> List[str]:
+    """Универсальная функция поиска BM25"""
+    if not query.strip() or not bm25_index:
+        return []
+    
+    keywords = data_processor.extract_keywords(query, bm25_index)
+    return data_processor.search_relevant_chunks(bm25_index, original_chunks, keywords)
+
 if uploaded_file:
     with st.spinner("Анализ документа..."):
         file_text = file_to_text(uploaded_file)
@@ -110,7 +118,10 @@ if uploaded_file:
                             value=chunk[:5000], 
                             height=150,
                             key=f"doc_chunk_{i}_{hash(chunk[:50])}")
-
+if 'bm25_index' not in st.session_state:
+    bm25_index, original_chunks = index_builder.create_bm25_index()
+    st.session_state.bm25_index = bm25_index
+    st.session_state.original_chunks = original_chunks
 user_input = st.text_area("Введите ваш вопрос:", height=150, max_chars=600, key="user_input")
 
 if st.button("Отправить", key="send_btn"):
@@ -131,6 +142,13 @@ if st.button("Отправить", key="send_btn"):
         if not bm25_index:
             st.error("Ошибка индексации")
             st.stop()
+
+        bm25_results = perform_bm25_search(
+            user_input,
+            st.session_state.bm25_index,
+            st.session_state.original_chunks
+        )
+        st.session_state.current_bm25_results = bm25_results
             
         query_keywords = data_processor.extract_keywords(user_input, bm25_index)
         generated_queries = query_generator.generate(user_input, query_keywords)
