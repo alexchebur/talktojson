@@ -9,7 +9,7 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 from utils import initialize_session, setup_logging, file_to_text, clean_text
-from config import GEMINI_API_KEY, API_URL, API_TIMEOUT
+from config import GEMINI_API_KEY, API_URL, API_TIMEOUT, QDRANT_COLLECTION
 from web_search import WebSearcher
 from query_generator import QueryGenerator
 from indexing import IndexBuilder
