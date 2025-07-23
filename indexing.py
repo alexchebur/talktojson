@@ -127,7 +127,7 @@ class IndexBuilder:
                 collection_name=QDRANT_COLLECTION,
                 query_vector=query_embedding,
                 query_filter=query_filter,
-                limit=top_k,
+                limit=20,
                 with_payload=True
             )
         
