@@ -151,6 +151,21 @@ if st.button("Отправить", key="send_btn"):
     st.session_state.last_query = user_input
     
     with st.spinner("Обработка запроса..."):
+        # Сбрасываем состояние перед новым поиском
+        st.session_state.current_bm25_results = []
+        st.session_state.bm25_search_error = None
+        
+        try:
+            # 1. Поиск по BM25 индексу
+            if st.session_state.bm25_index is None:
+                st.session_state.bm25_search_error = "Индекс BM25 не загружен"
+            else:
+                bm25_results = perform_bm25_search(user_input)
+                st.session_state.current_bm25_results = bm25_results
+                
+                if not bm25_results:
+                    st.session_state.bm25_search_error = "Не найдено релевантных фрагментов"
+        
         # 1. Веб-поиск по исходному запросу
         initial_web_results = web_searcher.perform_search(user_input)
         initial_web_chunks = [result['full_content'] for result in initial_web_results if result['full_content']]
@@ -278,22 +293,41 @@ if st.session_state.get('llm_response'):
 
 # Сайдбар с дополнительной информацией
 with st.sidebar:
-    # Сгенерированные запросы
-    if st.session_state.get('generated_queries'):
-        st.subheader("Сгенерированные уточняющие запросы:")
-        for i, query in enumerate(st.session_state.generated_queries):
-            st.write(f"{i+1}. {query}")
+    # Блок BM25 результатов - всегда отображается
+    st.subheader("Результаты BM25 поиска")
+    
+    if st.session_state.get('bm25_search_error'):
+        st.error(st.session_state.bm25_search_error)
+    elif st.session_state.get('current_bm25_results'):
+        if len(st.session_state.current_bm25_results) > 0:
+            for i, chunk in enumerate(st.session_state.current_bm25_results[:3]):
+                st.text_area(
+                    f"Фрагмент {i+1}",
+                    value=chunk[:2000],
+                    height=200,
+                    key=f"bm25_result_{i}"
+                )
+        else:
+            st.info("Нет релевантных фрагментов")
+    else:
+        st.info("Выполните поиск для отображения результатов")
 
-    # Результаты BM25
-    if st.session_state.get('current_bm25_results'):
-        st.subheader("Топ-3 релевантных фрагмента (BM25)")
-        for i, chunk in enumerate(st.session_state.current_bm25_results[:3]):
-            st.text_area(
-                f"Фрагмент {i+1}", 
-                value=chunk[:2000], 
-                height=200,
-                key=f"bm25_result_{i}"
-            )
+    # Блок информации о загруженном индексе (для отладки)
+    with st.expander("Информация об индексе", expanded=False):
+        if st.session_state.get('bm25_index'):
+            st.success("Индекс BM25 успешно загружен")
+            st.write(f"Всего фрагментов: {len(st.session_state.original_chunks)}")
+            
+            # Проверка чтения файла индекса
+            try:
+                BM25_INDEX_PATH = os.path.join(REPO_ROOT, "data", "bm25_index.pkl")
+                file_size = os.path.getsize(BM25_INDEX_PATH)
+                st.write(f"Размер файла индекса: {file_size} байт")
+                st.write(f"Путь: {BM25_INDEX_PATH}")
+            except Exception as e:
+                st.error(f"Ошибка проверки файла индекса: {str(e)}")
+        else:
+            st.error("Индекс BM25 не загружен")
     
     # Остальные элементы сайдбара (веб-результаты, Qdrant и т.д.)
     # ... (остальной код сайдбара остается без изменений)
