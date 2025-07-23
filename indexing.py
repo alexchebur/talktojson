@@ -57,17 +57,22 @@ class IndexBuilder:
                 collection_name=QDRANT_COLLECTION,
                 vectors_config=models.VectorParams(size=768, distance=models.Distance.COSINE)
             )
-    
+
+        # Используем TextIndexParams для настройки полнотекстового индекса
+        text_index_params = models.TextIndexParams(
+            tokenizer=models.TokenizerVariant.WORD,  # Токенизатор
+            min_token_len=2,                        # Минимальная длина токена
+            max_token_len=15,                       # Максимальная длина токена
+            lowercase=True                          # Приведение к нижнему регистру
+        )
+
         # Создаем полнотекстовый индекс для поля "text"
         self.qdrant_client.create_payload_index(
             collection_name=QDRANT_COLLECTION,
-            field_name="text",  # Поле в payload для индексации
-            field_schema="text",  # Тип данных (вместо PayloadSchemaType.KEYWORD)
-            tokenizer="word",     # Используем строковое значение вместо TokenizerVariant
-            min_token_len=2,      # Минимальная длина токена
-            max_token_len=15,     # Максимальная длина токена
-            lowercase=True        # Приведение к нижнему регистру
+            field_name="text",                      # Поле в payload
+            field_schema=text_index_params          # Передаем параметры индекса
         )
+    
     def _upload_to_qdrant(self, text: str, embedding: List[float]):
         chunks = self._process_text(text)
         
