@@ -38,7 +38,7 @@ web_searcher = WebSearcher()
 # Загрузка BM25 индекса при старте приложения
 @st.cache_resource
 def load_bm25_index():
-    BM25_INDEX_PATH = os.path.join(REPO_ROOT, "/data/bm25_index.pkl")
+    BM25_INDEX_PATH = os.path.join(REPO_ROOT, "data/", "bm25_index.pkl")
     if os.path.exists(BM25_INDEX_PATH):
         try:
             with open(BM25_INDEX_PATH, 'rb') as f:
