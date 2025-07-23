@@ -107,33 +107,43 @@ class IndexBuilder:
         )
     
 
-    def semantic_search_in_qdrant(self, query: str, top_k: int = 10) -> List[dict]:
+    def semantic_search_in_qdrant(self, query: str, top_k: int = 5) -> List[dict]:
         try:
-            # Получаем эмбеддинг запроса
+            print(f"\nИнициируем поиск для: '{query}'")
+        
+            # 1. Получаем эмбеддинг запроса
             query_embedding = self._get_embeddings_batch([query])[0]
-            if not query_embedding or len(query_embedding) != 768:
-                print(f"Некорректный эмбеддинг запроса (размер: {len(query_embedding) if query_embedding else 'None'})")
+            if not query_embedding:
+                print("Ошибка: не получен эмбеддинг запроса")
                 return []
+            print(f"Размер эмбеддинга запроса: {len(query_embedding)}")
 
-            # Простой векторный поиск без фильтров
+            # 2. Выполняем поиск (без фильтров)
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
                 query_vector=query_embedding,
                 limit=top_k,
                 with_payload=True,
-                score_threshold=0.4  # Повышенный порог релевантности
+                score_threshold=0.3  # Пониженный порог для теста
             )
+            print(f"Найдено результатов: {len(results)}")
 
-            # Форматируем результаты
-            return [{
-                "text": hit.payload.get("text", ""),
-                "score": hit.score,
-                "source": hit.payload.get("filename", "unknown")
-            } for hit in results if hit.score > 0.4]  # Дополнительная фильтрация
+            # 3. Форматируем вывод
+            formatted = []
+            for hit in results:
+                item = {
+                    "text": hit.payload.get("text", ""),
+                    "score": hit.score,
+                    "source": hit.payload.get("source", "N/A")
+                }
+                print(f"- Результат (score={hit.score:.3f}): {item['text'][:50]}...")
+                formatted.append(item)
+        
+            return formatted
 
-        except Exception as e:
-            print(f"Ошибка поиска Qdrant: {str(e)}")
-            return []
+    except Exception as e:
+        print(f"Ошибка поиска: {str(e)}", exc_info=True)
+        return []
 
     def _process_text(self, text: str) -> List[str]:
         chunks = []
