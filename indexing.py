@@ -107,42 +107,32 @@ class IndexBuilder:
         )
     
 
-    def semantic_search_in_qdrant(self, query: str, keywords: List[str], top_k: int = 10) -> List[dict]:
+    def semantic_search_in_qdrant(self, query: str, top_k: int = 10) -> List[dict]:
         try:
+            # Получаем эмбеддинг запроса
             query_embedding = self._get_embeddings_batch([query])[0]
-            if not query_embedding:
+            if not query_embedding or len(query_embedding) != 768:
+                print(f"Некорректный эмбеддинг запроса (размер: {len(query_embedding) if query_embedding else 'None'})")
                 return []
-        
-            # Создаем фильтр для ключевых слов
-            should_conditions = []
-            for keyword in keywords:
-                should_conditions.append(
-                    models.FieldCondition(
-                        key="text",
-                        match=models.MatchText(text=keyword)
-                    )
-                )
-        
-            query_filter = models.Filter(
-                should=should_conditions,
-                min_should=models.MinShould(  # Исправлено здесь
-                    conditions=should_conditions,  # Хотя бы одно ключевое слово должно совпадать
-                    min_count=3
-                )
-            )
-        
+
+            # Простой векторный поиск без фильтров
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
                 query_vector=query_embedding,
-                query_filter=query_filter,
-                limit=20,
-                with_payload=True
+                limit=top_k,
+                with_payload=True,
+                score_threshold=0.4  # Повышенный порог релевантности
             )
-        
-            return [{"text": hit.payload["text"]} for hit in results]
-        
+
+            # Форматируем результаты
+            return [{
+                "text": hit.payload.get("text", ""),
+                "score": hit.score,
+                "source": hit.payload.get("filename", "unknown")
+            } for hit in results if hit.score > 0.4]  # Дополнительная фильтрация
+
         except Exception as e:
-            st.error(f"Ошибка поиска в Qdrant: {str(e)}")
+            print(f"Ошибка поиска Qdrant: {str(e)}")
             return []
 
     def _process_text(self, text: str) -> List[str]:
