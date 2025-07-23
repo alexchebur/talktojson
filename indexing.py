@@ -67,7 +67,7 @@ class IndexBuilder:
                 field_schema=models.TextIndexParams(
                     type="text",
                     tokenizer=models.TokenizerType.WORD,
-                    min_token_len=3,
+                    min_token_len=2,
                     max_token_len=50,
                     lowercase=True
                 )
@@ -119,7 +119,7 @@ class IndexBuilder:
                 should=should_conditions,
                 min_should=models.MinShould(  # Исправлено здесь
                     conditions=should_conditions,  # Хотя бы одно ключевое слово должно совпадать
-                    min_count=1
+                    min_count=3
                 )
             )
         
