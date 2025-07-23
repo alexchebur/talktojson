@@ -85,22 +85,24 @@ class IndexBuilder:
         )
     
     def semantic_search_in_qdrant(self, query: str, top_k: int = 10) -> List[dict]:
-        query_embedding = self._get_embeddings_batch([query])[0]
-        if not query_embedding:
+        try:
+            query_embedding = self._get_embeddings_batch([query])[0]
+            if not query_embedding:
+                return []
+        
+            results = self.qdrant_client.search(
+                collection_name=QDRANT_COLLECTION,
+                query_vector=query_embedding,
+                limit=top_k,
+                with_payload=True
+            )
+        
+            # Убедитесь, что возвращаются только тексты
+            return [{"text": hit.payload["text"]} for hit in results]  # <-- Исправлено здесь
+        
+        except Exception as e:
+            print(f"Ошибка поиска в Qdrant: {str(e)}")
             return []
-        
-        results = self.qdrant_client.search(
-            collection_name=QDRANT_COLLECTION,
-            query_vector=query_embedding,
-            limit=top_k,
-            with_payload=True
-        )
-        
-        return [{
-            "text": hit.payload["text"],
-            "filename": hit.payload["filename"],
-            "score": hit.score
-        } for hit in results]
     
 
     def _process_text(self, text: str) -> List[str]:
