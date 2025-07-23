@@ -333,6 +333,7 @@ class IndexBuilder:
             tokenized_chunks = [doc.split() for doc in all_chunks]
             self.bm25_index = BM25Okapi(tokenized_chunks, k1=1.8, b=0.75)
             self.original_chunks = original_texts
+            print(f"индекс bm25 создан")
 
             return self.bm25_index, self.original_chunks
 
