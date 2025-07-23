@@ -29,27 +29,12 @@ if not os.path.exists(EMBEDDINGS_DIR):
     os.makedirs(EMBEDDINGS_DIR)
     st.warning(f"Создана папка для эмбеддингов: {EMBEDDINGS_DIR}")
 
-
-
-#def check_gemini_api_key():
-#    test_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite-preview-06-17?key={GEMINI_API_KEY}"
-#    try:
-#        response = requests.get(test_url, timeout=10)
-#        return response.status_code == 200
-#    except:
-#        return False
-
-#if not check_gemini_api_key():
-#    st.error("⚠️ Неверный API ключ для Gemini. Пожалуйста, проверьте конфигурацию.")
-#    st.stop()
-
 index_builder = IndexBuilder()
 print(f"Путь к папке эмбеддингов: {os.path.abspath(index_builder.EMBEDDINGS_CACHE_DIR)}")
 print(f"Папка существует: {os.path.exists(index_builder.EMBEDDINGS_CACHE_DIR)}")
 data_processor = DataProcessor(index_builder)
 query_generator = QueryGenerator()
 web_searcher = WebSearcher()
-
 
 if "web_searcher" not in st.session_state:
     st.session_state.web_searcher = web_searcher
@@ -91,7 +76,6 @@ if uploaded_file:
         
         enhanced_chunks = data_processor.enhance_with_semantic_search(
             " ".join(keywords), relevant_chunks)
-
         
         # Добавляем поиск в Qdrant по основному запросу
         qdrant_chunks = data_processor.enhance_with_qdrant_search(
@@ -130,12 +114,11 @@ if st.button("Отправить", key="send_btn"):
     st.session_state.last_query = user_input
     
     with st.spinner("Обработка запроса..."):
-        # === ДОБАВЛЕННЫЙ БЛОК: Веб-поиск по исходному запросу ===
+        # Веб-поиск по исходному запросу
         initial_web_results = web_searcher.perform_search(user_input)
         initial_web_chunks = [result['full_content'] for result in initial_web_results if result['full_content']]
         st.session_state.initial_web_results = initial_web_results
         st.session_state.initial_web_chunks = initial_web_chunks
-        # === КОНЕЦ ДОБАВЛЕННОГО БЛОКА ===
         
         bm25_index, original_chunks = index_builder.create_bm25_index()
         if not bm25_index:
@@ -169,8 +152,6 @@ if st.button("Отправить", key="send_btn"):
         web_chunks = [result['full_content'] for result in web_results if result['full_content']]
         st.session_state.web_search_results = web_results
         st.session_state.web_search_chunks = web_chunks[:3]
-
-        
         
         # Добавляем поиск в Qdrant по всем запросам
         all_qdrant_chunks = []
@@ -184,8 +165,7 @@ if st.button("Отправить", key="send_btn"):
             st.session_state.context_parts.append("Семантический поиск из Qdrant:\n" +
                                "\n\n".join(all_qdrant_chunks[:10]))
         
-        
-        # === ДОБАВЛЕН ВЕБ-КОНТЕКСТ ПО ОСНОВНОМУ ЗАПРОСУ ===
+        # Веб-контекст по основному запросу
         if st.session_state.get('initial_web_chunks'):
             st.session_state.context_parts.append("Веб-контекст по основному запросу:\n" + 
                                 "\n\n".join(st.session_state.initial_web_chunks[:2]))
@@ -205,13 +185,6 @@ if st.button("Отправить", key="send_btn"):
         if st.session_state.web_search_chunks:
             st.session_state.context_parts.append("Контекст из веб-поиска по уточняющим запросам:\n" + 
                                 "\n\n".join(st.session_state.web_search_chunks))
-        if st.session_state.get('qdrant_chunks'):
-            st.subheader("Релевантные фрагменты из базы знаний")
-            for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
-                st.text_area(f"Фрагмент из базы {i+1}", 
-                            value=chunk[:2000], 
-                            height=150,
-                            key=f"qdrant_chunk_{i}")
         
         full_context = "\n\n".join(st.session_state.context_parts)
         
@@ -250,118 +223,117 @@ if st.button("Отправить", key="send_btn"):
         except Exception as e:
             st.error(f"Ошибка API: {str(e)}")
 
-# === ОБНОВЛЕННЫЙ БЛОК ОТОБРАЖЕНИЯ РЕЗУЛЬТАТОВ ===
+# Основной ответ остается в главной области
 if st.session_state.get('llm_response'):
     st.subheader("Ответ ассистента:")
     st.markdown(st.session_state.llm_response)
+
+# ===== ВСЕ ВСПОМОГАТЕЛЬНЫЕ ЭЛЕМЕНТЫ ПЕРЕНОСИМ В САЙДБАР =====
+with st.sidebar:
+    # Сгенерированные запросы
+    if st.session_state.get('generated_queries'):
+        st.subheader("Сгенерированные уточняющие запросы:")
+        for i, query in enumerate(st.session_state.generated_queries):
+            st.write(f"{i+1}. {query}")
+
+    # Веб-результаты по основному запросу
+    if st.session_state.get('initial_web_results'):
+        st.subheader("Результаты веб-поиска по основному запросу")
+        for i, result in enumerate(st.session_state.initial_web_results):
+            with st.expander(f"{i+1}. {result['title']}", expanded=False):
+                st.markdown(f"**URL:** [{result['url']}]({result['url']})")
+                st.markdown("**Сниппет:**")
+                st.info(result.get('snippet', ''))
+                
+                if result.get('full_content'):
+                    st.text_area("Контент", 
+                                value=result['full_content'][:3000], 
+                                height=200,
+                                key=f"initial_web_content_{i}")
+
+    # Фрагменты из Qdrant (по запросу)
+    if st.session_state.get('all_qdrant_chunks'):
+        st.subheader("Фрагменты из базы знаний (по запросу)")
+        for i, chunk in enumerate(st.session_state.all_qdrant_chunks[:5]):
+            st.text_area(f"Фрагмент {i+1}", 
+                        value=chunk[:2000], 
+                        height=150,
+                        key=f"all_qdrant_chunk_{i}")
+
+    # Веб-результаты по уточняющим запросам
+    if st.session_state.get('web_search_results'):
+        st.subheader("Веб-результаты по уточняющим запросам")
+        for i, result in enumerate(st.session_state.web_search_results):
+            with st.expander(f"{i+1}. {result['title']}", expanded=False):
+                st.markdown(f"**URL:** [{result['url']}]({result['url']})")
+                st.markdown("**Сниппет:**")
+                st.info(result.get('snippet', ''))
+                
+                if result.get('full_content'):
+                    st.text_area("Контент", 
+                                value=result['full_content'][:3000], 
+                                height=200,
+                                key=f"web_content_{i}_{hash(result['url'])}")
     
-if st.session_state.get('generated_queries'):
-    st.subheader("Сгенерированные уточняющие запросы:")
-    for i, query in enumerate(st.session_state.generated_queries):
-        st.write(f"{i+1}. {query}")
-
-# Добавлен раздел для веб-результатов по основному запросу
-if st.session_state.get('initial_web_results'):
-    st.subheader("Результаты веб-поиска по основному запросу")
-    for i, result in enumerate(st.session_state.initial_web_results):
-        with st.expander(f"{i+1}. {result['title']}", expanded=False):
-            st.markdown(f"**URL:** [{result['url']}]({result['url']})")
-            st.markdown("**Сниппет:**")
-            st.info(result.get('snippet', ''))
+    # Фрагменты из Qdrant (из документа)
+    if st.session_state.get('qdrant_chunks'):
+        st.subheader("Фрагменты из базы знаний (из документа)")
+        for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
+            st.text_area(f"Фрагмент {i+1}", 
+                        value=chunk[:2000], 
+                        height=150,
+                        key=f"qdrant_chunk_{i}")
+    
+    # Граф документа
+    if st.session_state.get('main_doc_name') and index_builder.document_graph:
+        try:
+            graph = nx.DiGraph()
+            has_edges = False
             
-            if result.get('full_content'):
-                st.text_area("Контент", 
-                            value=result['full_content'][:3000], 
-                            height=200,
-                            key=f"initial_web_content_{i}")
-
-if st.session_state.get('all_qdrant_chunks'):
-    st.subheader("Релевантные фрагменты из базы знаний Qdrant")
-    for i, chunk in enumerate(st.session_state.all_qdrant_chunks[:5]):
-        st.text_area(f"Фрагмент {i+1}", 
-                    value=chunk[:2000], 
-                    height=150,
-                    key=f"qdrant_chunk_{i}")
-
-# Переименован раздел для веб-результатов по уточняющим запросам
-if st.session_state.get('web_search_results'):
-    st.subheader("Результаты веб-поиска по уточняющим запросам")
-    for i, result in enumerate(st.session_state.web_search_results):
-        with st.expander(f"{i+1}. {result['title']}", expanded=False):
-            st.markdown(f"**URL:** [{result['url']}]({result['url']})")
-            st.markdown("**Сниппет:**")
-            st.info(result.get('snippet', ''))
+            # Добавляем основной документ
+            main_doc = st.session_state.main_doc_name
+            graph.add_node(main_doc)
             
-            if result.get('full_content'):
-                st.text_area("Контент", 
-                            value=result['full_content'][:3000], 
-                            height=200,
-                            key=f"web_content_{i}_{hash(result['url'])}")
-# После блока отображения веб-результатов
-if st.session_state.get('bm25_chunks'):
-    st.subheader("Релевантные фрагменты из документа (BM25)")
-    for i, chunk in enumerate(st.session_state.bm25_chunks[:5]):
-        st.text_area(f"Фрагмент {i+1}", 
-                    value=chunk[:2000], 
-                    height=150,
-                    key=f"bm25_chunk_{i}")
-
-if st.session_state.get('qdrant_chunks'):
-    st.subheader("Релевантные фрагменты из базы знаний (Qdrant)")
-    for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
-        st.text_area(f"Фрагмент {i+1}", 
-                    value=chunk[:2000], 
-                    height=150,
-                    key=f"qdrant_chunk_{i}")
-
-# Замените текущий блок отображения графа на:
-if st.session_state.get('main_doc_name') and index_builder.document_graph:
-    try:
-        graph = nx.DiGraph()
-        has_edges = False
-        
-        # Добавляем основной документ (даже если нет связей)
-        main_doc = st.session_state.main_doc_name
-        graph.add_node(main_doc)
-        
-        # Добавляем связи
-        for doc, refs in index_builder.document_graph.items():
-            for ref in refs:
-                graph.add_edge(doc, ref)
-                has_edges = True
-        
-        fig, ax = plt.subplots(figsize=(10, 8))
-        
-        if has_edges:
-            pos = nx.spring_layout(graph)
-            nx.draw(graph, pos, 
-                   with_labels=True,
-                   node_color='skyblue',
-                   node_size=2000,
-                   edge_color='gray',
-                   font_size=10,
-                   ax=ax)
-        else:
-            # Специальная визуализация для одного узла
-            nx.draw_networkx_nodes(graph, 
-                                  pos={main_doc: [0,0]}, 
-                                  nodelist=[main_doc],
+            # Добавляем связи
+            for doc, refs in index_builder.document_graph.items():
+                for ref in refs:
+                    graph.add_edge(doc, ref)
+                    has_edges = True
+            
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            if has_edges:
+                pos = nx.spring_layout(graph)
+                nx.draw(graph, pos, 
+                       with_labels=True,
+                       node_color='skyblue',
+                       node_size=2000,
+                       edge_color='gray',
+                       font_size=10,
+                       ax=ax)
+            else:
+                # Визуализация для одного узла
+                nx.draw_networkx_nodes(graph, 
+                                      pos={main_doc: [0,0]}, 
+                                      nodelist=[main_doc],
                                   node_color='skyblue',
                                   node_size=2000,
                                   ax=ax)
-            plt.text(0, 0.1, main_doc, 
-                    ha='center',
-                    bbox=dict(facecolor='white', alpha=0.8))
-        
-        st.pyplot(fig)
-        
-    except Exception as e:
-        st.error(f"Ошибка визуализации графа: {str(e)}")
+                plt.text(0, 0.1, main_doc, 
+                        ha='center',
+                        bbox=dict(facecolor='white', alpha=0.8))
+            
+            st.subheader("Граф связанных документов")
+            st.pyplot(fig)
+            
+        except Exception as e:
+            st.error(f"Ошибка визуализации графа: {str(e)}")
 
-if st.session_state.chat_log:
-    st.subheader("История диалога")
-    st.text_area(label="История", 
-                value=st.session_state.chat_log, 
-                height=300, 
-                key="chat_history_unique",
-                disabled=True)
+    # История диалога
+    if st.session_state.get('chat_log'):
+        st.subheader("История диалога")
+        st.text_area(label="История", 
+                    value=st.session_state.chat_log, 
+                    height=300, 
+                    key="chat_history_unique",
+                    disabled=True)
