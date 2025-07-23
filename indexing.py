@@ -47,15 +47,29 @@ class IndexBuilder:
         )
         self._ensure_qdrant_collection()
     
+    
     def _ensure_qdrant_collection(self):
         try:
             self.qdrant_client.get_collection(QDRANT_COLLECTION)
         except Exception:
+            # Создаем коллекцию с векторным индексом
             self.qdrant_client.create_collection(
                 collection_name=QDRANT_COLLECTION,
                 vectors_config=models.VectorParams(
-                    size=768,  # Для all-mpnet-base-v2
+                    size=768,
                     distance=models.Distance.COSINE
+                )
+            )
+            # Добавляем полнотекстовый индекс
+            self.qdrant_client.create_payload_index(
+                collection_name=QDRANT_COLLECTION,
+                field_name="text",
+                field_schema=models.TextIndexParams(
+                    type="text",
+                    tokenizer=models.TokenizerType.WORD,
+                    min_token_len=3,
+                    max_token_len=50,
+                    lowercase=True
                 )
             )
     
