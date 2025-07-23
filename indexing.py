@@ -59,7 +59,7 @@ class IndexBuilder:
                 )
             )
     
-    def _upload_to_qdrant(self, filename: str, text: str, embedding: List[float]):
+    def _upload_to_qdrant(self, text: str, embedding: List[float]):
         chunks = self._process_text(text)
         
         points = []
@@ -69,7 +69,7 @@ class IndexBuilder:
                     id=str(uuid.uuid4()),
                     vector=embedding,
                     payload={
-                        "filename": filename,
+                        #"filename": filename,
                         "text": chunk,
                         "full_text": text[:10000],  # Первые 10k символов для контекста
                         "chunk_num": idx,
