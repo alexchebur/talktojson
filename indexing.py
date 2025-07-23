@@ -134,7 +134,7 @@ class IndexBuilder:
             return [{"text": hit.payload["text"]} for hit in results]
         
         except Exception as e:
-            print(f"Ошибка поиска в Qdrant: {str(e)}")
+            st.error(f"Ошибка поиска в Qdrant: {str(e)}")
             return []
 
     def _process_text(self, text: str) -> List[str]:
