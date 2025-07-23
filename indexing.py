@@ -98,22 +98,38 @@ class IndexBuilder:
             wait=True
         )
     
-    def semantic_search_in_qdrant(self, query: str, top_k: int = 10) -> List[dict]:
+
+    def semantic_search_in_qdrant(self, query: str, keywords: List[str], top_k: int = 10) -> List[dict]:
         try:
             query_embedding = self._get_embeddings_batch([query])[0]
             if not query_embedding:
                 return []
-        
+            
+            # Создаем фильтр для ключевых слов
+            should_conditions = []
+            for keyword in keywords:
+                should_conditions.append(
+                    models.FieldCondition(
+                        key="text",
+                        match=models.MatchText(text=keyword)
+                    )
+                )
+            
+            query_filter = models.Filter(
+                should=should_conditions,
+                min_should=1  # Хотя бы одно ключевое слово должно совпадать
+            )
+            
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
                 query_vector=query_embedding,
+                query_filter=query_filter,
                 limit=top_k,
                 with_payload=True
             )
-        
-            # Убедитесь, что возвращаются только тексты
-            return [{"text": hit.payload["text"]} for hit in results]  # <-- Исправлено здесь
-        
+            
+            return [{"text": hit.payload["text"]} for hit in results]
+            
         except Exception as e:
             print(f"Ошибка поиска в Qdrant: {str(e)}")
             return []
