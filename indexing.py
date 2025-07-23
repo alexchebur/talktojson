@@ -15,7 +15,7 @@ from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
 import uuid
 
 class IndexBuilder:
-    def __init__(self, chunk_size: int = 10000, chunk_overlap: int = 1000):
+    def __init__(self, chunk_size: int = 2000, chunk_overlap: int = 200):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.bm25_index = None
