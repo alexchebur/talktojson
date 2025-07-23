@@ -29,6 +29,13 @@ if not os.path.exists(EMBEDDINGS_DIR):
     os.makedirs(EMBEDDINGS_DIR)
     st.warning(f"Создана папка для эмбеддингов: {EMBEDDINGS_DIR}")
 
+DOCUMENTS_DIR = os.path.join(REPO_ROOT, "documents")
+if not os.path.exists(DOCUMENTS_DIR):
+    os.makedirs(DOCUMENTS_DIR)
+    st.info(f"Created documents directory: {DOCUMENTS_DIR}")
+
+print(f"Documents directory: {DOCUMENTS_DIR}, exists: {os.path.exists(DOCUMENTS_DIR)}")
+
 index_builder = IndexBuilder()
 print(f"Путь к папке эмбеддингов: {os.path.abspath(index_builder.EMBEDDINGS_CACHE_DIR)}")
 print(f"Папка существует: {os.path.exists(index_builder.EMBEDDINGS_CACHE_DIR)}")
