@@ -109,40 +109,53 @@ class IndexBuilder:
 
     def semantic_search_in_qdrant(self, query: str, top_k: int = 5) -> List[dict]:
         try:
-            print(f"\nИнициируем поиск для: '{query}'")
+            print(f"\n=== Начало поиска ===")
+            print(f"Запрос: '{query[:50]}...'")
         
-            # 1. Получаем эмбеддинг запроса
+            # 1. Получение эмбеддинга
+            print("Генерация эмбеддинга запроса...")
             query_embedding = self._get_embeddings_batch([query])[0]
             if not query_embedding:
-                print("Ошибка: не получен эмбеддинг запроса")
+                print("⚠️ Ошибка: пустой эмбеддинг")
                 return []
-            print(f"Размер эмбеддинга запроса: {len(query_embedding)}")
+            print(f"✅ Размер эмбеддинга: {len(query_embedding)}")
 
-            # 2. Выполняем поиск (без фильтров)
+            # 2. Поиск в Qdrant
+            print(f"Ищем в коллекции {QDRANT_COLLECTION}...")
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
                 query_vector=query_embedding,
                 limit=top_k,
                 with_payload=True,
-                score_threshold=0.3  # Пониженный порог для теста
+                score_threshold=0.1  # Временное понижение порога
             )
             print(f"Найдено результатов: {len(results)}")
 
-            # 3. Форматируем вывод
-            formatted = []
-            for hit in results:
-                item = {
-                    "text": hit.payload.get("text", ""),
-                    "score": hit.score,
-                    "source": hit.payload.get("source", "N/A")
-                }
-                print(f"- Результат (score={hit.score:.3f}): {item['text'][:50]}...")
-                formatted.append(item)
-        
-            return formatted
+            # 3. Анализ результатов
+            if not results:
+                print("ℹ️ Возможные причины:")
+                print("- Низкий score_threshold (попробуйте уменьшить)")
+                print("- Несоответствие размерности векторов")
+                print("- Проблемы с индексацией данных")
+            
+                # Диагностика: ищем любой результат без фильтров
+                test_results = self.qdrant_client.search(
+                    collection_name=QDRANT_COLLECTION,
+                    query_vector=[0.1]*768,  # Тестовый вектор
+                    limit=1
+                )
+                print(f"Тестовый поиск вернул: {len(test_results)} результатов")
+
+            return [{
+                "text": hit.payload.get("text", ""),
+                "score": hit.score,
+                "source": hit.payload.get("filename", "")
+            } for hit in results]
 
         except Exception as e:
-            print(f"Ошибка поиска: {str(e)}", exc_info=True)
+            print(f"⛔ Критическая ошибка: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def _process_text(self, text: str) -> List[str]:
