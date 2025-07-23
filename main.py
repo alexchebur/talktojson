@@ -44,6 +44,24 @@ data_processor = DataProcessor(index_builder)
 query_generator = QueryGenerator()
 web_searcher = WebSearcher()
 
+# После инициализации index_builder добавьте:
+print("=== Диагностика Qdrant ===")
+collection_info = index_builder.qdrant_client.get_collection(QDRANT_COLLECTION)
+print(f"Коллекция: {QDRANT_COLLECTION}")
+print(f"Количество записей: {collection_info.points_count}")
+print(f"Размерность векторов: {collection_info.config.params.vectors.size}")
+
+# Проверка первых 3 записей
+records = index_builder.qdrant_client.scroll(
+    collection_name=QDRANT_COLLECTION,
+    limit=3,
+    with_payload=True
+)
+print("\nПримеры записей:")
+for i, record in enumerate(records[0]):
+    print(f"{i+1}. ID: {record.id}")
+    print(f"   Текст: {record.payload.get('text', 'N/A')[:100]}...")
+
 if "web_searcher" not in st.session_state:
     st.session_state.web_searcher = web_searcher
 
