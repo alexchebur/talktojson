@@ -136,11 +136,12 @@ class DataProcessor:
         self,
         query: str,
         keywords: List[str],
-        original_chunks: List[str],
         top_k: int = 10
     ) -> List[str]:
         try:
-            qdrant_results = self.index_builder.semantic_search_in_qdrant(query, keywords, top_k)
+            qdrant_results = self.index_builder.semantic_search_in_qdrant(
+                query, keywords, top_k
+            )
             return [result["text"] for result in qdrant_results]
         except Exception as e:
             print(f"Ошибка поиска в Qdrant: {str(e)}")
