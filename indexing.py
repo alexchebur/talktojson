@@ -109,51 +109,34 @@ class IndexBuilder:
 
     def semantic_search_in_qdrant(self, query: str, top_k: int = 5) -> List[dict]:
         try:
-            print(f"\n=== Начало поиска ===")
-            print(f"Запрос: '{query[:50]}...'")
+            print(f"\nИнициируем поиск для: '{query}'")
         
-            # 1. Получение эмбеддинга
-            print("Генерация эмбеддинга запроса...")
+            # 1. Получаем эмбеддинг запроса
             query_embedding = self._get_embeddings_batch([query])[0]
             if not query_embedding:
-                print("⚠️ Ошибка: пустой эмбеддинг")
+                print("Ошибка: не получен эмбеддинг запроса")
                 return []
-            print(f"✅ Размер эмбеддинга: {len(query_embedding)}")
+           print(f"Размер эмбеддинга запроса: {len(query_embedding)}")
 
-            # 2. Поиск в Qdrant
-            print(f"Ищем в коллекции {QDRANT_COLLECTION}...")
+            # 2. Выполняем поиск (с явным указанием типов параметров)
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
                 query_vector=query_embedding,
-                limit=top_k,
+                limit=int(top_k),  # Явное преобразование в int
                 with_payload=True,
-                score_threshold=0.1  # Временное понижение порога
+                score_threshold=0.3  # Числовой параметр
             )
             print(f"Найдено результатов: {len(results)}")
 
-            # 3. Анализ результатов
-            if not results:
-                print("ℹ️ Возможные причины:")
-                print("- Низкий score_threshold (попробуйте уменьшить)")
-                print("- Несоответствие размерности векторов")
-                print("- Проблемы с индексацией данных")
-            
-                # Диагностика: ищем любой результат без фильтров
-                test_results = self.qdrant_client.search(
-                    collection_name=QDRANT_COLLECTION,
-                    query_vector=[0.1]*768,  # Тестовый вектор
-                    limit=1
-                )
-                print(f"Тестовый поиск вернул: {len(test_results)} результатов")
-
+            # 3. Форматируем вывод
             return [{
                 "text": hit.payload.get("text", ""),
-                "score": hit.score,
-                "source": hit.payload.get("filename", "")
+                "score": float(hit.score),  # Явное преобразование
+                "source": hit.payload.get("filename", "N/A")
             } for hit in results]
 
         except Exception as e:
-            print(f"⛔ Критическая ошибка: {str(e)}")
+            print(f"Ошибка поиска: {str(e)}")
             import traceback
             traceback.print_exc()
             return []
