@@ -60,7 +60,7 @@ class IndexBuilder:
 
         # Используем TextIndexParams для настройки полнотекстового индекса
         text_index_params = models.TextIndexParams(
-            tokenizer=models.TokenizerVariant.WORD,  # Токенизатор
+            tokenizer="word",  # Токенизатор
             min_token_len=2,                        # Минимальная длина токена
             max_token_len=15,                       # Максимальная длина токена
             lowercase=True                          # Приведение к нижнему регистру
