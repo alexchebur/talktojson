@@ -70,14 +70,15 @@ if uploaded_file:
         st.session_state.document_text = clean_text(file_text)
         bm25_index, original_chunks = index_builder.create_bm25_index()
         
-        if not bm25_index:
-            st.error("Не удалось создать поисковый индекс")
-            st.stop()
+        # Сохраняем индекс для последующего использования
+        st.session_state.bm25_index = bm25_index
+        st.session_state.original_chunks = original_chunks
         
-        if not index_builder.embeddings_index:
-            index_builder.build_embeddings_index("documents")
+        # Только специфичные для документа действия
+        if uploaded_file.name.endswith(".txt"):
+            st.session_state.main_doc_name = uploaded_file.name
         else:
-            st.info("Использован кэшированный индекс эмбеддингов")
+            st.session_state.main_doc_name = uploaded_file.name.split('.')[0] + ".txt"
         
         keywords = data_processor.extract_keywords(st.session_state.document_text, bm25_index)
         st.session_state.document_keywords = keywords
