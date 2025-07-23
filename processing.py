@@ -132,19 +132,18 @@ class DataProcessor:
         return self.get_unique_chunks(original_chunks, enhanced_chunks)
 
     
-    def enhance_with_qdrant_search(
-        self,
-        query: str,
-        keywords: List[str],
-        top_k: int = 10
-    ) -> List[str]:
+    def enhance_with_qdrant_search(self, query: str, top_k: int = 10) -> List[str]:
         try:
-            qdrant_results = self.index_builder.semantic_search_in_qdrant(
-                query, keywords, top_k
-            )
-            return [result["text"] for result in qdrant_results]
+            results = self.index_builder.semantic_search_in_qdrant(query, top_k)
+            if not results:
+                print("Qdrant не вернул результатов")
+                return []
+        
+            # Сортируем по score и берем текст
+            return [res["text"] for res in sorted(results, key=lambda x: x["score"], reverse=True)]
+    
         except Exception as e:
-            print(f"Ошибка поиска в Qdrant: {str(e)}")
+            print(f"Ошибка при работе с Qdrant: {str(e)}")
             return []
     
     def build_context(self, *chunk_sources: List[str]) -> str:
