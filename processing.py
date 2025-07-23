@@ -135,16 +135,16 @@ class DataProcessor:
     def enhance_with_qdrant_search(
         self,
         query: str,
+        keywords: List[str],
         original_chunks: List[str],
         top_k: int = 10
     ) -> List[str]:
         try:
-            qdrant_results = self.index_builder.semantic_search_in_qdrant(query, top_k)
-            # Возвращаем текст результатов, а не сравниваем с оригинальными чанками
+            qdrant_results = self.index_builder.semantic_search_in_qdrant(query, keywords, top_k)
             return [result["text"] for result in qdrant_results]
         except Exception as e:
             print(f"Ошибка поиска в Qdrant: {str(e)}")
-            return []  # Возвращаем пустой список вместо original_chunks
+            return []
     
     def build_context(self, *chunk_sources: List[str]) -> str:
         context_parts = []
