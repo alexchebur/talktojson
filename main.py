@@ -243,6 +243,16 @@ with st.sidebar:
         for i, query in enumerate(st.session_state.generated_queries):
             st.write(f"{i+1}. {query}")
 
+    
+    # Результаты bm25
+    if st.session_state.get('bm25_results'):
+        st.subheader("Результаты BM25 поиска")
+        for i, chunk in enumerate(st.session_state.bm25_results[:5]):  # Показываем первые 5 результатов
+            st.text_area(f"Фрагмент {i+1} (BM25)", 
+                        value=chunk[:2000],  # Ограничиваем длину для отображения
+                        height=150,
+                        key=f"bm25_chunk_{i}")
+
     # Веб-результаты по основному запросу
     if st.session_state.get('initial_web_results'):
         st.subheader("Результаты веб-поиска по основному запросу")
