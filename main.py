@@ -94,10 +94,10 @@ if uploaded_file:
         enhanced_chunks = data_processor.enhance_with_semantic_search(
             " ".join(keywords), relevant_chunks)
         
-        keywords = data_processor.extract_keywords(st.session_state.document_text, bm25_index)
+        # Добавляем поиск в Qdrant по основному запросу
         qdrant_chunks = data_processor.enhance_with_qdrant_search(
             " ".join(keywords),
-            keywords
+            relevant_chunks
         )
         st.session_state.qdrant_chunks = qdrant_chunks
         
@@ -152,12 +152,8 @@ if st.button("Отправить", key="send_btn"):
         )
         st.session_state.current_bm25_results = bm25_results
             
-        query_keywords = data_processor.extract_keywords(user_input, st.session_state.bm25_index)
-        all_qdrant_chunks = []
-        for query in [user_input] + generated_queries:
-            q_keywords = data_processor.extract_keywords(query, st.session_state.bm25_index)
-            chunks = data_processor.enhance_with_qdrant_search(query, q_keywords)
-            all_qdrant_chunks.extend(chunks)
+        query_keywords = data_processor.extract_keywords(user_input, bm25_index)
+        generated_queries = query_generator.generate(user_input, query_keywords)
         st.session_state.generated_queries = generated_queries
         
         all_knowledge_chunks = []
