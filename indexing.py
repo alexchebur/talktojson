@@ -60,16 +60,24 @@ class IndexBuilder:
                     distance=models.Distance.COSINE
                 )
             )
-            # Добавляем полнотекстовый индекс
+            # Индекс для полнотекстового поиска (текстовое поле)
             self.qdrant_client.create_payload_index(
                 collection_name=QDRANT_COLLECTION,
                 field_name="text",
                 field_schema=models.TextIndexParams(
                     type="text",
                     tokenizer=models.TokenizerType.WORD,
-                    min_token_len=2,
+                    min_token_len=2,  # Учитываем короткие слова
                     max_token_len=50,
                     lowercase=True
+                )
+            )
+            # Индекс для точного совпадения (keyword)
+            self.qdrant_client.create_payload_index(
+                collection_name=QDRANT_COLLECTION,
+                field_name="text",
+                field_schema=models.KeywordIndexParams(
+                    type="keyword"
                 )
             )
     
