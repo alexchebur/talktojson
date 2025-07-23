@@ -112,6 +112,7 @@ class IndexBuilder:
                     models.FieldCondition(
                         key="text",
                         match=models.MatchText(text=keyword)
+                    )
                 )
         
             query_filter = models.Filter(
