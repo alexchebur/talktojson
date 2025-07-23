@@ -15,7 +15,7 @@ from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
 import uuid
 
 class IndexBuilder:
-    def __init__(self, chunk_size: int = 2000, chunk_overlap: int = 200):
+    def __init__(self, chunk_size: int = 10000, chunk_overlap: int = 1000):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.bm25_index = None
@@ -47,37 +47,15 @@ class IndexBuilder:
         )
         self._ensure_qdrant_collection()
     
-    
     def _ensure_qdrant_collection(self):
         try:
             self.qdrant_client.get_collection(QDRANT_COLLECTION)
         except Exception:
-            # Создаем коллекцию с векторным индексом
             self.qdrant_client.create_collection(
                 collection_name=QDRANT_COLLECTION,
                 vectors_config=models.VectorParams(
-                    size=768,
+                    size=768,  # Для all-mpnet-base-v2
                     distance=models.Distance.COSINE
-                )
-            )
-            # Индекс для полнотекстового поиска (текстовое поле)
-            self.qdrant_client.create_payload_index(
-                collection_name=QDRANT_COLLECTION,
-                field_name="text",
-                field_schema=models.TextIndexParams(
-                    type="text",
-                    tokenizer=models.TokenizerType.WORD,
-                    min_token_len=2,  # Учитываем короткие слова
-                    max_token_len=50,
-                    lowercase=True
-                )
-            )
-            # Индекс для точного совпадения (keyword)
-            self.qdrant_client.create_payload_index(
-                collection_name=QDRANT_COLLECTION,
-                field_name="text",
-                field_schema=models.KeywordIndexParams(
-                    type="keyword"
                 )
             )
     
@@ -106,40 +84,26 @@ class IndexBuilder:
             wait=True
         )
     
-
-    def semantic_search_in_qdrant(self, query: str, top_k: int = 5) -> List[dict]:
+    def semantic_search_in_qdrant(self, query: str, top_k: int = 10) -> List[dict]:
         try:
-            print(f"\nИнициируем поиск для: '{query}'")
-        
-            # 1. Получаем эмбеддинг запроса
             query_embedding = self._get_embeddings_batch([query])[0]
             if not query_embedding:
-                print("Ошибка: не получен эмбеддинг запроса")
                 return []
-           print(f"Размер эмбеддинга запроса: {len(query_embedding)}")
-
-            # 2. Выполняем поиск (с явным указанием типов параметров)
+        
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
                 query_vector=query_embedding,
-                limit=int(top_k),  # Явное преобразование в int
-                with_payload=True,
-                score_threshold=0.3  # Числовой параметр
+                limit=top_k,
+                with_payload=True
             )
-            print(f"Найдено результатов: {len(results)}")
-
-            # 3. Форматируем вывод
-            return [{
-                "text": hit.payload.get("text", ""),
-                "score": float(hit.score),  # Явное преобразование
-                "source": hit.payload.get("filename", "N/A")
-            } for hit in results]
-
+        
+            # Убедитесь, что возвращаются только тексты
+            return [{"text": hit.payload["text"]} for hit in results]  # <-- Исправлено здесь
+        
         except Exception as e:
-            print(f"Ошибка поиска: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            print(f"Ошибка поиска в Qdrant: {str(e)}")
             return []
+    
 
     def _process_text(self, text: str) -> List[str]:
         chunks = []
