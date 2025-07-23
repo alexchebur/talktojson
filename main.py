@@ -9,7 +9,7 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 from utils import initialize_session, setup_logging, file_to_text, clean_text
-from config import GEMINI_API_KEY, API_URL, API_TIMEOUT, QDRANT_COLLECTION
+from config import GEMINI_API_KEY, API_URL, API_TIMEOUT
 from web_search import WebSearcher
 from query_generator import QueryGenerator
 from indexing import IndexBuilder
@@ -44,24 +44,6 @@ data_processor = DataProcessor(index_builder)
 query_generator = QueryGenerator()
 web_searcher = WebSearcher()
 
-# После инициализации index_builder добавьте:
-print("=== Диагностика Qdrant ===")
-collection_info = index_builder.qdrant_client.get_collection(QDRANT_COLLECTION)
-print(f"Коллекция: {QDRANT_COLLECTION}")
-print(f"Количество записей: {collection_info.points_count}")
-print(f"Размерность векторов: {collection_info.config.params.vectors.size}")
-
-# Проверка первых 3 записей
-records = index_builder.qdrant_client.scroll(
-    collection_name=QDRANT_COLLECTION,
-    limit=3,
-    with_payload=True
-)
-print("\nПримеры записей:")
-for i, record in enumerate(records[0]):
-    print(f"{i+1}. ID: {record.id}")
-    print(f"   Текст: {record.payload.get('text', 'N/A')[:100]}...")
-
 if "web_searcher" not in st.session_state:
     st.session_state.web_searcher = web_searcher
 
@@ -91,23 +73,6 @@ if uploaded_file:
         # Сохраняем индекс для последующего использования
         st.session_state.bm25_index = bm25_index
         st.session_state.original_chunks = original_chunks
-
-        # Получаем ключевые слова из документа
-        keywords = data_processor.extract_keywords(st.session_state.document_text, bm25_index)
-        st.session_state.document_keywords = keywords
-        
-        # Гибридный поиск в Qdrant по ключевым словам из документа
-        qdrant_chunks = data_processor.enhance_with_qdrant_search(
-            " ".join(keywords),
-            keywords,  # Передаем ключевые слова для полнотекстового поиска
-            top_k=5
-        )
-        st.session_state.qdrant_chunks = qdrant_chunks
-                # Добавляем в контекст
-        if st.session_state.get('qdrant_chunks'):
-            st.session_state.context_parts.append("Контекст из базы знаний Qdrant:\n" + 
-                                "\n\n".join(st.session_state.qdrant_chunks[:5]))
-
         
         # Только специфичные для документа действия
         if uploaded_file.name.endswith(".txt"):
@@ -325,14 +290,12 @@ with st.sidebar:
 
     # Фрагменты из Qdrant (по запросу)
     if st.session_state.get('all_qdrant_chunks'):
-        st.subheader("Результаты гибридного поиска)")
+        st.subheader("Фрагменты из базы знаний (по запросу)")
         for i, chunk in enumerate(st.session_state.all_qdrant_chunks[:5]):
             st.text_area(f"Фрагмент {i+1}", 
                         value=chunk[:2000], 
                         height=150,
                         key=f"all_qdrant_chunk_{i}")
-
-
 
     # Веб-результаты по уточняющим запросам
     if st.session_state.get('web_search_results'):
