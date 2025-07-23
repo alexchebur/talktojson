@@ -307,12 +307,14 @@ with st.sidebar:
 
     # Фрагменты из Qdrant (по запросу)
     if st.session_state.get('all_qdrant_chunks'):
-        st.subheader("Фрагменты из базы знаний (по запросу)")
+        st.subheader("Результаты гибридного поиска)")
         for i, chunk in enumerate(st.session_state.all_qdrant_chunks[:5]):
             st.text_area(f"Фрагмент {i+1}", 
                         value=chunk[:2000], 
                         height=150,
                         key=f"all_qdrant_chunk_{i}")
+
+
 
     # Веб-результаты по уточняющим запросам
     if st.session_state.get('web_search_results'):
