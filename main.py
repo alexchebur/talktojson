@@ -15,6 +15,7 @@ from query_generator import QueryGenerator
 from indexing import IndexBuilder
 from processing import DataProcessor
 from prompts import get_prompt
+from typing import Dict, List, Tuple, Optional
 
 logger = setup_logging()
 initialize_session()
