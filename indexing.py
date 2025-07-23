@@ -4,6 +4,7 @@ import json
 import time
 import chardet
 import numpy as np
+import pickle
 import requests
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional
@@ -46,6 +47,19 @@ class IndexBuilder:
             timeout=30
         )
         self._ensure_qdrant_collection()
+
+
+
+    def load_bm25_index(self, index_path: str) -> Tuple[Optional[BM25Okapi], List[str]]:
+        try:
+            with open(index_path, 'rb') as f:
+                data = pickle.load(f)
+                return data['index'], data['original_chunks']
+        except Exception as e:
+            print(f"Ошибка загрузки индекса BM25: {str(e)}")
+            return None, []
+
+
     
     def _ensure_qdrant_collection(self):
         try:
