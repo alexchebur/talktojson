@@ -21,7 +21,7 @@ class WebSearcher:
         self.cse_id = "a4f17489c6a0a4414"
         self.priority_sites = PRIORITY_SITES  # Используем из конфига
         
-    def perform_search(self, query: str, max_results: int = 3) -> List[Dict]:
+    def perform_search(self, query: str, max_results: int = 1) -> List[Dict]:
         try:
             priority_results = []
             
@@ -55,7 +55,7 @@ class WebSearcher:
             'key': self.api_key,
             'cx': self.cse_id,
             'q': query,
-            'num': min(max_results, 3),  # Ограничение API
+            'num': min(max_results, 1),  # Ограничение API
             'lr': 'lang_ru',
             'hl': 'ru'
         }
