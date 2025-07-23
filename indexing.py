@@ -62,15 +62,12 @@ class IndexBuilder:
         self.qdrant_client.create_payload_index(
             collection_name=QDRANT_COLLECTION,
             field_name="text",  # Поле в payload для индексации
-            schema=models.PayloadIndexParams(
-                data_type=models.PayloadSchemaType.KEYWORD,  # Тип данных
-                tokenizer=models.TokenizerVariant.WORD,       # Токенизатор (разделение по словам)
-                min_token_len=2,                             # Минимальная длина токена
-                max_token_len=15,                            # Максимальная длина токена
-                lowercase=True                               # Приведение к нижнему регистру
-            )
+            field_type=models.PayloadSchemaType.TEXT,  # Тип данных (вместо KEYWORD)
+            tokenizer=models.TokenizerVariant.WORD,    # Токенизатор
+            min_token_len=2,                          # Минимальная длина токена
+            max_token_len=15,                         # Максимальная длина токена
+            lowercase=True                            # Приведение к нижнему регистру
         )
-    
     def _upload_to_qdrant(self, text: str, embedding: List[float]):
         chunks = self._process_text(text)
         
