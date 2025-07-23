@@ -48,16 +48,25 @@ class DataProcessor:
             print(f"Ошибка извлечения ключевых слов: {str(e)}")
             return []
     
-    def search_relevant_chunks(self, bm25, original_chunks: List[str], keywords: List[str]) -> List[str]:
+
+    def search_relevant_chunks(
+        self, 
+        bm25: BM25Okapi, 
+        original_chunks: List[str], 
+        keywords: List[str],
+        top_n: int = 3  # Возвращаем только 3 лучших результата
+    ) -> List[str]:
         try:
-            query_weights = {term: 2 for term in keywords}
-            weighted_query = []
-            for term, weight in query_weights.items():
-                weighted_query.extend([term] * weight)
+            if not keywords or not bm25 or not original_chunks:
+                return []
+                
+            # Используем более эффективный метод BM25
+            tokenized_query = " ".join(keywords).split()
+            scores = bm25.get_scores(tokenized_query)
             
-            doc_scores = np.array(bm25.get_scores(weighted_query))
-            sorted_indices = sorted(range(len(doc_scores)), key=lambda i: doc_scores[i], reverse=True)
-            return [original_chunks[i] for i in sorted_indices if doc_scores[i] > 0.0][:5]
+            # Получаем топ-N результатов
+            top_indices = np.argsort(scores)[::-1][:top_n]
+            return [original_chunks[i] for i in top_indices if scores[i] > 0]
         
         except Exception as e:
             print(f"Ошибка поиска: {str(e)}")
