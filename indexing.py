@@ -49,15 +49,27 @@ class IndexBuilder:
     
     def _ensure_qdrant_collection(self):
         try:
+            # Проверяем наличие коллекции
             self.qdrant_client.get_collection(QDRANT_COLLECTION)
         except Exception:
+            # Создаем коллекцию с векторами
             self.qdrant_client.create_collection(
                 collection_name=QDRANT_COLLECTION,
-                vectors_config=models.VectorParams(
-                    size=768,  # Для all-mpnet-base-v2
-                    distance=models.Distance.COSINE
-                )
+                vectors_config=models.VectorParams(size=768, distance=models.Distance.COSINE)
             )
+    
+        # Создаем полнотекстовый индекс для поля "text"
+        self.qdrant_client.create_payload_index(
+            collection_name=QDRANT_COLLECTION,
+            field_name="text",  # Поле в payload для индексации
+            schema=models.PayloadIndexParams(
+                data_type=models.PayloadSchemaType.KEYWORD,  # Тип данных
+                tokenizer=models.TokenizerVariant.WORD,       # Токенизатор (разделение по словам)
+                min_token_len=2,                             # Минимальная длина токена
+                max_token_len=15,                            # Максимальная длина токена
+                lowercase=True                               # Приведение к нижнему регистру
+            )
+        )
     
     def _upload_to_qdrant(self, text: str, embedding: List[float]):
         chunks = self._process_text(text)
@@ -84,22 +96,37 @@ class IndexBuilder:
             wait=True
         )
     
-    def semantic_search_in_qdrant(self, query: str, top_k: int = 10) -> List[dict]:
+    def semantic_search_in_qdrant(self, query: str, keywords: List[str], top_k: int = 10) -> List[dict]:
         try:
+            # Генерируем эмбеддинг для векторного поиска
             query_embedding = self._get_embeddings_batch([query])[0]
             if not query_embedding:
                 return []
-        
+
+            # Создаем фильтр для полнотекстового поиска
+            filter_conditions = [
+                models.FieldCondition(
+                    key="text",  # Поле в payload для поиска
+                    match=models.MatchText(text=keyword)  # Поиск совпадений по ключевому слову
+                ) for keyword in keywords
+            ]
+
+            # Выполняем поиск с фильтром
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
                 query_vector=query_embedding,
+                query_filter=models.Filter(must=filter_conditions),  # Комбинируем условия
                 limit=top_k,
                 with_payload=True
             )
-        
-            # Убедитесь, что возвращаются только тексты
-            return [{"text": hit.payload["text"]} for hit in results]  # <-- Исправлено здесь
-        
+
+            # Возвращаем результаты
+            return [{
+                "text": hit.payload["text"],
+                "filename": hit.payload["filename"],
+                "score": hit.score
+            } for hit in results]
+    
         except Exception as e:
             print(f"Ошибка поиска в Qdrant: {str(e)}")
             return []
