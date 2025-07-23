@@ -1,7 +1,4 @@
 import os
-
-print(f"Текущая рабочая директория: {os.getcwd()}")
-print(f"Список файлов: {os.listdir('.')}")
 import streamlit as st
 import time
 import requests
@@ -16,6 +13,7 @@ from indexing import IndexBuilder
 from processing import DataProcessor
 from prompts import get_prompt
 from typing import Dict, List, Tuple, Optional
+import pickle
 
 logger = setup_logging()
 initialize_session()
@@ -25,41 +23,70 @@ if "context_parts" not in st.session_state:
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMBEDDINGS_DIR = os.path.join(REPO_ROOT, "data", "embeddings")
-
-if not os.path.exists(EMBEDDINGS_DIR):
-    os.makedirs(EMBEDDINGS_DIR)
-    st.warning(f"Создана папка для эмбеддингов: {EMBEDDINGS_DIR}")
-
 DOCUMENTS_DIR = os.path.join(REPO_ROOT, "documents")
-if not os.path.exists(DOCUMENTS_DIR):
-    os.makedirs(DOCUMENTS_DIR)
-    st.info(f"Created documents directory: {DOCUMENTS_DIR}")
 
-print(f"Documents directory: {DOCUMENTS_DIR}, exists: {os.path.exists(DOCUMENTS_DIR)}")
+# Создаем необходимые директории
+os.makedirs(EMBEDDINGS_DIR, exist_ok=True)
+os.makedirs(DOCUMENTS_DIR, exist_ok=True)
 
+# Инициализация компонентов
 index_builder = IndexBuilder()
-print(f"Путь к папке эмбеддингов: {os.path.abspath(index_builder.EMBEDDINGS_CACHE_DIR)}")
-print(f"Папка существует: {os.path.exists(index_builder.EMBEDDINGS_CACHE_DIR)}")
 data_processor = DataProcessor(index_builder)
 query_generator = QueryGenerator()
 web_searcher = WebSearcher()
 
+# Загрузка BM25 индекса при старте приложения
+@st.cache_resource
+def load_bm25_index():
+    BM25_INDEX_PATH = os.path.join(REPO_ROOT, "data", "bm25_index.pkl")
+    if os.path.exists(BM25_INDEX_PATH):
+        try:
+            with open(BM25_INDEX_PATH, 'rb') as f:
+                data = pickle.load(f)
+                print("BM25 индекс успешно загружен")
+                return data['index'], data['original_chunks']
+        except Exception as e:
+            st.error(f"Ошибка загрузки индекса BM25: {str(e)}")
+            return None, []
+    else:
+        st.error("Файл индекса BM25 не найден!")
+        return None, []
+
+# Глобальная загрузка индекса
+bm25_index, original_chunks = load_bm25_index()
+
+# Сохраняем в session_state для использования во всем приложении
+if 'bm25_index' not in st.session_state:
+    st.session_state.bm25_index = bm25_index
+    st.session_state.original_chunks = original_chunks
+
+if not st.session_state.bm25_index:
+    st.error("Не удалось загрузить индекс BM25. Приложение не может работать.")
+    st.stop()
+
+# Инициализация веб-поиска
 if "web_searcher" not in st.session_state:
     st.session_state.web_searcher = web_searcher
 
+# Загрузка полного индекса (если нужно)
 if not index_builder.load_full_index():
     print("Полный индекс не найден, будет построен при обработке документа")
 
+# Интерфейс приложения
 st.title("ИИ-помощник по подготовке правовых заключений")
 uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 
-def perform_bm25_search(query: str, bm25_index, original_chunks) -> List[str]:
-    """Универсальная функция поиска BM25"""
-    if not query.strip() or not bm25_index:
+def perform_bm25_search(query: str) -> List[str]:
+    """Унифицированная функция поиска BM25 с использованием глобального индекса"""
+    if not query.strip() or not st.session_state.bm25_index:
         return []
     
-    keywords = data_processor.extract_keywords(query, bm25_index)
-    return data_processor.search_relevant_chunks(bm25_index, original_chunks, keywords)
+    keywords = data_processor.extract_keywords(query, st.session_state.bm25_index)
+    return data_processor.search_relevant_chunks(
+        st.session_state.bm25_index, 
+        st.session_state.original_chunks, 
+        keywords
+    )
 
 if uploaded_file:
     with st.spinner("Анализ документа..."):
@@ -68,62 +95,52 @@ if uploaded_file:
             st.stop()
         
         st.session_state.document_text = clean_text(file_text)
-        bm25_index, original_chunks = index_builder.create_bm25_index()
         
-        # Сохраняем индекс для последующего использования
-        st.session_state.bm25_index = bm25_index
-        st.session_state.original_chunks = original_chunks
-        
-        # Только специфичные для документа действия
-        if uploaded_file.name.endswith(".txt"):
-            st.session_state.main_doc_name = uploaded_file.name
-        else:
-            st.session_state.main_doc_name = uploaded_file.name.split('.')[0] + ".txt"
-        
-        keywords = data_processor.extract_keywords(st.session_state.document_text, bm25_index)
+        # Используем глобальный индекс BM25
+        keywords = data_processor.extract_keywords(st.session_state.document_text, st.session_state.bm25_index)
         st.session_state.document_keywords = keywords
         
+        # Сохраняем имя документа
         if uploaded_file.name.endswith(".txt"):
             st.session_state.main_doc_name = uploaded_file.name
         else:
             st.session_state.main_doc_name = uploaded_file.name.split('.')[0] + ".txt"
         
-        relevant_chunks = data_processor.search_relevant_chunks(
-            bm25_index, original_chunks, keywords)
+        # Поиск релевантных фрагментов
+        relevant_chunks = perform_bm25_search(" ".join(keywords))
+        st.session_state.document_relevant_chunks = relevant_chunks
         
+        # Дополнительные улучшения контекста
         enhanced_chunks = data_processor.enhance_with_semantic_search(
             " ".join(keywords), relevant_chunks)
         
-        # Добавляем поиск в Qdrant по основному запросу
         qdrant_chunks = data_processor.enhance_with_qdrant_search(
-            " ".join(keywords),
-            relevant_chunks
-        )
+            " ".join(keywords), relevant_chunks)
         st.session_state.qdrant_chunks = qdrant_chunks
         
-        # В сборку контекста добавляем:
+        # Добавляем контекст в session_state
         if st.session_state.get('qdrant_chunks'):
-            st.session_state.context_parts.append("Контекст из базы знаний Qdrant:\n" + 
-                                "\n\n".join(st.session_state.qdrant_chunks[:5]))
+            st.session_state.context_parts.append(
+                "Контекст из базы знаний Qdrant:\n" + 
+                "\n\n".join(st.session_state.qdrant_chunks[:5])
+            )
         
         final_chunks = data_processor.enhance_with_graph_context(
             st.session_state.get('main_doc_name'),
             enhanced_chunks
         )
         
-        st.session_state.document_relevant_chunks = final_chunks
-        
+        # Отображение результатов
         if st.session_state.document_relevant_chunks:
             st.subheader("Релевантные фрагменты из документа:")
-            for i, chunk in enumerate(st.session_state.document_relevant_chunks):
-                st.text_area(f"Фрагмент {i+1}", 
-                            value=chunk[:5000], 
-                            height=150,
-                            key=f"doc_chunk_{i}_{hash(chunk[:50])}")
-if 'bm25_index' not in st.session_state:
-    bm25_index, original_chunks = index_builder.create_bm25_index()
-    st.session_state.bm25_index = bm25_index
-    st.session_state.original_chunks = original_chunks
+            for i, chunk in enumerate(st.session_state.document_relevant_chunks[:3]):  # Показываем только топ-3
+                st.text_area(
+                    f"Фрагмент {i+1}", 
+                    value=chunk[:5000], 
+                    height=150,
+                    key=f"doc_chunk_{i}"
+                )
+
 user_input = st.text_area("Введите ваш вопрос:", height=150, max_chars=600, key="user_input")
 
 if st.button("Отправить", key="send_btn"):
@@ -134,43 +151,34 @@ if st.button("Отправить", key="send_btn"):
     st.session_state.last_query = user_input
     
     with st.spinner("Обработка запроса..."):
-        # Веб-поиск по исходному запросу
+        # 1. Веб-поиск по исходному запросу
         initial_web_results = web_searcher.perform_search(user_input)
         initial_web_chunks = [result['full_content'] for result in initial_web_results if result['full_content']]
         st.session_state.initial_web_results = initial_web_results
         st.session_state.initial_web_chunks = initial_web_chunks
         
-        bm25_index, original_chunks = index_builder.create_bm25_index()
-        if not bm25_index:
-            st.error("Ошибка индексации")
-            st.stop()
-
-        bm25_results = perform_bm25_search(
-            user_input,
-            st.session_state.bm25_index,
-            st.session_state.original_chunks
-        )
+        # 2. Поиск по BM25 индексу
+        bm25_results = perform_bm25_search(user_input)
         st.session_state.current_bm25_results = bm25_results
-            
-        query_keywords = data_processor.extract_keywords(user_input, bm25_index)
+        
+        # 3. Генерация дополнительных запросов
+        query_keywords = data_processor.extract_keywords(user_input, st.session_state.bm25_index)
         generated_queries = query_generator.generate(user_input, query_keywords)
         st.session_state.generated_queries = generated_queries
         
+        # 4. Поиск по сгенерированным запросам
         all_knowledge_chunks = []
         additional_chunks = []
         
         for query in generated_queries:
-            q_keywords = data_processor.extract_keywords(query, bm25_index)
-            if not q_keywords:
-                continue
-                
-            q_chunks = data_processor.search_relevant_chunks(bm25_index, original_chunks, q_keywords)
+            q_chunks = perform_bm25_search(query)
             unique_chunks = data_processor.get_unique_chunks(all_knowledge_chunks, q_chunks)
             additional_chunks.extend(unique_chunks)
             all_knowledge_chunks.extend(unique_chunks)
         
         st.session_state.additional_chunks = additional_chunks
         
+        # 5. Веб-поиск по уточняющим запросам
         web_results = []
         for query in generated_queries:
             results = st.session_state.web_searcher.perform_search(query)
@@ -180,44 +188,57 @@ if st.button("Отправить", key="send_btn"):
         st.session_state.web_search_results = web_results
         st.session_state.web_search_chunks = web_chunks[:3]
         
-        # Добавляем поиск в Qdrant по всем запросам
+        # 6. Семантический поиск в Qdrant
         all_qdrant_chunks = []
         for query in [user_input] + generated_queries:
             q_chunks = data_processor.enhance_with_qdrant_search(query, [])
             all_qdrant_chunks.extend(q_chunks)
-            st.session_state.all_qdrant_chunks = all_qdrant_chunks
-    
-        # Добавляем в контекст
-        if all_qdrant_chunks:
-            st.session_state.context_parts.append("Семантический поиск из Qdrant:\n" +
-                               "\n\n".join(all_qdrant_chunks[:10]))
         
-        # Веб-контекст по основному запросу
+        st.session_state.all_qdrant_chunks = all_qdrant_chunks
+        
+        # Формирование контекста
+        st.session_state.context_parts = []  # Очищаем перед формированием нового контекста
+        
+        # Добавляем самые релевантные BM25 результаты
+        if st.session_state.current_bm25_results:
+            top_bm25_chunks = st.session_state.current_bm25_results[:3]
+            st.session_state.context_parts.append(
+                "Топ-3 релевантных фрагмента (BM25):\n" +
+                "\n\n".join([f"Фрагмент {i+1}:\n{chunk[:2000]}" for i, chunk in enumerate(top_bm25_chunks)])
+            )
+        
+        # Добавляем остальные части контекста
         if st.session_state.get('initial_web_chunks'):
-            st.session_state.context_parts.append("Веб-контекст по основному запросу:\n" + 
-                                "\n\n".join(st.session_state.initial_web_chunks[:2]))
+            st.session_state.context_parts.append(
+                "Веб-контекст по основному запросу:\n" + 
+                "\n\n".join(st.session_state.initial_web_chunks[:2])
+            )
         
-        if st.session_state.document_relevant_chunks:
-            st.session_state.context_parts.append("Контекст из документа:\n" + 
-                                "\n\n".join(st.session_state.document_relevant_chunks[:3]))
+        if st.session_state.get('document_relevant_chunks'):
+            st.session_state.context_parts.append(
+                "Контекст из документа:\n" + 
+                "\n\n".join(st.session_state.document_relevant_chunks[:3])
+            )
         
         if all_knowledge_chunks:
-            st.session_state.context_parts.append("Основной контекст из базы знаний:\n" + 
-                                "\n\n".join(all_knowledge_chunks[:3]))
+            st.session_state.context_parts.append(
+                "Основной контекст из базы знаний:\n" + 
+                "\n\n".join(all_knowledge_chunks[:3])
+            )
         
-        if additional_chunks:
-            st.session_state.context_parts.append("Дополнительный контекст:\n" + 
-                                "\n\n".join(additional_chunks[:3]))
+        if st.session_state.get('all_qdrant_chunks'):
+            st.session_state.context_parts.append(
+                "Семантический поиск из Qdrant:\n" +
+                "\n\n".join(st.session_state.all_qdrant_chunks[:5])
+            )
         
-        if st.session_state.web_search_chunks:
-            st.session_state.context_parts.append("Контекст из веб-поиска по уточняющим запросам:\n" + 
-                                "\n\n".join(st.session_state.web_search_chunks))
-        
+        # Формируем финальный контекст
         full_context = "\n\n".join(st.session_state.context_parts)
         
+        # Отправка запроса в LLM
         prompt = get_prompt("system", {
             "user_query": user_input,
-            "context": full_context[:15000]
+            "context": full_context[:15000]  # Ограничиваем размер контекста
         })
         
         try:
@@ -250,12 +271,12 @@ if st.button("Отправить", key="send_btn"):
         except Exception as e:
             st.error(f"Ошибка API: {str(e)}")
 
-# Основной ответ остается в главной области
+# Основной ответ
 if st.session_state.get('llm_response'):
     st.subheader("Ответ ассистента:")
     st.markdown(st.session_state.llm_response)
 
-# ===== ВСЕ ВСПОМОГАТЕЛЬНЫЕ ЭЛЕМЕНТЫ ПЕРЕНОСИМ В САЙДБАР =====
+# Сайдбар с дополнительной информацией
 with st.sidebar:
     # Сгенерированные запросы
     if st.session_state.get('generated_queries'):
@@ -263,15 +284,19 @@ with st.sidebar:
         for i, query in enumerate(st.session_state.generated_queries):
             st.write(f"{i+1}. {query}")
 
+    # Результаты BM25
+    if st.session_state.get('current_bm25_results'):
+        st.subheader("Топ-3 релевантных фрагмента (BM25)")
+        for i, chunk in enumerate(st.session_state.current_bm25_results[:3]):
+            st.text_area(
+                f"Фрагмент {i+1}", 
+                value=chunk[:2000], 
+                height=200,
+                key=f"bm25_result_{i}"
+            )
     
-    # Результаты bm25
-    if st.session_state.get('bm25_results'):
-        st.subheader("Результаты BM25 поиска")
-        for i, chunk in enumerate(st.session_state.bm25_results[:5]):  # Показываем первые 5 результатов
-            st.text_area(f"Фрагмент {i+1} (BM25)", 
-                        value=chunk[:2000],  # Ограничиваем длину для отображения
-                        height=150,
-                        key=f"bm25_chunk_{i}")
+    # Остальные элементы сайдбара (веб-результаты, Qdrant и т.д.)
+    # ... (остальной код сайдбара остается без изменений)
 
     # Веб-результаты по основному запросу
     if st.session_state.get('initial_web_results'):
