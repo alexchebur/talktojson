@@ -165,6 +165,12 @@ if st.button("Отправить", key="send_btn"):
                 
                 if not bm25_results:
                     st.session_state.bm25_search_error = "Не найдено релевантных фрагментов"
+                
+            # ... (остальная обработка запроса) ...
+
+        except Exception as e:
+            st.session_state.bm25_search_error = f"Ошибка поиска BM25: {str(e)}"
+            logger.error(f"BM25 search failed: {str(e)}")
         
         # 1. Веб-поиск по исходному запросу
         initial_web_results = web_searcher.perform_search(user_input)
