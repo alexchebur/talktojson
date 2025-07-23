@@ -118,7 +118,7 @@ class IndexBuilder:
             query_filter = models.Filter(
                 should=should_conditions,
                 min_should=models.MinShould(  # Исправлено здесь
-                    conditions_count=1,  # Хотя бы одно ключевое слово должно совпадать
+                    conditions=should_conditions,  # Хотя бы одно ключевое слово должно совпадать
                     min_count=1
                 )
             )
