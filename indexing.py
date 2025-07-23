@@ -141,9 +141,9 @@ class IndexBuilder:
         
             return formatted
 
-    except Exception as e:
-        print(f"Ошибка поиска: {str(e)}", exc_info=True)
-        return []
+        except Exception as e:
+            print(f"Ошибка поиска: {str(e)}", exc_info=True)
+            return []
 
     def _process_text(self, text: str) -> List[str]:
         chunks = []
