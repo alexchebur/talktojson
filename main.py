@@ -38,16 +38,16 @@ web_searcher = WebSearcher()
 
 def find_index_file():
     """Поиск файла индекса без использования Streamlit элементов"""
-    possible_paths = [
-        Path(__file__).parent / "data" / "bm25_index.pkl",
-        Path.cwd() / "data" / "bm25_index.pkl",
-        Path("data/bm25_index.pkl"),
-        Path("/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl")
-    ]
-    for path in possible_paths:
-        if path.exists():
-            return path
-    return None
+    try:
+        possible_paths = [
+            Path(__file__).parent / "data" / "bm25_index.pkl",
+            Path.cwd() / "data" / "bm25_index.pkl",
+            Path("data/bm25_index.pkl"),
+            Path("/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl")
+        ]
+        return next((p for p in possible_paths if p.exists()), None)
+    except Exception:
+        return None
 
 def load_index_data(index_path):
     """Чистая загрузка данных без Streamlit элементов"""
@@ -60,50 +60,49 @@ def load_index_data(index_path):
         pass
     return None, None
 
-def initialize_app():
-    """Основная инициализация приложения"""
-    # Поиск файла индекса
+def show_error(message, details=None):
+    """Показ ошибки с дополнительными деталями"""
+    st.error(message)
+    if details:
+        with st.expander("Детали ошибки"):
+            st.write(details)
+    st.stop()
+
+# Основная инициализация
+if 'app_initialized' not in st.session_state:
+    # 1. Поиск файла индекса
     index_path = find_index_file()
     
     if not index_path:
-        st.error("Файл индекса не найден. Проверьте следующие пути:")
-        st.code("\n".join([
-            "data/bm25_index.pkl",
-            "/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl"
-        ]))
-        st.stop()
+        show_error(
+            "Файл индекса не найден",
+            "Проверьте наличие файла bm25_index.pkl в одной из папок:\n"
+            "- data/bm25_index.pkl\n"
+            "- /content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl"
+        )
     
-    # Загрузка данных
+    # 2. Загрузка данных
     bm25_index, original_chunks = load_index_data(index_path)
     
     if not bm25_index:
-        st.error(f"Не удалось загрузить индекс из {index_path}")
-        st.write("Возможные причины:")
-        st.write("- Файл поврежден")
-        st.write("- Несовместимость версий Python")
-        st.write("- Неправильный формат файла")
-        st.stop()
+        show_error(
+            f"Не удалось загрузить индекс из {index_path}",
+            "Возможные причины:\n"
+            "1. Файл поврежден\n"
+            "2. Несовместимость версий Python\n"
+            "3. Неправильный формат файла"
+        )
     
-    # Сохранение в session_state
+    # 3. Сохранение в session_state
     st.session_state.update({
         'bm25_index': bm25_index,
         'original_chunks': original_chunks,
-        'index_loaded': True
+        'app_initialized': True
     })
-    
-    # Отладочная информация
-    if st.session_state.get('bm25_index'):
-        st.success(f"Индекс успешно загружен из {index_path}")
-        with st.expander("Техническая информация"):
-            st.write(f"Тип индекса: {type(st.session_state.bm25_index)}")
-            st.write(f"Количество фрагментов: {len(st.session_state.original_chunks)}")
-            if st.session_state.original_chunks:
-                st.write("Пример фрагмента:", st.session_state.original_chunks[0][:100] + "...")
 
-# Инициализация приложения
-if 'index_loaded' not in st.session_state:
-    initialize_app()
-
+    # 4. Успешная загрузка
+    st.success(f"Индекс успешно загружен из {index_path}")
+    st.write(f"Загружено фрагментов: {len(original_chunks)}")
 # Инициализация веб-поиска
 if "web_searcher" not in st.session_state:
     st.session_state.web_searcher = web_searcher
