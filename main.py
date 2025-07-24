@@ -101,7 +101,7 @@ def initialize_application():
     
     if not bm25_index or not original_chunks:
         st.error(f"Не удалось загрузить корректные данные из {index_path}")
-        st.stop()
+        #st.stop()
     
     # Сохранение в session state
     st.session_state.update({
