@@ -2,6 +2,7 @@ import os
 import streamlit as st
 import time
 import requests
+import json
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -37,15 +38,14 @@ query_generator = QueryGenerator()
 web_searcher = WebSearcher()
 
 def find_index_file():
-    """Надежный поиск файла индекса с проверкой"""
+    """Поиск файла индекса в формате .json"""
     try:
         possible_paths = [
-            Path("data/bm25_index.pkl"),
-            Path(__file__).parent / "data" / "bm25_index.pkl",
-            Path.cwd() / "data" / "bm25_index.pkl",
-            Path("/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl")
+            Path("data/bm25_index.json"),
+            Path(__file__).parent / "data" / "bm25_index.json",
+            Path.cwd() / "data" / "bm25_index.json",
+            Path("/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.json")
         ]
-        
         for path in possible_paths:
             try:
                 if path.exists() and path.is_file() and os.path.getsize(path) > 0:
@@ -56,72 +56,84 @@ def find_index_file():
     except Exception:
         return None
 
+
 def validate_index_data(data):
-    """Проверка структуры загруженных данных"""
+    """Проверка структуры данных из JSON"""
     if not isinstance(data, dict):
         return False
     if 'index' not in data or 'original_chunks' not in data:
         return False
     if not isinstance(data['original_chunks'], list):
         return False
+    # Проверим, что 'index' — это словарь с нужной структурой (например, содержит 'doc_freqs', 'idf', 'corpus_size' и т.д.)
+    required_keys = {'doc_freqs', 'idf', 'corpus_size', 'avgdl', 'corpus'}
+    if not required_keys.issubset(data['index'].keys()):
+        return False
     return True
 
+
 def load_index_safely(index_path):
-    """Безопасная загрузка с проверкой на каждом этапе"""
+    """Безопасная загрузка индекса из JSON"""
     if not index_path:
         return None, None
-        
     try:
-        with open(index_path, 'rb') as f:
-            data = pickle.load(f)
-            
+        with open(index_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)  # Загружаем как JSON
         if not validate_index_data(data):
+            st.error("Некорректная структура данных в JSON-файле.")
             return None, None
-            
-        return data['index'], data['original_chunks']
-    except Exception:
+
+        # Преобразуем списки обратно в нужные типы (например, corpus — это список списков слов)
+        index_data = data['index']
+
+        # Важно: BM25 из пакета `rank_bm25` ожидает:
+        # - doc_freqs: dict
+        # - idf: dict
+        # - corpus: list of lists (токенизированные документы)
+        # - corpus_size: int
+        # - avgdl: float
+
+        # Преобразуем corpus: если он был сохранён как список строк, нужно токенизировать заново
+        # Лучше сохранять corpus как list[list[str]] в JSON
+        # Если corpus в JSON — это строки, раскомментируйте следующую строку:
+        # index_data['corpus'] = [doc.split() for doc in index_data['corpus']]  # Простая токенизация
+
+        return index_data, data['original_chunks']
+    except Exception as e:
+        st.error(f"Ошибка при загрузке JSON: {str(e)}")
         return None, None
 
+
 def initialize_application():
-    """Основная функция инициализации"""
-    # Поиск файла
+    """Инициализация приложения с загрузкой JSON-индекса"""
     index_path = find_index_file()
-    
     if not index_path:
         st.error("Файл индекса не найден. Проверьте следующие пути:")
         st.code("\n".join([
-            "data/bm25_index.pkl",
-            os.path.join(os.path.dirname(__file__), "data", "bm25_index.pkl"),
-            "/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl"
+            "data/bm25_index.json",
+            os.path.join(os.path.dirname(__file__), "data", "bm25_index.json"),
+            "/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.json"
         ]))
-        #st.stop()
-    
-    # Загрузка данных
+        return
+
     bm25_index, original_chunks = load_index_safely(index_path)
-    
     if not bm25_index or not original_chunks:
         st.error(f"Не удалось загрузить корректные данные из {index_path}")
-        #st.stop()
-    
-    # Сохранение в session state
+        return
+
     st.session_state.update({
         'bm25_index': bm25_index,
         'original_chunks': original_chunks,
         'index_initialized': True
     })
-    
-    # Отображение информации о загрузке
+
     st.success(f"Индекс успешно загружен из: {index_path}")
-    st.write(f"Количество загруженных фрагментов: {len(original_chunks) if original_chunks else 0}")
+    st.write(f"Количество загруженных фрагментов: {len(original_chunks)}")
 
 # Инициализация приложения
 if 'index_initialized' not in st.session_state:
     initialize_application()
 
-# Проверка инициализации перед продолжением
-if not st.session_state.get('index_initialized', False):
-    st.error("Приложение не было инициализировано")
-    #st.stop()
 
 
 
