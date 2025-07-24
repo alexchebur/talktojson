@@ -110,7 +110,7 @@ def initialize_session_with_index():
             - Существует ли файл по пути: `{Path(__file__).parent/"data/bm25_index.pkl"}`
             - Совпадает ли версия Python с той, где создавался индекс
             """)
-            st.stop()
+            #st.stop()
 
 # Инициализация при запуске приложения
 initialize_session_with_index()
