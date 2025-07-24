@@ -73,34 +73,46 @@ def validate_index_data(data):
 
 
 def load_index_safely(index_path):
-    """Безопасная загрузка индекса из JSON"""
+    """Загружаем токенизированные документы и строим BM25 индекс на лету"""
     if not index_path:
         return None, None
     try:
         with open(index_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)  # Загружаем как JSON
-        if not validate_index_data(data):
-            st.error("Некорректная структура данных в JSON-файле.")
+            data = json.load(f)
+
+        # Проверяем минимальную структуру
+        if 'tokenized_docs' not in data or not isinstance(data['tokenized_docs'], list):
+            st.error("В JSON отсутствует 'tokenized_docs'")
             return None, None
 
-        # Преобразуем списки обратно в нужные типы (например, corpus — это список списков слов)
-        index_data = data['index']
+        tokenized_docs = data['tokenized_docs']
+        metadata = data.get('metadata', [])
 
-        # Важно: BM25 из пакета `rank_bm25` ожидает:
-        # - doc_freqs: dict
-        # - idf: dict
-        # - corpus: list of lists (токенизированные документы)
-        # - corpus_size: int
-        # - avgdl: float
+        # Извлекаем оригинальные фрагменты (если есть) или оставляем как есть
+        original_chunks = [
+            meta.get('filename', f"Документ_{i}") for i, meta in enumerate(metadata)
+        ] if metadata else [f"Фрагмент_{i}" for i in range(len(tokenized_docs))]
 
-        # Преобразуем corpus: если он был сохранён как список строк, нужно токенизировать заново
-        # Лучше сохранять corpus как list[list[str]] в JSON
-        # Если corpus в JSON — это строки, раскомментируйте следующую строку:
-        # index_data['corpus'] = [doc.split() for doc in index_data['corpus']]  # Простая токенизация
+        # Строим BM25 индекс из tokenized_docs
+        from rank_bm25 import BM25Okapi
+        bm25_model = BM25Okapi(tokenized_docs)
 
-        return index_data, data['original_chunks']
+        # Подготовим данные, которые можно использовать как "индекс" в session_state
+        index_data = {
+            'corpus': tokenized_docs,
+            'model': bm25_model,  # сохраним сам объект
+            'doc_freqs': dict(bm25_model.doc_freqs),
+            'idf': dict(bm25_model.idf),
+            'corpus_size': bm25_model.corpus_size,
+            'avgdl': float(bm25_model.avgdl)
+        }
+
+        return index_data, original_chunks
+
     except Exception as e:
-        st.error(f"Ошибка при загрузке JSON: {str(e)}")
+        st.error(f"Ошибка при загрузке или построении индекса: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
         return None, None
 
 
