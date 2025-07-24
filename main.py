@@ -66,7 +66,7 @@ def show_error(message, details=None):
     if details:
         with st.expander("Детали ошибки"):
             st.write(details)
-    st.stop()
+    #st.stop()
 
 # Основная инициализация
 if 'app_initialized' not in st.session_state:
