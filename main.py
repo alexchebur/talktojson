@@ -36,71 +36,49 @@ data_processor = DataProcessor(index_builder)
 query_generator = QueryGenerator()
 web_searcher = WebSearcher()
 
-def get_absolute_index_path():
-    """Определяем абсолютный путь к файлу индекса"""
+def get_index_path():
+    """Определяем путь к файлу индекса без использования Streamlit элементов"""
     try:
         # Пробуем несколько возможных путей
         possible_paths = [
-            # 1. Относительно текущего файла
             Path(__file__).parent / "data" / "bm25_index.pkl",
-            # 2. В корне проекта
             Path.cwd() / "data" / "bm25_index.pkl",
-            # 3. Абсолютный путь (для Colab и других окружений)
             Path("/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl"),
-            # 4. Альтернативный вариант
             Path("data/bm25_index.pkl")
         ]
         
         for path in possible_paths:
             if path.exists():
-                st.toast(f"Найден файл индекса по пути: {path}", icon="✅")
                 return path
-                
-        st.error("Файл индекса не найден ни по одному из путей:")
-        for p in possible_paths:
-            st.write(f"- {p}")
         return None
-        
-    except Exception as e:
-        st.error(f"Ошибка определения пути: {str(e)}")
+    except Exception:
         return None
 
-@st.cache_resource
 def load_bm25_index():
-    """Загрузка индекса с расширенной обработкой ошибок"""
+    """Загрузка индекса без использования Streamlit элементов"""
     try:
-        index_path = get_absolute_index_path()
+        index_path = get_index_path()
         if not index_path:
             return None, None
         
         with open(index_path, 'rb') as f:
             data = pickle.load(f)
             
-            # Проверяем структуру данных
             if not isinstance(data, dict):
-                st.error("Файл индекса должен содержать словарь")
                 return None, None
                 
             if 'index' not in data or 'original_chunks' not in data:
-                st.error("Некорректная структура файла индекса")
-                st.write("Ожидаемые ключи: 'index', 'original_chunks'")
-                st.write(f"Найденные ключи: {list(data.keys())}")
                 return None, None
                 
-            st.success(f"Индекс успешно загружен из: {index_path}")
             return data['index'], data['original_chunks']
             
-    except pickle.UnpicklingError as e:
-        st.error(f"Ошибка формата файла (возможно файл поврежден): {str(e)}")
-    except Exception as e:
-        st.error(f"Неожиданная ошибка при загрузке индекса: {str(e)}")
-    
-    return None, None
+    except Exception:
+        return None, None
 
 def initialize_session_with_index():
     """Инициализация сессии с загрузкой индекса"""
     if 'bm25_initialized' not in st.session_state:
-        # Загрузка индекса
+        # Загрузка индекса (без кэширования)
         bm25_index, original_chunks = load_bm25_index()
         
         # Сохраняем в session_state
@@ -110,26 +88,21 @@ def initialize_session_with_index():
             'bm25_initialized': True
         })
         
-        # Проверка успешности загрузки
+        # Проверка и отображение ошибок
         if not bm25_index:
-            st.error("""
-            **Критическая ошибка:** Не удалось загрузить индекс BM25.
+            st.error("### Не удалось загрузить индекс BM25")
             
-            **Рекомендации:**
-            1. Убедитесь, что файл `bm25_index.pkl` находится в папке `data/`
-            2. Проверьте, что файл создан в той же версии Python
-            3. Попробуйте пересоздать индекс
-            
-            **Техническая информация:**
-            ```python
-            # Для проверки файла вручную:
-            import pickle
-            with open("data/bm25_index.pkl", 'rb') as f:
-                data = pickle.load(f)
-                print(type(data))  # Должен быть dict
-                print(data.keys())  # Должны быть 'index' и 'original_chunks'
-            ```
-            """)
+            # Показываем информацию о путях
+            index_path = get_index_path()
+            if index_path:
+                st.write(f"Файл найден по пути: `{index_path}`")
+                st.write("**Возможные причины:**")
+                st.write("- Неправильный формат файла")
+                st.write("- Несовместимость версий Python")
+            else:
+                st.write("**Файл не найден.** Проверьте пути:")
+                st.write("- `data/bm25_index.pkl`")
+                st.write("- `/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl`")
             #st.stop()
 
 # Инициализация при запуске приложения
