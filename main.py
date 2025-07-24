@@ -73,34 +73,33 @@ def validate_index_data(data):
 
 
 def load_index_safely(index_path):
-    """Загружаем токенизированные документы и строим BM25 индекс на лету"""
+    """Безопасная загрузка с обработкой пробелов и пустых строк"""
     if not index_path:
         return None, None
     try:
         with open(index_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+            content = f.read().strip()  # Удаляем пробелы и переносы с начала и конца
+            if not content:
+                st.error("Файл JSON пустой после очистки.")
+                return None, None
+            data = json.loads(content)  # Используем json.loads на строке
 
-        # Проверяем минимальную структуру
+        # Проверяем структуру
         if 'tokenized_docs' not in data or not isinstance(data['tokenized_docs'], list):
             st.error("В JSON отсутствует 'tokenized_docs'")
             return None, None
 
         tokenized_docs = data['tokenized_docs']
         metadata = data.get('metadata', [])
+        original_chunks = [meta.get('filename', f"Документ_{i}") for i, meta in enumerate(metadata)]
 
-        # Извлекаем оригинальные фрагменты (если есть) или оставляем как есть
-        original_chunks = [
-            meta.get('filename', f"Документ_{i}") for i, meta in enumerate(metadata)
-        ] if metadata else [f"Фрагмент_{i}" for i in range(len(tokenized_docs))]
-
-        # Строим BM25 индекс из tokenized_docs
+        # Строим BM25 модель
         from rank_bm25 import BM25Okapi
         bm25_model = BM25Okapi(tokenized_docs)
 
-        # Подготовим данные, которые можно использовать как "индекс" в session_state
         index_data = {
             'corpus': tokenized_docs,
-            'model': bm25_model,  # сохраним сам объект
+            'model': bm25_model,
             'doc_freqs': dict(bm25_model.doc_freqs),
             'idf': dict(bm25_model.idf),
             'corpus_size': bm25_model.corpus_size,
@@ -109,8 +108,12 @@ def load_index_safely(index_path):
 
         return index_data, original_chunks
 
+    except json.JSONDecodeError as e:
+        st.error(f"Ошибка парсинга JSON: {str(e)}")
+        st.write("Возможно, файл начинается с пустой строки. Проверьте его содержимое.")
+        return None, None
     except Exception as e:
-        st.error(f"Ошибка при загрузке или построении индекса: {str(e)}")
+        st.error(f"Неизвестная ошибка при загрузке: {str(e)}")
         import traceback
         st.code(traceback.format_exc())
         return None, None
