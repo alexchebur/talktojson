@@ -46,44 +46,54 @@ def get_absolute_index_path():
             # 2. В корне проекта
             Path.cwd() / "data" / "bm25_index.pkl",
             # 3. Абсолютный путь (для Colab и других окружений)
-            Path("/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl")
+            Path("/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl"),
+            # 4. Альтернативный вариант
+            Path("data/bm25_index.pkl")
         ]
         
         for path in possible_paths:
             if path.exists():
+                st.toast(f"Найден файл индекса по пути: {path}", icon="✅")
                 return path
                 
+        st.error("Файл индекса не найден ни по одному из путей:")
+        for p in possible_paths:
+            st.write(f"- {p}")
         return None
+        
     except Exception as e:
-        st.error(f"Ошибка определения пути: {e}")
+        st.error(f"Ошибка определения пути: {str(e)}")
         return None
 
 @st.cache_resource
 def load_bm25_index():
     """Загрузка индекса с расширенной обработкой ошибок"""
-    index_path = get_absolute_index_path()
-    
-    if not index_path:
-        st.error("Файл индекса не найден ни по одному из возможных путей")
-        return None, None
-    
     try:
+        index_path = get_absolute_index_path()
+        if not index_path:
+            return None, None
+        
         with open(index_path, 'rb') as f:
             data = pickle.load(f)
             
             # Проверяем структуру данных
-            if not all(key in data for key in ['index', 'original_chunks']):
+            if not isinstance(data, dict):
+                st.error("Файл индекса должен содержать словарь")
+                return None, None
+                
+            if 'index' not in data or 'original_chunks' not in data:
                 st.error("Некорректная структура файла индекса")
+                st.write("Ожидаемые ключи: 'index', 'original_chunks'")
+                st.write(f"Найденные ключи: {list(data.keys())}")
                 return None, None
                 
             st.success(f"Индекс успешно загружен из: {index_path}")
-            print(f"Загружено фрагментов: {len(data['original_chunks'])}")
             return data['index'], data['original_chunks']
             
     except pickle.UnpicklingError as e:
-        st.error(f"Ошибка формата файла индекса: {e}")
+        st.error(f"Ошибка формата файла (возможно файл поврежден): {str(e)}")
     except Exception as e:
-        st.error(f"Неожиданная ошибка загрузки индекса: {e}")
+        st.error(f"Неожиданная ошибка при загрузке индекса: {str(e)}")
     
     return None, None
 
@@ -94,21 +104,31 @@ def initialize_session_with_index():
         bm25_index, original_chunks = load_bm25_index()
         
         # Сохраняем в session_state
-        st.session_state.bm25_index = bm25_index
-        st.session_state.original_chunks = original_chunks
-        st.session_state.bm25_initialized = True
+        st.session_state.update({
+            'bm25_index': bm25_index,
+            'original_chunks': original_chunks,
+            'bm25_initialized': True
+        })
         
         # Проверка успешности загрузки
         if not bm25_index:
             st.error("""
-            **Не удалось загрузить индекс BM25. Возможные причины:**
-            1. Файл индекса отсутствует в папке `data/`
-            2. Неправильный формат файла
-            3. Ошибка версии Python
+            **Критическая ошибка:** Не удалось загрузить индекс BM25.
             
-            **Проверьте:**
-            - Существует ли файл по пути: `{Path(__file__).parent/"data/bm25_index.pkl"}`
-            - Совпадает ли версия Python с той, где создавался индекс
+            **Рекомендации:**
+            1. Убедитесь, что файл `bm25_index.pkl` находится в папке `data/`
+            2. Проверьте, что файл создан в той же версии Python
+            3. Попробуйте пересоздать индекс
+            
+            **Техническая информация:**
+            ```python
+            # Для проверки файла вручную:
+            import pickle
+            with open("data/bm25_index.pkl", 'rb') as f:
+                data = pickle.load(f)
+                print(type(data))  # Должен быть dict
+                print(data.keys())  # Должны быть 'index' и 'original_chunks'
+            ```
             """)
             #st.stop()
 
