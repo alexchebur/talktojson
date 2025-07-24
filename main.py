@@ -35,34 +35,84 @@ data_processor = DataProcessor(index_builder)
 query_generator = QueryGenerator()
 web_searcher = WebSearcher()
 
-# Загрузка BM25 индекса при старте приложения
+def get_absolute_index_path():
+    """Определяем абсолютный путь к файлу индекса"""
+    try:
+        # Пробуем несколько возможных путей
+        possible_paths = [
+            # 1. Относительно текущего файла
+            Path(__file__).parent / "data" / "bm25_index.pkl",
+            # 2. В корне проекта
+            Path.cwd() / "data" / "bm25_index.pkl",
+            # 3. Абсолютный путь (для Colab и других окружений)
+            Path("/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl")
+        ]
+        
+        for path in possible_paths:
+            if path.exists():
+                return path
+                
+        return None
+    except Exception as e:
+        st.error(f"Ошибка определения пути: {e}")
+        return None
+
 @st.cache_resource
 def load_bm25_index():
-    BM25_INDEX_PATH = os.path.join(os.path.dirname(__file__), "data", "bm25_index.pkl")
-    if os.path.exists(BM25_INDEX_PATH):
-        try:
-            with open(BM25_INDEX_PATH, 'rb') as f:
-                data = pickle.load(f)
-                print("BM25 индекс успешно загружен")
-                return data['index'], data['original_chunks']
-        except Exception as e:
-            st.error(f"Ошибка загрузки индекса BM25: {str(e)}")
-            return None, []
-    else:
-        st.error("Файл индекса BM25 не найден!")
-        return None, []
+    """Загрузка индекса с расширенной обработкой ошибок"""
+    index_path = get_absolute_index_path()
+    
+    if not index_path:
+        st.error("Файл индекса не найден ни по одному из возможных путей")
+        return None, None
+    
+    try:
+        with open(index_path, 'rb') as f:
+            data = pickle.load(f)
+            
+            # Проверяем структуру данных
+            if not all(key in data for key in ['index', 'original_chunks']):
+                st.error("Некорректная структура файла индекса")
+                return None, None
+                
+            st.success(f"Индекс успешно загружен из: {index_path}")
+            print(f"Загружено фрагментов: {len(data['original_chunks'])}")
+            return data['index'], data['original_chunks']
+            
+    except pickle.UnpicklingError as e:
+        st.error(f"Ошибка формата файла индекса: {e}")
+    except Exception as e:
+        st.error(f"Неожиданная ошибка загрузки индекса: {e}")
+    
+    return None, None
 
-# Глобальная загрузка индекса
-bm25_index, original_chunks = load_bm25_index()
+def initialize_session_with_index():
+    """Инициализация сессии с загрузкой индекса"""
+    if 'bm25_initialized' not in st.session_state:
+        # Загрузка индекса
+        bm25_index, original_chunks = load_bm25_index()
+        
+        # Сохраняем в session_state
+        st.session_state.bm25_index = bm25_index
+        st.session_state.original_chunks = original_chunks
+        st.session_state.bm25_initialized = True
+        
+        # Проверка успешности загрузки
+        if not bm25_index:
+            st.error("""
+            **Не удалось загрузить индекс BM25. Возможные причины:**
+            1. Файл индекса отсутствует в папке `data/`
+            2. Неправильный формат файла
+            3. Ошибка версии Python
+            
+            **Проверьте:**
+            - Существует ли файл по пути: `{Path(__file__).parent/"data/bm25_index.pkl"}`
+            - Совпадает ли версия Python с той, где создавался индекс
+            """)
+            st.stop()
 
-# Сохраняем в session_state для использования во всем приложении
-if 'bm25_index' not in st.session_state:
-    st.session_state.bm25_index = bm25_index
-    st.session_state.original_chunks = original_chunks
-
-if not st.session_state.bm25_index:
-    st.error("Не удалось загрузить индекс BM25. Приложение не может работать.")
-    st.stop()
+# Инициализация при запуске приложения
+initialize_session_with_index()
 
 # Инициализация веб-поиска
 if "web_searcher" not in st.session_state:
