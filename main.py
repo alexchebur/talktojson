@@ -399,7 +399,7 @@ with st.sidebar:
             
             # Проверка чтения файла индекса
             try:
-                BM25_INDEX_PATH = os.path.join(REPO_ROOT, "data", "bm25_index.pkl")
+                BM25_INDEX_PATH = os.path.join(REPO_ROOT, "data", "bm25_index.json")
                 file_size = os.path.getsize(BM25_INDEX_PATH)
                 st.write(f"Размер файла индекса: {file_size} байт")
                 st.write(f"Путь: {BM25_INDEX_PATH}")
