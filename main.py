@@ -36,77 +36,73 @@ data_processor = DataProcessor(index_builder)
 query_generator = QueryGenerator()
 web_searcher = WebSearcher()
 
-def get_index_path():
-    """Определяем путь к файлу индекса без использования Streamlit элементов"""
-    try:
-        # Пробуем несколько возможных путей
-        possible_paths = [
-            Path(__file__).parent / "data" / "bm25_index.pkl",
-            Path.cwd() / "data" / "bm25_index.pkl",
-            Path("/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl"),
-            Path("data/bm25_index.pkl")
-        ]
-        
-        for path in possible_paths:
-            if path.exists():
-                return path
-        return None
-    except Exception:
-        return None
+def find_index_file():
+    """Поиск файла индекса без использования Streamlit элементов"""
+    possible_paths = [
+        Path(__file__).parent / "data" / "bm25_index.pkl",
+        Path.cwd() / "data" / "bm25_index.pkl",
+        Path("data/bm25_index.pkl"),
+        Path("/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl")
+    ]
+    for path in possible_paths:
+        if path.exists():
+            return path
+    return None
 
-def load_bm25_index():
-    """Загрузка индекса без использования Streamlit элементов"""
+def load_index_data(index_path):
+    """Чистая загрузка данных без Streamlit элементов"""
     try:
-        index_path = get_index_path()
-        if not index_path:
-            return None, None
-        
         with open(index_path, 'rb') as f:
             data = pickle.load(f)
-            
-            if not isinstance(data, dict):
-                return None, None
-                
-            if 'index' not in data or 'original_chunks' not in data:
-                return None, None
-                
-            return data['index'], data['original_chunks']
-            
+            if isinstance(data, dict) and 'index' in data and 'original_chunks' in data:
+                return data['index'], data['original_chunks']
     except Exception:
-        return None, None
+        pass
+    return None, None
 
-def initialize_session_with_index():
-    """Инициализация сессии с загрузкой индекса"""
-    if 'bm25_initialized' not in st.session_state:
-        # Загрузка индекса (без кэширования)
-        bm25_index, original_chunks = load_bm25_index()
-        
-        # Сохраняем в session_state
-        st.session_state.update({
-            'bm25_index': bm25_index,
-            'original_chunks': original_chunks,
-            'bm25_initialized': True
-        })
-        
-        # Проверка и отображение ошибок
-        if not bm25_index:
-            st.error("### Не удалось загрузить индекс BM25")
-            
-            # Показываем информацию о путях
-            index_path = get_index_path()
-            if index_path:
-                st.write(f"Файл найден по пути: `{index_path}`")
-                st.write("**Возможные причины:**")
-                st.write("- Неправильный формат файла")
-                st.write("- Несовместимость версий Python")
-            else:
-                st.write("**Файл не найден.** Проверьте пути:")
-                st.write("- `data/bm25_index.pkl`")
-                st.write("- `/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl`")
-            #st.stop()
+def initialize_app():
+    """Основная инициализация приложения"""
+    # Поиск файла индекса
+    index_path = find_index_file()
+    
+    if not index_path:
+        st.error("Файл индекса не найден. Проверьте следующие пути:")
+        st.code("\n".join([
+            "data/bm25_index.pkl",
+            "/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl"
+        ]))
+        st.stop()
+    
+    # Загрузка данных
+    bm25_index, original_chunks = load_index_data(index_path)
+    
+    if not bm25_index:
+        st.error(f"Не удалось загрузить индекс из {index_path}")
+        st.write("Возможные причины:")
+        st.write("- Файл поврежден")
+        st.write("- Несовместимость версий Python")
+        st.write("- Неправильный формат файла")
+        st.stop()
+    
+    # Сохранение в session_state
+    st.session_state.update({
+        'bm25_index': bm25_index,
+        'original_chunks': original_chunks,
+        'index_loaded': True
+    })
+    
+    # Отладочная информация
+    if st.session_state.get('bm25_index'):
+        st.success(f"Индекс успешно загружен из {index_path}")
+        with st.expander("Техническая информация"):
+            st.write(f"Тип индекса: {type(st.session_state.bm25_index)}")
+            st.write(f"Количество фрагментов: {len(st.session_state.original_chunks)}")
+            if st.session_state.original_chunks:
+                st.write("Пример фрагмента:", st.session_state.original_chunks[0][:100] + "...")
 
-# Инициализация при запуске приложения
-initialize_session_with_index()
+# Инициализация приложения
+if 'index_loaded' not in st.session_state:
+    initialize_app()
 
 # Инициализация веб-поиска
 if "web_searcher" not in st.session_state:
