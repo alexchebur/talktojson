@@ -94,7 +94,7 @@ def initialize_application():
             os.path.join(os.path.dirname(__file__), "data", "bm25_index.pkl"),
             "/content/drive/MyDrive/data sources/Talk2JsonDocsRAG/bm25_index.pkl"
         ]))
-        st.stop()
+        #st.stop()
     
     # Загрузка данных
     bm25_index, original_chunks = load_index_safely(index_path)
