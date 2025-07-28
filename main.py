@@ -23,6 +23,9 @@ initialize_session()
 if "context_parts" not in st.session_state:
     st.session_state.context_parts = []
 
+if 'user_input' not in st.session_state:
+    st.session_state.user_input = ""
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMBEDDINGS_DIR = os.path.join(REPO_ROOT, "data", "embeddings")
 DOCUMENTS_DIR = os.path.join(REPO_ROOT, "documents")
