@@ -88,14 +88,7 @@ if uploaded_file:
         # Сохраняем текст документа для контекста
         st.session_state.document_text = clean_text(file_text)[:10000]  # Первые 10k символов
 
-user_input = st.text_area("Введите ваш вопрос:", height=150, max_chars=600, key="user_input")
-st.session_state.user_input = st.text_area(
-    "Введите ваш вопрос:", 
-    value=st.session_state.user_input,
-    height=150, 
-    max_chars=600, 
-    key="user_input"
-)
+
 
 if st.button("Отправить", key="send_btn"):
     if not user_input.strip():
