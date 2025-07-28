@@ -37,7 +37,11 @@ data_processor = DataProcessor(index_builder)
 query_generator = QueryGenerator()
 web_searcher = WebSearcher()
 
-
+if 'data_processor' not in st.session_state:
+    st.session_state.index_builder = IndexBuilder()
+    st.session_state.data_processor = DataProcessor(st.session_state.index_builder)
+    st.session_state.query_generator = QueryGenerator()
+    st.session_state.web_searcher = WebSearcher()
 
 # Перед веб-поиском добавьте:
 if 'generated_queries' not in st.session_state:
