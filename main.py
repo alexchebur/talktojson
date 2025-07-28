@@ -80,56 +80,74 @@ if st.button("Отправить", key="send_btn"):
     st.session_state.last_query = user_input
     
     with st.spinner("Обработка запроса..."):
-        # Инициализируем переменные для результатов
-        web_search_results = []
-        qdrant_chunks = []
-        
-        # 1. Веб-поиск
+        # 1. Инициализация переменных
+        if 'web_search_results' not in st.session_state:
+            st.session_state.web_search_results = []
+        if 'qdrant_chunks' not in st.session_state:
+            st.session_state.qdrant_chunks = []
+        if 'chat_log' not in st.session_state:
+            st.session_state.chat_log = ""
+
+        # 2. Веб-поиск
         try:
-            web_queries = [user_input] + (st.session_state.get('generated_queries', [])[:2])
-            for query in web_queries[:3]:  # Не более 3 запросов
+            queries = [user_input]
+            if 'generated_queries' in st.session_state:
+                queries.extend(st.session_state.generated_queries[:2])
+            
+            st.session_state.web_search_results = []
+            for query in queries[:3]:  # Максимум 3 запроса
                 results = web_searcher.perform_search(query, max_results=2)
                 if results:
-                    web_search_results.extend(results)
-            
-            st.session_state.web_search_results = web_search_results
+                    # Добавляем query к каждому результату
+                    for res in results:
+                        res['query'] = query  # Гарантируем наличие ключа 'query'
+                    st.session_state.web_search_results.extend(results)
         except Exception as e:
             st.error(f"Ошибка веб-поиска: {str(e)}")
             st.session_state.web_search_results = []
 
-        # 2. Поиск в Qdrant
+        # 3. Поиск в Qdrant
         try:
             top_k = st.session_state.get('qdrant_top_k', 10)
             balance = st.session_state.get('search_balance', 0.5)
             
-            qdrant_chunks = st.session_state.data_processor.enhance_with_qdrant_search(
-                user_input,
+            st.session_state.qdrant_chunks = st.session_state.data_processor.enhance_with_qdrant_search(
+                query=user_input,
                 top_k=top_k,
                 keyword_weight=balance
-            )
-            st.session_state.qdrant_chunks = qdrant_chunks
+            ) or []  # Гарантируем список, даже если None
         except Exception as e:
             st.error(f"Ошибка поиска в Qdrant: {str(e)}")
             st.session_state.qdrant_chunks = []
 
-        # 3. Формирование контекста для LLM
+        # 4. Формирование контекста
         context_parts = []
         
-        if web_search_results:
-            context_parts.append("Веб-результаты:\n" + "\n\n".join(
-                [f"Источник {i+1} ({res['title']}):\n{res['snippet']}\n{res['full_content'][:2000]}"
-                 for i, res in enumerate(web_search_results[:3])]
+        # Веб-результаты
+        if st.session_state.web_search_results:
+            web_context = []
+            for i, res in enumerate(st.session_state.web_search_results[:3]):
+                web_context.append(
+                    f"Источник {i+1} ({res.get('title', 'Без названия')}):\n"
+                    f"URL: {res.get('url', '')}\n"
+                    f"{res.get('snippet', 'Нет описания')}\n"
+                    f"{res.get('full_content', '')[:2000]}"
+                )
+            context_parts.append("Веб-результаты:\n" + "\n\n".join(web_context))
+        
+        # Qdrant результаты
+        if st.session_state.qdrant_chunks:
+            context_parts.append("База знаний:\n" + "\n\n".join(
+                chunk[:2000] for chunk in st.session_state.qdrant_chunks[:5]
             ))
         
-        if qdrant_chunks:
-            context_parts.append("База знаний:\n" + "\n\n".join(qdrant_chunks[:5]))
-        
-        if st.session_state.get('document_text'):
+        # Загруженный документ
+        if 'document_text' in st.session_state and st.session_state.document_text:
             context_parts.append("Загруженный документ:\n" + st.session_state.document_text[:5000])
         
-        full_context = "\n\n".join(context_parts)[:15000]  # Ограничение контекста
+        full_context = "\n\n".join(context_parts)[:15000]
 
-        # 4. Отправка запроса в LLM
+        # 5. Отправка в LLM
         try:
             prompt = get_prompt("system", {
                 "user_query": user_input,
@@ -154,10 +172,11 @@ if st.button("Отправить", key="send_btn"):
             response.raise_for_status()
             response_data = response.json()
             
-            if 'candidates' in response_data and response_data['candidates']:
-                answer = response_data['candidates'][0]['content']['parts'][0]['text']
-            else:
-                answer = "Не удалось получить ответ от API"
+            answer = (
+                response_data['candidates'][0]['content']['parts'][0]['text']
+                if 'candidates' in response_data and response_data['candidates']
+                else "Не удалось получить ответ от API"
+            )
             
             st.session_state.llm_response = answer
             st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
