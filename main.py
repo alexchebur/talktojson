@@ -218,28 +218,29 @@ with st.sidebar:
                             key=f"main_web_{i}"
                         )
 
+with st.sidebar:
+    # ... остальные блоки ...
+    
+    # Блок сгенерированных запросов
+    if st.session_state.get('generated_queries'):
+        st.subheader("🔍 Сгенерированные запросы")
+        st.write("Эти запросы были автоматически созданы для уточнения поиска:")
+        for i, query in enumerate(st.session_state.generated_queries[:3]):
+            st.code(f"{i+1}. {query}")
+            
         # Результаты по сгенерированным запросам
-        if st.session_state.get('generated_queries'):
-            for q_idx, query in enumerate(st.session_state.generated_queries[:2]):
-                query_results = [
-                    r for r in st.session_state.web_search_results 
-                    if r.get('query', '') == query
-                ]
-                
-                if query_results:
-                    st.caption(f"По уточняющему запросу {q_idx+1}: '{query}'")
-                    for r_idx, res in enumerate(query_results[:2]):
-                        with st.expander(f"Результат {r_idx+1}", expanded=False):
-                            st.markdown(f"**URL:** [{res.get('url', '')[:30]}...]({res.get('url', '')})")
-                            st.markdown("**Сниппет:**")
-                            st.info(res.get('snippet', 'Нет описания')[:200] + "...")
-                            if res.get('full_content'):
-                                st.text_area(
-                                    f"Полный текст {q_idx+1}-{r_idx+1}", 
-                                    value=res['full_content'][:3000], 
-                                    height=200,
-                                    key=f"gen_web_{q_idx}_{r_idx}"
-                                )
+        gen_results = [
+            r for r in st.session_state.get('web_search_results', [])
+            if r.get('query_type') == 'generated'
+        ]
+        
+        if gen_results:
+            st.subheader("📌 Результаты по уточняющим запросам")
+            for i, res in enumerate(gen_results[:4]):
+                with st.expander(f"Запрос: '{res.get('query', '')}'", expanded=False):
+                    st.markdown(f"**URL:** [{res.get('url', '')[:30]}...]({res.get('url', '')})")
+                    st.markdown("**Сниппет:**")
+                    st.info(res.get('snippet', 'Нет описания')[:200] + "...")
     
     # Блок результатов из Qdrant
     if st.session_state.get('qdrant_chunks'):
