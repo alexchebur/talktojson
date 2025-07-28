@@ -152,101 +152,84 @@ if st.session_state.get('llm_response'):
 with st.sidebar:
 
     
-    # Остальные элементы сайдбара (веб-результаты, Qdrant и т.д.)
-    # ... (остальной код сайдбара остается без изменений)
+# Сайдбар с дополнительной информацией
 
-    # Веб-результаты по основному запросу
-    if st.session_state.get('initial_web_results'):
-        st.subheader("Результаты веб-поиска по основному запросу")
-        for i, result in enumerate(st.session_state.initial_web_results):
-            with st.expander(f"{i+1}. {result['title']}", expanded=False):
-                st.markdown(f"**URL:** [{result['url']}]({result['url']})")
-                st.markdown("**Сниппет:**")
-                st.info(result.get('snippet', ''))
-                
-                if result.get('full_content'):
-                    st.text_area("Контент", 
-                                value=result['full_content'][:3000], 
-                                height=200,
-                                key=f"initial_web_content_{i}")
-
-    # Фрагменты из Qdrant (по запросу)
-    if st.session_state.get('all_qdrant_chunks'):
-        st.subheader("Фрагменты из базы знаний (по запросу)")
-        for i, chunk in enumerate(st.session_state.all_qdrant_chunks[:5]):
-            st.text_area(f"Фрагмент {i+1}", 
-                        value=chunk[:2000], 
-                        height=150,
-                        key=f"all_qdrant_chunk_{i}")
-
-    # Веб-результаты по уточняющим запросам
+    st.subheader("Результаты поиска")
+    
+    # Блок веб-результатов
     if st.session_state.get('web_search_results'):
-        st.subheader("Веб-результаты по уточняющим запросам")
-        for i, result in enumerate(st.session_state.web_search_results):
-            with st.expander(f"{i+1}. {result['title']}", expanded=False):
-                st.markdown(f"**URL:** [{result['url']}]({result['url']})")
+        st.subheader("🌐 Веб-результаты")
+        for i, result in enumerate(st.session_state.web_search_results[:3]):  # Показываем топ-3
+            with st.expander(f"{i+1}. {result['title'][:50]}...", expanded=False):
+                st.markdown(f"**URL:** [{result['url'][:30]}...]({result['url']})")
                 st.markdown("**Сниппет:**")
-                st.info(result.get('snippet', ''))
+                st.info(result.get('snippet', 'Нет описания')[:200] + "...")
                 
                 if result.get('full_content'):
-                    st.text_area("Контент", 
-                                value=result['full_content'][:3000], 
-                                height=200,
-                                key=f"web_content_{i}_{hash(result['url'])}")
-    
-    # Фрагменты из Qdrant (из документа)
+                    st.text_area(
+                        "Полный текст", 
+                        value=result['full_content'][:3000], 
+                        height=200,
+                        key=f"web_content_{i}"
+                    )
+
+    # Блок результатов из Qdrant
     if st.session_state.get('qdrant_chunks'):
-        st.subheader("Фрагменты из базы знаний (из документа)")
-        for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
-            st.text_area(f"Фрагмент {i+1}", 
+        st.subheader("🔍 Релевантные фрагменты из базы знаний")
+        
+        # Разделяем семантические и текстовые результаты (если нужно)
+        semantic_chunks = st.session_state.qdrant_chunks[:5]  # Пример - первые 5 как семантические
+        text_chunks = st.session_state.qdrant_chunks[5:10] if len(st.session_state.qdrant_chunks) > 5 else []
+        
+        if semantic_chunks:
+            with st.expander("Семантический поиск", expanded=True):
+                for i, chunk in enumerate(semantic_chunks):
+                    st.text_area(
+                        f"Фрагмент {i+1} (по смыслу)", 
                         value=chunk[:2000], 
                         height=150,
-                        key=f"qdrant_chunk_{i}")
-    
-    # Граф документа
-    if st.session_state.get('main_doc_name') and index_builder.document_graph:
-        try:
-            graph = nx.DiGraph()
-            has_edges = False
-            
-            # Добавляем основной документ
-            main_doc = st.session_state.main_doc_name
-            graph.add_node(main_doc)
-            
-            # Добавляем связи
-            for doc, refs in index_builder.document_graph.items():
-                for ref in refs:
-                    graph.add_edge(doc, ref)
-                    has_edges = True
-            
-            fig, ax = plt.subplots(figsize=(10, 8))
-            
-            if has_edges:
-                pos = nx.spring_layout(graph)
-                nx.draw(graph, pos, 
-                       with_labels=True,
-                       node_color='skyblue',
-                       node_size=2000,
-                       edge_color='gray',
-                       font_size=10,
-                       ax=ax)
-            else:
-                # Визуализация для одного узла
-                nx.draw_networkx_nodes(graph, 
-                                      pos={main_doc: [0,0]}, 
-                                      nodelist=[main_doc],
-                                  node_color='skyblue',
-                                  node_size=2000,
-                                  ax=ax)
-                plt.text(0, 0.1, main_doc, 
-                        ha='center',
-                        bbox=dict(facecolor='white', alpha=0.8))
-            
-            st.subheader("Граф связанных документов")
-            st.pyplot(fig)
-            
-        except Exception as e:
-            st.error(f"Ошибка визуализации графа: {str(e)}")
+                        key=f"semantic_chunk_{i}"
+                    )
+        
+        if text_chunks:
+            with st.expander("Полнотекстовый поиск", expanded=False):
+                for i, chunk in enumerate(text_chunks):
+                    st.text_area(
+                        f"Фрагмент {i+1} (по ключевым словам)", 
+                        value=chunk[:2000], 
+                        height=150,
+                        key=f"text_chunk_{i}"
+                    )
+
+    # Блок загруженного документа
+    if st.session_state.get('document_text'):
+        st.subheader("📄 Загруженный документ")
+        with st.expander("Показать текст документа", expanded=False):
+            st.text_area(
+                "Содержание документа",
+                value=st.session_state.document_text[:5000],
+                height=300,
+                key="uploaded_doc_preview"
+            )
+
+    # Настройки поиска
+    with st.expander("⚙️ Настройки поиска", expanded=False):
+        st.slider(
+            "Количество фрагментов из Qdrant",
+            min_value=3,
+            max_value=15,
+            value=10,
+            key="qdrant_top_k"
+        )
+        st.slider(
+            "Баланс семантика/текст",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.5,
+            step=0.1,
+            help="0 - только семантика, 1 - только текст",
+            key="search_balance"
+        )
 
     # История диалога
     if st.session_state.get('chat_log'):
