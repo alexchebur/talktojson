@@ -72,22 +72,59 @@ if uploaded_file:
 
 user_input = st.text_area("Введите ваш вопрос:", height=150, max_chars=600, key="user_input")
 
-# Обработка запроса пользователя
 if st.button("Отправить", key="send_btn"):
+    if not user_input.strip():
+        st.error("Введите текст вопроса")
+        st.stop()
+    
+    st.session_state.last_query = user_input
+    
     with st.spinner("Обработка запроса..."):
-        # 1. Веб-поиск (максимум 3 запроса)
-        web_queries = [user_input] + (st.session_state.generated_queries[:2] 
-                      if st.session_state.get('generated_queries') else [])
-        web_results = []
-        for query in web_queries[:3]:  # Не более 3 запросов
-            results = web_searcher.perform_search(query, max_results=2)
-            web_results.extend(results)
+        # Отладочная информация
+        debug_info = []
         
+        # 1. Веб-поиск
+        try:
+            web_queries = [user_input] + (st.session_state.get('generated_queries', [])[:2])
+            st.session_state.web_search_results = []
+            
+            for query in web_queries[:3]:  # Не более 3 запросов
+                results = web_searcher.perform_search(query, max_results=2)
+                if results:
+                    debug_info.append(f"Веб-поиск по '{query}': найдено {len(results)} результатов")
+                    st.session_state.web_search_results.extend(results)
+                else:
+                    debug_info.append(f"Веб-поиск по '{query}': нет результатов")
+            
+            if not st.session_state.web_search_results:
+                debug_info.append("Веб-поиск не дал результатов")
+        except Exception as e:
+            debug_info.append(f"Ошибка веб-поиска: {str(e)}")
+            st.error(f"Ошибка веб-поиска: {str(e)}")
+
         # 2. Поиск в Qdrant
-        qdrant_chunks = []
-        for query in [user_input] + web_queries[:2]:
-            chunks = data_processor.enhance_with_qdrant_search(query, top_k=5)
-            qdrant_chunks.extend(chunks)
+        try:
+            top_k = st.session_state.get('qdrant_top_k', 10)
+            balance = st.session_state.get('search_balance', 0.5)
+            
+            qdrant_results = st.session_state.data_processor.enhance_with_qdrant_search(
+                user_input,
+                top_k=top_k,
+                keyword_weight=balance
+            )
+            
+            if qdrant_results:
+                debug_info.append(f"Qdrant: найдено {len(qdrant_results)} фрагментов")
+                st.session_state.qdrant_chunks = qdrant_results
+            else:
+                debug_info.append("Qdrant: нет результатов")
+                st.session_state.qdrant_chunks = []
+        except Exception as e:
+            debug_info.append(f"Ошибка Qdrant: {str(e)}")
+            st.error(f"Ошибка поиска в Qdrant: {str(e)}")
+
+        # Вывод отладочной информации
+        st.session_state.debug_info = "\n".join(debug_info)
         
         # 3. Формирование контекста
         context_parts = []
