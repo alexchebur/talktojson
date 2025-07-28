@@ -174,28 +174,55 @@ if st.session_state.get('llm_response'):
 with st.sidebar:
     st.subheader("Результаты поиска")
     
-    # Блок веб-результатов
-    if st.session_state.get('web_search_results'):
-        st.subheader("🌐 Веб-результаты")
-        for i, result in enumerate(st.session_state.web_search_results[:3]):
+    # Блок основного веб-поиска (по исходному запросу)
+    if st.session_state.get('initial_web_results'):
+        st.subheader("🌐 Основной веб-поиск")
+        st.caption(f"Запрос: '{st.session_state.last_query}'")
+        for i, result in enumerate(st.session_state.initial_web_results[:3]):
             with st.expander(f"{i+1}. {result.get('title', 'Без названия')[:50]}...", expanded=False):
                 st.markdown(f"**URL:** [{result.get('url', '#')[:30]}...]({result.get('url', '#')})")
                 st.markdown("**Сниппет:**")
                 st.info(result.get('snippet', 'Нет описания')[:200] + "...")
-                
                 if result.get('full_content'):
                     st.text_area(
                         "Полный текст", 
                         value=result['full_content'][:3000], 
                         height=200,
-                        key=f"web_content_{i}"
+                        key=f"initial_web_{i}"
                     )
-    else:
-        st.info("Нет результатов веб-поиска")
 
-    # Блок результатов из Qdrant
+    # Блок сгенерированных запросов и их результатов
+    if st.session_state.get('generated_queries') and st.session_state.get('web_search_results'):
+        st.subheader("🔍 Уточняющие запросы")
+        for q_idx, query in enumerate(st.session_state.generated_queries[:3]):
+            st.caption(f"Сгенерированный запрос {q_idx+1}: '{query}'")
+            
+            # Фильтруем результаты по текущему сгенерированному запросу
+            query_results = [
+                r for r in st.session_state.web_search_results 
+                if r.get('query', '') == query
+            ]
+            
+            if not query_results:
+                st.info("Нет результатов для этого запроса")
+                continue
+                
+            for r_idx, result in enumerate(query_results[:2]):  # Показываем до 2 результатов на запрос
+                with st.expander(f"Результат {r_idx+1}", expanded=False):
+                    st.markdown(f"**URL:** [{result.get('url', '#')[:30]}...]({result.get('url', '#')})")
+                    st.markdown("**Сниппет:**")
+                    st.info(result.get('snippet', 'Нет описания')[:200] + "...")
+                    if result.get('full_content'):
+                        st.text_area(
+                            f"Полный текст {q_idx+1}-{r_idx+1}", 
+                            value=result['full_content'][:3000], 
+                            height=200,
+                            key=f"gen_web_{q_idx}_{r_idx}"
+                        )
+
+    # Блок результатов из Qdrant (оставляем без изменений)
     if st.session_state.get('qdrant_chunks'):
-        st.subheader("🔍 Релевантные фрагменты")
+        st.subheader("📚 База знаний (Qdrant)")
         for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
             st.text_area(
                 f"Фрагмент {i+1}", 
@@ -203,8 +230,6 @@ with st.sidebar:
                 height=150,
                 key=f"qdrant_chunk_{i}"
             )
-    else:
-        st.info("Нет результатов из базы знаний")
     
 
     # Блок загруженного документа
