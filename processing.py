@@ -14,10 +14,16 @@ class DataProcessor:
     def enhance_with_qdrant_search(
         self,
         query: str,
-        top_k: int = 10
+        top_k: int = 10,
+        keyword_weight: float = 0.5  # Добавляем новый параметр
     ) -> List[str]:
         try:
-            qdrant_results = self.index_builder.semantic_search_in_qdrant(query, top_k)
+            # Передаем параметры в index_builder
+            qdrant_results = self.index_builder.semantic_search_in_qdrant(
+                query, 
+                top_k=top_k,
+                keyword_weight=keyword_weight
+            )
             return [result["text"] for result in qdrant_results]
         except Exception as e:
             print(f"Ошибка поиска в Qdrant: {str(e)}")
