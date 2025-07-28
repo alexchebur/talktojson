@@ -85,46 +85,29 @@ if st.button("Отправить", key="send_btn"):
         qdrant_chunks = []
         
         # 1. Веб-поиск
-        # В обработчике кнопки "Отправить" в main.py:
-        # Замените блок веб-поиска на:
         try:
             web_queries = [user_input] + (st.session_state.get('generated_queries', [])[:2])
-            st.session_state.web_search_results = []
-    
-            for query in web_queries[:3]:
+            for query in web_queries[:3]:  # Не более 3 запросов
                 results = web_searcher.perform_search(query, max_results=2)
                 if results:
-                    # Добавляем поле query к каждому результату
-                    for res in results:
-                        res['query'] = query
-                    st.session_state.web_search_results.extend(results)
-    
-            # Сохраняем результаты основного запроса отдельно
-            st.session_state.initial_web_results = [
-                r for r in st.session_state.web_search_results 
-                if r.get('query') == user_input
-            ]
+                    web_search_results.extend(results)
+            
+            st.session_state.web_search_results = web_search_results
         except Exception as e:
             st.error(f"Ошибка веб-поиска: {str(e)}")
             st.session_state.web_search_results = []
-            st.session_state.initial_web_results = []
 
         # 2. Поиск в Qdrant
         try:
-            # Получаем настройки из интерфейса
-            top_k = st.session_state.get('qdrant_top_k', 10)  # Количество фрагментов
-            balance = st.session_state.get('search_balance', 0.5)  # Баланс семантика/текст
-    
-            # Выполняем поиск
+            top_k = st.session_state.get('qdrant_top_k', 10)
+            balance = st.session_state.get('search_balance', 0.5)
+            
             qdrant_chunks = st.session_state.data_processor.enhance_with_qdrant_search(
-                query=user_input,
+                user_input,
                 top_k=top_k,
                 keyword_weight=balance
             )
-    
-            # Сохраняем результаты
-            st.session_state.qdrant_chunks = qdrant_chunks if qdrant_chunks else []
-    
+            st.session_state.qdrant_chunks = qdrant_chunks
         except Exception as e:
             st.error(f"Ошибка поиска в Qdrant: {str(e)}")
             st.session_state.qdrant_chunks = []
