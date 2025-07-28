@@ -27,66 +27,88 @@ class IndexBuilder:
                 )
             )
     
-    def semantic_search_in_qdrant(self, query: str, top_k: int = 10) -> List[dict]:
+    def semantic_search_in_qdrant(
+        self, 
+        query: str, 
+        top_k: int = 10,
+        keyword_weight: float = 0.5
+    ) -> List[dict]:
         try:
-            # Используем гибридный поиск
-            results = self.hybrid_search(query, top_k)
+            # Используем гибридный поиск с учетом веса
+            results = self.hybrid_search(
+                query, 
+                top_k=top_k,
+                keyword_weight=keyword_weight
+            )
             return [{"text": result['payload']['text']} for result in results]
         except Exception as e:
             print(f"Ошибка поиска в Qdrant: {str(e)}")
             return []
-    
-    def hybrid_search(self, query: str, top_k: int = 5, keyword_weight: float = 0.5) -> List[dict]:
-        """Гибридный поиск: сочетание семантического и полнотекстового"""
-        # 1. Семантический поиск
-        semantic_results = self.qdrant_client.search(
-            collection_name=QDRANT_COLLECTION,
-            query_vector=query,
-            limit=top_k * 2,
-            with_payload=True
-        )
+
+    def hybrid_search(
+        self, 
+        query: str, 
+        top_k: int = 5, 
+        keyword_weight: float = 0.5
+    ) -> List[dict]:
+        """Гибридный поиск: семантика + ключевые слова"""
+        try:
+            # 1. Семантический поиск
+            semantic_results = self.qdrant_client.search(
+                collection_name=QDRANT_COLLECTION,
+                query_vector=self._get_embeddings_batch([query])[0],
+                limit=top_k,
+                with_payload=True
+            )
         
-        # 2. Полнотекстовый поиск
-        text_results = self.qdrant_client.search(
-            collection_name=QDRANT_COLLECTION,
-            query_filter=models.Filter(
-                must=[models.FieldCondition(
-                    key="text",
-                    match=models.MatchText(text=query),
-                )]
-            ),
-            limit=top_k * 2,
-            with_payload=True
-        )
+            # 2. Полнотекстовый поиск
+            text_results = self.qdrant_client.search(
+                collection_name=QDRANT_COLLECTION,
+                query_filter=models.Filter(
+                    must=[models.FieldCondition(
+                        key="text",
+                        match=models.MatchText(text=query),
+                    )]
+                ),
+                limit=top_k,
+                with_payload=True
+            )
         
-        # 3. Комбинирование результатов
-        combined = {}
-        for res in semantic_results:
-            combined[res.id] = {
-                "payload": res.payload,
-                "semantic_score": res.score,
-                "keyword_score": 0.0
-            }
+            # 3. Комбинирование результатов
+            combined = {}
         
-        for res in text_results:
-            if res.id in combined:
-                combined[res.id]["keyword_score"] = res.score
-            else:
+            # Обрабатываем семантические результаты
+            for res in semantic_results:
                 combined[res.id] = {
                     "payload": res.payload,
-                    "semantic_score": 0.0,
-                    "keyword_score": res.score
+                    "semantic_score": res.score,
+                    "keyword_score": 0.0
                 }
         
-        # 4. Расчет комбинированной оценки
-        results = []
-        for point_id, data in combined.items():
-            combined_score = (keyword_weight * data["keyword_score"] +
-                             (1 - keyword_weight) * data["semantic_score"])
-            results.append({
-                "id": point_id,
-                "payload": data["payload"],
-                "combined_score": combined_score
-            })
+            # Добавляем текстовые результаты
+            for res in text_results:
+                if res.id in combined:
+                    combined[res.id]["keyword_score"] = res.score
+                else:
+                    combined[res.id] = {
+                        "payload": res.payload,
+                        "semantic_score": 0.0,
+                        "keyword_score": res.score
+                    }
         
-        return sorted(results, key=lambda x: x["combined_score"], reverse=True)[:top_k]
+            # 4. Расчет комбинированной оценки
+            final_results = []
+            for point_id, data in combined.items():
+                combined_score = (keyword_weight * data["keyword_score"] + 
+                               (1 - keyword_weight) * data["semantic_score"])
+                final_results.append({
+                    "id": point_id,
+                    "payload": data["payload"],
+                    "score": combined_score
+                })
+        
+            return sorted(final_results, key=lambda x: x["score"], reverse=True)[:top_k]
+    
+        except Exception as e:
+            print(f"Ошибка гибридного поиска: {str(e)}")
+            return []
