@@ -186,7 +186,6 @@ if st.session_state.get('llm_response'):
     st.markdown(st.session_state.llm_response)
 
 # Сайдбар с дополнительной информацией
-with st.sidebar:
 
     
 with st.sidebar:
