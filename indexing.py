@@ -53,15 +53,20 @@ class IndexBuilder:
     ) -> List[dict]:
         """Гибридный поиск: семантика + ключевые слова"""
         try:
-            # 1. Семантический поиск
+            # 1. Получаем эмбеддинг для запроса
+            query_embedding = self._get_embeddings_batch([query])[0]
+            if not query_embedding:
+                return []
+
+            # 2. Семантический поиск
             semantic_results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
-                query_vector=self._get_embeddings_batch([query])[0],
+                query_vector=query_embedding,
                 limit=top_k,
                 with_payload=True
             )
         
-            # 2. Полнотекстовый поиск
+            # 3. Полнотекстовый поиск
             text_results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
                 query_filter=models.Filter(
@@ -74,7 +79,7 @@ class IndexBuilder:
                 with_payload=True
             )
         
-            # 3. Комбинирование результатов
+            # 4. Комбинирование результатов
             combined = {}
         
             # Обрабатываем семантические результаты
@@ -96,7 +101,7 @@ class IndexBuilder:
                         "keyword_score": res.score
                     }
         
-            # 4. Расчет комбинированной оценки
+            # 5. Расчет комбинированной оценки
             final_results = []
             for point_id, data in combined.items():
                 combined_score = (keyword_weight * data["keyword_score"] + 
