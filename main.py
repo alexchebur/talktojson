@@ -80,77 +80,62 @@ if st.button("Отправить", key="send_btn"):
     st.session_state.last_query = user_input
     
     with st.spinner("Обработка запроса..."):
-        # Отладочная информация
-        debug_info = []
+        # Инициализируем переменные для результатов
+        web_search_results = []
+        qdrant_chunks = []
         
         # 1. Веб-поиск
         try:
             web_queries = [user_input] + (st.session_state.get('generated_queries', [])[:2])
-            st.session_state.web_search_results = []
-            
             for query in web_queries[:3]:  # Не более 3 запросов
                 results = web_searcher.perform_search(query, max_results=2)
                 if results:
-                    debug_info.append(f"Веб-поиск по '{query}': найдено {len(results)} результатов")
-                    st.session_state.web_search_results.extend(results)
-                else:
-                    debug_info.append(f"Веб-поиск по '{query}': нет результатов")
+                    web_search_results.extend(results)
             
-            if not st.session_state.web_search_results:
-                debug_info.append("Веб-поиск не дал результатов")
+            st.session_state.web_search_results = web_search_results
         except Exception as e:
-            debug_info.append(f"Ошибка веб-поиска: {str(e)}")
             st.error(f"Ошибка веб-поиска: {str(e)}")
+            st.session_state.web_search_results = []
 
         # 2. Поиск в Qdrant
         try:
             top_k = st.session_state.get('qdrant_top_k', 10)
             balance = st.session_state.get('search_balance', 0.5)
             
-            qdrant_results = st.session_state.data_processor.enhance_with_qdrant_search(
+            qdrant_chunks = st.session_state.data_processor.enhance_with_qdrant_search(
                 user_input,
                 top_k=top_k,
                 keyword_weight=balance
             )
-            
-            if qdrant_results:
-                debug_info.append(f"Qdrant: найдено {len(qdrant_results)} фрагментов")
-                st.session_state.qdrant_chunks = qdrant_results
-            else:
-                debug_info.append("Qdrant: нет результатов")
-                st.session_state.qdrant_chunks = []
+            st.session_state.qdrant_chunks = qdrant_chunks
         except Exception as e:
-            debug_info.append(f"Ошибка Qdrant: {str(e)}")
             st.error(f"Ошибка поиска в Qdrant: {str(e)}")
+            st.session_state.qdrant_chunks = []
 
-        # Вывод отладочной информации
-        st.session_state.debug_info = "\n".join(debug_info)
-        
-        # 3. Формирование контекста
+        # 3. Формирование контекста для LLM
         context_parts = []
         
-        if st.session_state.get('document_text'):
-            context_parts.append("Загруженный документ:\n" + st.session_state.document_text)
-        
-        if web_results:
-            web_context = "\n\n".join(
-                [f"Источник {i+1} ({res['title']}):\n{res['full_content'][:2000]}" 
-                 for i, res in enumerate(web_results)]
-            )
-            context_parts.append("Веб-источники:\n" + web_context)
+        if web_search_results:
+            context_parts.append("Веб-результаты:\n" + "\n\n".join(
+                [f"Источник {i+1} ({res['title']}):\n{res['snippet']}\n{res['full_content'][:2000]}"
+                 for i, res in enumerate(web_search_results[:3])]
+            ))
         
         if qdrant_chunks:
-            context_parts.append("База знаний Qdrant:\n" + "\n\n".join(qdrant_chunks[:5]))
+            context_parts.append("База знаний:\n" + "\n\n".join(qdrant_chunks[:5]))
         
-        full_context = "\n\n".join(context_parts)
+        if st.session_state.get('document_text'):
+            context_parts.append("Загруженный документ:\n" + st.session_state.document_text[:5000])
         
-        # 4. Отправка в LLM
-        prompt = get_prompt("system", {
-            "user_query": user_input,
-            "context": full_context[:15000]  # Ограничение контекста
-        })
-        
+        full_context = "\n\n".join(context_parts)[:15000]  # Ограничение контекста
+
+        # 4. Отправка запроса в LLM
         try:
+            prompt = get_prompt("system", {
+                "user_query": user_input,
+                "context": full_context
+            })
+            
             response = requests.post(
                 API_URL,
                 headers={"Content-Type": "application/json"},
@@ -188,61 +173,7 @@ if st.session_state.get('llm_response'):
 # Сайдбар с дополнительной информацией
 
     
-with st.sidebar:
-    # Блок отладочной информации
-    if st.session_state.get('debug_info'):
-        with st.expander("🔧 Отладочная информация", expanded=False):
-            st.text(st.session_state.debug_info)
-
-    st.subheader("Результаты поиска")
-    
-    # Блок веб-результатов
-    if st.session_state.get('web_search_results'):
-        st.subheader("🌐 Веб-результаты")
-        for i, result in enumerate(st.session_state.web_search_results[:3]):
-            with st.expander(f"{i+1}. {result.get('title', 'Без названия')[:50]}...", expanded=False):
-                st.markdown(f"**URL:** [{result.get('url', '#')[:30]}...]({result.get('url', '#')})")
-                st.markdown("**Сниппет:**")
-                st.info(result.get('snippet', 'Нет описания')[:200] + "...")
-                
-                if result.get('full_content'):
-                    st.text_area(
-                        "Полный текст", 
-                        value=result['full_content'][:3000], 
-                        height=200,
-                        key=f"web_content_{i}"
-                    )
-    else:
-        st.info("Нет результатов веб-поиска")
-
-    # Блок результатов из Qdrant
-    if st.session_state.get('qdrant_chunks'):
-        st.subheader("🔍 Релевантные фрагменты из базы знаний")
-        
-        semantic_chunks = st.session_state.qdrant_chunks[:5]
-        text_chunks = st.session_state.qdrant_chunks[5:10] if len(st.session_state.qdrant_chunks) > 5 else []
-        
-        if semantic_chunks:
-            with st.expander("Семантический поиск", expanded=True):
-                for i, chunk in enumerate(semantic_chunks):
-                    st.text_area(
-                        f"Фрагмент {i+1} (по смыслу)", 
-                        value=chunk[:2000], 
-                        height=150,
-                        key=f"semantic_chunk_{i}"
-                    )
-        
-        if text_chunks:
-            with st.expander("Полнотекстовый поиск", expanded=False):
-                for i, chunk in enumerate(text_chunks):
-                    st.text_area(
-                        f"Фрагмент {i+1} (по ключевым словам)", 
-                        value=chunk[:2000], 
-                        height=150,
-                        key=f"text_chunk_{i}"
-                    )
-    else:
-        st.info("Нет результатов из базы знаний")
+110-6097
     # Блок загруженного документа
     if st.session_state.get('document_text'):
         st.subheader("📄 Загруженный документ")
