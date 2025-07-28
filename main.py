@@ -189,16 +189,20 @@ if st.session_state.get('llm_response'):
 with st.sidebar:
 
     
-# Сайдбар с дополнительной информацией
+with st.sidebar:
+    # Блок отладочной информации
+    if st.session_state.get('debug_info'):
+        with st.expander("🔧 Отладочная информация", expanded=False):
+            st.text(st.session_state.debug_info)
 
     st.subheader("Результаты поиска")
     
     # Блок веб-результатов
     if st.session_state.get('web_search_results'):
         st.subheader("🌐 Веб-результаты")
-        for i, result in enumerate(st.session_state.web_search_results[:3]):  # Показываем топ-3
-            with st.expander(f"{i+1}. {result['title'][:50]}...", expanded=False):
-                st.markdown(f"**URL:** [{result['url'][:30]}...]({result['url']})")
+        for i, result in enumerate(st.session_state.web_search_results[:3]):
+            with st.expander(f"{i+1}. {result.get('title', 'Без названия')[:50]}...", expanded=False):
+                st.markdown(f"**URL:** [{result.get('url', '#')[:30]}...]({result.get('url', '#')})")
                 st.markdown("**Сниппет:**")
                 st.info(result.get('snippet', 'Нет описания')[:200] + "...")
                 
@@ -209,13 +213,14 @@ with st.sidebar:
                         height=200,
                         key=f"web_content_{i}"
                     )
+    else:
+        st.info("Нет результатов веб-поиска")
 
     # Блок результатов из Qdrant
     if st.session_state.get('qdrant_chunks'):
         st.subheader("🔍 Релевантные фрагменты из базы знаний")
         
-        # Разделяем семантические и текстовые результаты (если нужно)
-        semantic_chunks = st.session_state.qdrant_chunks[:5]  # Пример - первые 5 как семантические
+        semantic_chunks = st.session_state.qdrant_chunks[:5]
         text_chunks = st.session_state.qdrant_chunks[5:10] if len(st.session_state.qdrant_chunks) > 5 else []
         
         if semantic_chunks:
@@ -237,7 +242,8 @@ with st.sidebar:
                         height=150,
                         key=f"text_chunk_{i}"
                     )
-
+    else:
+        st.info("Нет результатов из базы знаний")
     # Блок загруженного документа
     if st.session_state.get('document_text'):
         st.subheader("📄 Загруженный документ")
