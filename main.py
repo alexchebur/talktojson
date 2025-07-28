@@ -99,15 +99,20 @@ if st.button("Отправить", key="send_btn"):
 
         # 2. Поиск в Qdrant
         try:
-            top_k = st.session_state.get('qdrant_top_k', 10)
-            balance = st.session_state.get('search_balance', 0.5)
-            
+            # Получаем настройки из интерфейса
+            top_k = st.session_state.get('qdrant_top_k', 10)  # Количество фрагментов
+            balance = st.session_state.get('search_balance', 0.5)  # Баланс семантика/текст
+    
+            # Выполняем поиск
             qdrant_chunks = st.session_state.data_processor.enhance_with_qdrant_search(
-                user_input,
+                query=user_input,
                 top_k=top_k,
                 keyword_weight=balance
             )
-            st.session_state.qdrant_chunks = qdrant_chunks
+    
+            # Сохраняем результаты
+            st.session_state.qdrant_chunks = qdrant_chunks if qdrant_chunks else []
+    
         except Exception as e:
             st.error(f"Ошибка поиска в Qdrant: {str(e)}")
             st.session_state.qdrant_chunks = []
