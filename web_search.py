@@ -23,29 +23,17 @@ class WebSearcher:
         
     def perform_search(self, query: str, max_results: int = 1) -> List[Dict]:
         try:
-            priority_results = []
-            
-            # ШАГ 1: Поиск по приоритетным сайтам
-            for site in self.priority_sites:
-                if len(priority_results) >= max_results:
-                    break
-                    
-                site_query = f"site:{site} {query}"
-                results = self._execute_search(site_query, max_results - len(priority_results))
-                priority_results.extend(results)
-
-            # ШАГ 2: Общий поиск если не набрано достаточно результатов
-            final_results = priority_results
-            if len(final_results) < max_results:
-                general_results = self._execute_search(
-                    query, 
-                    max_results - len(final_results))
-                final_results.extend(general_results)
-
-            return final_results[:max_results]
-
+            results = self._execute_search(query, max_results)
+            # Гарантируем структуру результатов
+            for res in results:
+                res['query'] = query  # Добавляем query
+                res.setdefault('title', 'Без названия')
+                res.setdefault('url', '')
+                res.setdefault('snippet', 'Нет описания')
+                res.setdefault('full_content', '')
+            return results
         except Exception as e:
-            logger.error(f"Ошибка Google CSE: {str(e)}")
+            logger.error(f"Ошибка поиска: {str(e)}")
             return []
 
     def _execute_search(self, query: str, max_results: int) -> List[Dict]:
