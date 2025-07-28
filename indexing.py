@@ -2,6 +2,7 @@ import os
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
+from typing import Dict, List, Tuple, Optional
 import uuid
 
 class IndexBuilder:
