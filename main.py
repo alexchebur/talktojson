@@ -171,9 +171,42 @@ if st.session_state.get('llm_response'):
     st.markdown(st.session_state.llm_response)
 
 # Сайдбар с дополнительной информацией
-
+with st.sidebar:
+    st.subheader("Результаты поиска")
     
-110-6097
+    # Блок веб-результатов
+    if st.session_state.get('web_search_results'):
+        st.subheader("🌐 Веб-результаты")
+        for i, result in enumerate(st.session_state.web_search_results[:3]):
+            with st.expander(f"{i+1}. {result.get('title', 'Без названия')[:50]}...", expanded=False):
+                st.markdown(f"**URL:** [{result.get('url', '#')[:30]}...]({result.get('url', '#')})")
+                st.markdown("**Сниппет:**")
+                st.info(result.get('snippet', 'Нет описания')[:200] + "...")
+                
+                if result.get('full_content'):
+                    st.text_area(
+                        "Полный текст", 
+                        value=result['full_content'][:3000], 
+                        height=200,
+                        key=f"web_content_{i}"
+                    )
+    else:
+        st.info("Нет результатов веб-поиска")
+
+    # Блок результатов из Qdrant
+    if st.session_state.get('qdrant_chunks'):
+        st.subheader("🔍 Релевантные фрагменты")
+        for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
+            st.text_area(
+                f"Фрагмент {i+1}", 
+                value=chunk[:2000], 
+                height=150,
+                key=f"qdrant_chunk_{i}"
+            )
+    else:
+        st.info("Нет результатов из базы знаний")
+    
+
     # Блок загруженного документа
     if st.session_state.get('document_text'):
         st.subheader("📄 Загруженный документ")
