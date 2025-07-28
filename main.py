@@ -191,37 +191,70 @@ if st.session_state.get('llm_response'):
 
 # Сайдбар с дополнительной информацией
 with st.sidebar:
-    # Веб-результаты (объединенный блок)
+    st.subheader("Результаты поиска")
+    
+    # Блок веб-результатов
     if st.session_state.get('web_search_results'):
         st.subheader("🌐 Веб-результаты")
         
-        # Основной запрос
-        main_results = [r for r in st.session_state.web_search_results if r['query'] == st.session_state.last_query]
-        if main_results:
-            st.caption(f"По запросу: '{st.session_state.last_query}'")
-            for i, res in enumerate(main_results[:3]):
-                with st.expander(f"{i+1}. {res.get('title', '')[:50]}...", expanded=False):
-                    st.markdown(f"**URL:** [{res.get('url', '')[:30]}...]({res.get('url', '')})")
-                    st.text_area("Сниппет", value=res.get('snippet', ''), height=100, key=f"web_{i}")
+        # Разделяем результаты по источникам
+        main_query_results = [
+            r for r in st.session_state.web_search_results 
+            if r.get('query', '') == st.session_state.get('last_query', '')
+        ]
         
-        # Сгенерированные запросы
+        if main_query_results:
+            st.caption(f"По основному запросу: '{st.session_state.last_query}'")
+            for i, res in enumerate(main_query_results[:3]):
+                with st.expander(f"{i+1}. {res.get('title', 'Без названия')[:50]}...", expanded=False):
+                    st.markdown(f"**URL:** [{res.get('url', '')[:30]}...]({res.get('url', '')})")
+                    st.markdown("**Сниппет:**")
+                    st.info(res.get('snippet', 'Нет описания')[:200] + "...")
+                    if res.get('full_content'):
+                        st.text_area(
+                            "Полный текст", 
+                            value=res['full_content'][:3000], 
+                            height=200,
+                            key=f"main_web_{i}"
+                        )
+
+        # Результаты по сгенерированным запросам
         if st.session_state.get('generated_queries'):
             for q_idx, query in enumerate(st.session_state.generated_queries[:2]):
-                query_results = [r for r in st.session_state.web_search_results if r['query'] == query]
+                query_results = [
+                    r for r in st.session_state.web_search_results 
+                    if r.get('query', '') == query
+                ]
+                
                 if query_results:
-                    st.caption(f"Уточняющий запрос {q_idx+1}: '{query}'")
+                    st.caption(f"По уточняющему запросу {q_idx+1}: '{query}'")
                     for r_idx, res in enumerate(query_results[:2]):
                         with st.expander(f"Результат {r_idx+1}", expanded=False):
                             st.markdown(f"**URL:** [{res.get('url', '')[:30]}...]({res.get('url', '')})")
-                            st.text_area("Сниппет", value=res.get('snippet', ''), height=100, key=f"gen_{q_idx}_{r_idx}")
+                            st.markdown("**Сниппет:**")
+                            st.info(res.get('snippet', 'Нет описания')[:200] + "...")
+                            if res.get('full_content'):
+                                st.text_area(
+                                    f"Полный текст {q_idx+1}-{r_idx+1}", 
+                                    value=res['full_content'][:3000], 
+                                    height=200,
+                                    key=f"gen_web_{q_idx}_{r_idx}"
+                                )
     
-    # Qdrant результаты
+    # Блок результатов из Qdrant
     if st.session_state.get('qdrant_chunks'):
-        st.subheader("📚 Qdrant")
+        st.subheader("📚 База знаний (Qdrant)")
         for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
-            st.text_area(f"Фрагмент {i+1}", value=chunk[:2000], height=150, key=f"qdrant_{i}")
+            st.text_area(
+                f"Фрагмент {i+1}", 
+                value=chunk[:2000], 
+                height=150,
+                key=f"qdrant_chunk_{i}"
+            )
     else:
         st.info("Нет результатов из базы знаний")
+
+    # Остальные блоки (документ, настройки, история)...
     
 
     # Блок загруженного документа
