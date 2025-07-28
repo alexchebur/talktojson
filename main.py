@@ -39,7 +39,18 @@ web_searcher = WebSearcher()
 
 
 
+# Перед веб-поиском добавьте:
+if 'generated_queries' not in st.session_state:
+    st.session_state.generated_queries = []
 
+# Генерация запросов
+try:
+    keywords = st.session_state.data_processor.extract_keywords(user_input)
+    st.session_state.generated_queries = query_generator.generate(user_input, keywords)
+    st.write(f"Сгенерировано запросов: {len(st.session_state.generated_queries)}")  # Для отладки
+except Exception as e:
+    st.error(f"Ошибка генерации запросов: {str(e)}")
+    st.session_state.generated_queries = []
 
 
 # Инициализация веб-поиска
