@@ -85,17 +85,29 @@ if st.button("Отправить", key="send_btn"):
         qdrant_chunks = []
         
         # 1. Веб-поиск
+        # В обработчике кнопки "Отправить" в main.py:
+        # Замените блок веб-поиска на:
         try:
-            web_queries = [user_input] + (st.session_state.get('generated_queries', [])[:2])
-            for query in web_queries[:3]:  # Не более 3 запросов
+            web_queries = [user_input] + (st.session_state.get('generated_queries', [])[:2]
+            st.session_state.web_search_results = []
+    
+            for query in web_queries[:3]:
                 results = web_searcher.perform_search(query, max_results=2)
                 if results:
-                    web_search_results.extend(results)
-            
-            st.session_state.web_search_results = web_search_results
+                    # Добавляем поле query к каждому результату
+                    for res in results:
+                        res['query'] = query
+                    st.session_state.web_search_results.extend(results)
+    
+            # Сохраняем результаты основного запроса отдельно
+            st.session_state.initial_web_results = [
+                r for r in st.session_state.web_search_results 
+                if r.get('query') == user_input
+            ]
         except Exception as e:
             st.error(f"Ошибка веб-поиска: {str(e)}")
             st.session_state.web_search_results = []
+            st.session_state.initial_web_results = []
 
         # 2. Поиск в Qdrant
         try:
