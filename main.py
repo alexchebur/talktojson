@@ -88,7 +88,7 @@ if st.button("Отправить", key="send_btn"):
         # В обработчике кнопки "Отправить" в main.py:
         # Замените блок веб-поиска на:
         try:
-            web_queries = [user_input] + (st.session_state.get('generated_queries', [])[:2]
+            web_queries = [user_input] + (st.session_state.get('generated_queries', [])[:2])
             st.session_state.web_search_results = []
     
             for query in web_queries[:3]:
