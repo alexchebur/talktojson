@@ -50,14 +50,6 @@ if 'data_processor' not in st.session_state:
 if 'generated_queries' not in st.session_state:
     st.session_state.generated_queries = []
 
-# Генерация запросов
-try:
-    keywords = st.session_state.data_processor.extract_keywords(user_input)
-    st.session_state.generated_queries = query_generator.generate(user_input, keywords)
-    st.write(f"Сгенерировано запросов: {len(st.session_state.generated_queries)}")  # Для отладки
-except Exception as e:
-    st.error(f"Ошибка генерации запросов: {str(e)}")
-    st.session_state.generated_queries = []
 
 
 # Инициализация веб-поиска
@@ -91,11 +83,23 @@ if uploaded_file:
 
 
 if st.button("Отправить", key="send_btn"):
+    user_input = st.session_state.user_input  # Получаем ввод пользователя из session_state
+    
     if not user_input.strip():
         st.error("Введите текст вопроса")
         st.stop()
     
     st.session_state.last_query = user_input
+    
+    with st.spinner("Обработка запроса..."):
+        # 1. Генерация запросов (добавьте этот блок)
+        try:
+            keywords = st.session_state.data_processor.extract_keywords(user_input)
+            st.session_state.generated_queries = st.session_state.query_generator.generate(user_input, keywords)
+            st.write(f"Сгенерировано запросов: {len(st.session_state.generated_queries)}")  # Для отладки
+        except Exception as e:
+            st.error(f"Ошибка генерации запросов: {str(e)}")
+            st.session_state.generated_queries = []
     
     with st.spinner("Обработка запроса..."):
         # 1. Инициализация переменных
