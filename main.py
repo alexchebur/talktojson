@@ -142,6 +142,9 @@ if st.button("Отправить", key="send_btn"):
             st.error(f"Ошибка поиска в Qdrant: {str(e)}")
             st.session_state.qdrant_chunks = []
 
+
+
+
         # 4. Формирование контекста
         context_parts = []
         
@@ -162,6 +165,19 @@ if st.button("Отправить", key="send_btn"):
             context_parts.append("База знаний:\n" + "\n\n".join(
                 chunk[:2000] for chunk in st.session_state.qdrant_chunks[:5]
             ))
+
+        if st.session_state.get('qdrant_chunks'):
+            st.subheader("📚 База знаний (Qdrant)")
+            for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
+                with st.expander(f"Фрагмент {i+1} (Оценка: {chunk.get('score', 0):.2f})", expanded=False):
+                    st.markdown(f"**Семантическая оценка:** {chunk.get('semantic_score', 0):.4f}")
+                    st.markdown(f"**Оценка ключевых слов:** {chunk.get('keyword_score', 0):.4f}")
+                    st.text_area(
+                        "Текст", 
+                        value=chunk['payload']['text'][:2000], 
+                        height=150,
+                        key=f"qdrant_chunk_{i}"
+                    )
         
         # Загруженный документ
         if 'document_text' in st.session_state and st.session_state.document_text:
