@@ -4,6 +4,9 @@ from qdrant_client.http import models
 from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
 from typing import Dict, List, Tuple, Optional
 import uuid
+from sentence_transformers import SentenceTransformer
+from pymystem3 import Mystem
+from qdrant_client.models import TextIndexParams, TokenizerType, KeywordIndexParams
 
 class IndexBuilder:
     def __init__(self):
@@ -13,19 +16,49 @@ class IndexBuilder:
             prefer_grpc=True,
             timeout=30
         )
+        self.model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
+        self.mystem = Mystem() if self._check_mystem() else None
         self._ensure_qdrant_collection()
-
+    
+    def _check_mystem(self):
+        try:
+            from pymystem3 import Mystem
+            return True
+        except ImportError:
+            print("ℹ️ Лемматизатор Mystem недоступен. Установите pymystem3 для лучшего поиска")
+            return False
+    
     def _ensure_qdrant_collection(self):
         try:
-            self.qdrant_client.get_collection(QDRANT_COLLECTION)
+            collection_info = self.qdrant_client.get_collection(QDRANT_COLLECTION)
+            # Проверяем наличие текстового индекса с русским стеммингом
+            if "text" not in collection_info.payload_schema:
+                self._create_text_index()
         except Exception:
-            self.qdrant_client.create_collection(
-                collection_name=QDRANT_COLLECTION,
-                vectors_config=models.VectorParams(
-                    size=768,  # Для all-mpnet-base-v2
-                    distance=models.Distance.COSINE
-                )
+            self._create_collection_with_indexes()
+    
+    def _create_collection_with_indexes(self):
+        self.qdrant_client.create_collection(
+            collection_name=QDRANT_COLLECTION,
+            vectors_config=models.VectorParams(
+                size=768,
+                distance=models.Distance.COSINE
             )
+        )
+        self._create_text_index()
+    
+    def _create_text_index(self):
+        self.qdrant_client.create_payload_index(
+            collection_name=QDRANT_COLLECTION,
+            field_name="text",
+            field_schema=TextIndexParams(
+                type="text",
+                tokenizer=TokenizerType.WORD,
+                min_token_len=2,
+                max_token_len=20,
+                lowercase=True
+            )
+        )
     
     def semantic_search_in_qdrant(
         self, 
