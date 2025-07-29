@@ -60,93 +60,87 @@ class IndexBuilder:
             )
         )
     
-    def semantic_search_in_qdrant(
-        self, 
-        query: str, 
-        top_k: int = 10,
-        keyword_weight: float = 0.5
-    ) -> List[dict]:
-        try:
-            # Используем гибридный поиск с учетом веса
-            results = self.hybrid_search(
-                query, 
-                top_k=top_k,
-                keyword_weight=keyword_weight
-            )
-            return [{"text": result['payload']['text']} for result in results]
-        except Exception as e:
-            print(f"Ошибка поиска в Qdrant: {str(e)}")
-            return []
+    # Добавить словарь синонимов
+    SYNONYMS = {
+        "теплосетев": ["сетев", "теплосеть", "теплоснабжающая"],
+        # ... остальные синонимы из примера
+    }
 
-    def hybrid_search(
-        self, 
-        query: str, 
-        top_k: int = 5, 
-        keyword_weight: float = 0.5
-    ) -> List[dict]:
-        """Гибридный поиск: семантика + ключевые слова"""
-        try:
-            # 1. Получаем эмбеддинг для запроса
-            query_embedding = self._get_embeddings_batch([query])[0]
-            if not query_embedding:
-                return []
+    def expand_query(self, query: str) -> str:
+        """Расширяет запрос синонимами и стеммингом"""
+        if self.mystem:
+            lemmas = self.mystem.lemmatize(query)
+            clean_query = ''.join(c.lower() if c.isalnum() or c.isspace() else ' ' for c in ' '.join(lemmas))
+        else:
+            clean_query = ''.join(c.lower() if c.isalnum() or c.isspace() else ' ' for c in query)
+    
+        words = clean_query.split()
+        expanded = []
+        for word in words:
+            expanded.append(word)
+            if word in self.SYNONYMS:
+                expanded.extend(self.SYNONYMS[word])
+        return " ".join(expanded)
 
-            # 2. Семантический поиск
-            semantic_results = self.qdrant_client.search(
-                collection_name=QDRANT_COLLECTION,
-                query_vector=query_embedding,
-                limit=top_k,
-                with_payload=True
-            )
-        
-            # 3. Полнотекстовый поиск
-            text_results = self.qdrant_client.search(
-                collection_name=QDRANT_COLLECTION,
-                query_filter=models.Filter(
-                    must=[models.FieldCondition(
-                        key="text",
-                        match=models.MatchText(text=query),
-                    )]
-                ),
-                limit=top_k,
-                with_payload=True
-            )
-        
-            # 4. Комбинирование результатов
-            combined = {}
-        
-            # Обрабатываем семантические результаты
-            for res in semantic_results:
+    def hybrid_search(self, query: str, top_k: int = 5, keyword_weight: float = 0.5) -> List[dict]:
+        """Обновленный гибридный поиск с расширением запроса"""
+        expanded_query = self.expand_query(query)
+    
+        # Семантический поиск
+        query_embedding = self.model.encode(expanded_query).tolist()
+        semantic_results = self.qdrant_client.search(
+            collection_name=QDRANT_COLLECTION,
+            query_vector=query_embedding,
+            limit=top_k * 2,
+            with_payload=True
+        )
+    
+        # Полнотекстовый поиск
+        text_results = self.qdrant_client.search(
+            collection_name=QDRANT_COLLECTION,
+            query_filter=models.Filter(
+                must=[models.FieldCondition(
+                    key="text",
+                    match=models.MatchText(text=expanded_query[:100])  # Ограничиваем длину запроса
+                )]
+            ),
+            limit=top_k * 2,
+            with_payload=True
+        )
+    
+        # Объединение и ранжирование (как в примере)
+        combined = {}
+        for res in semantic_results:
+            combined[res.id] = {
+                "payload": res.payload,
+                "semantic_score": res.score,
+                "keyword_score": 0.0
+            }
+    
+        for res in text_results:
+            if res.id in combined:
+                combined[res.id]["keyword_score"] = res.score
+            else:
                 combined[res.id] = {
                     "payload": res.payload,
-                    "semantic_score": res.score,
-                    "keyword_score": 0.0
+                    "semantic_score": 0.0,
+                    "keyword_score": res.score
                 }
-        
-            # Добавляем текстовые результаты
-            for res in text_results:
-                if res.id in combined:
-                    combined[res.id]["keyword_score"] = res.score
-                else:
-                    combined[res.id] = {
-                        "payload": res.payload,
-                        "semantic_score": 0.0,
-                        "keyword_score": res.score
-                    }
-        
-            # 5. Расчет комбинированной оценки
-            final_results = []
-            for point_id, data in combined.items():
-                combined_score = (keyword_weight * data["keyword_score"] + 
-                               (1 - keyword_weight) * data["semantic_score"])
-                final_results.append({
-                    "id": point_id,
-                    "payload": data["payload"],
-                    "score": combined_score
-                })
-        
-            return sorted(final_results, key=lambda x: x["score"], reverse=True)[:top_k]
     
-        except Exception as e:
-            print(f"Ошибка гибридного поиска: {str(e)}")
-            return []
+        final_results = []
+        for point_id, data in combined.items():
+            if data["keyword_score"] > 0:
+                score = (keyword_weight * data["keyword_score"] + 
+                       (1 - keyword_weight) * data["semantic_score"])
+            else:
+                score = 0.9 * data["semantic_score"]
+        
+            final_results.append({
+                "id": point_id,
+                "payload": data["payload"],
+                "score": score,
+                "semantic_score": data["semantic_score"],
+                "keyword_score": data["keyword_score"]
+            })
+    
+        return sorted(final_results, key=lambda x: x["score"], reverse=True)[:top_k]
