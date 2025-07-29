@@ -18,6 +18,7 @@ torch
 networkx
 matplotlib
 qdrant-client
+pymystem3
 
 
 
