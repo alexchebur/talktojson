@@ -9,7 +9,7 @@ from typing import List, Dict
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
 import torch
-from transformers import AutoTokenizer, AutoModel
+from transformers import TFAutoModel, AutoTokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -42,30 +42,40 @@ class IndexBuilder:
             self._model = AutoModel.from_pretrained("cointegrated/rubert-tiny2")
             self._model.eval()
 
+    def _load_models(self):
+        """Загрузка моделей TensorFlow для эмбеддингов"""
+        if self._tokenizer is None or self._model is None:
+            self._tokenizer = AutoTokenizer.from_pretrained("cointegrated/rubert-tiny2")
+            self._model = TFAutoModel.from_pretrained("cointegrated/rubert-tiny2", from_pt=True)
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def semantic_search(self, query: str, top_k: int = 5) -> List[Dict]:
-        """Семантический поиск с повторами при ошибках"""
+        """Семантический поиск с использованием TensorFlow и нового API Qdrant"""
         try:
             self._load_models()
-            
-            with torch.no_grad():
-                inputs = self._tokenizer(query, return_tensors="pt", padding=True, truncation=True, max_length=512)
-                outputs = self._model(**inputs)
-                embeddings = outputs.last_hidden_state
-                attention_mask = inputs['attention_mask']
-                mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
-                sum_embeddings = torch.sum(embeddings * mask_expanded, 1)
-                sum_mask = torch.clamp(mask_expanded.sum(1), min=1e-9)
-                embeddings = sum_embeddings / sum_mask
-                embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-                embedding = embeddings[0].numpy().tolist()
-                
-            results = self.qdrant_client.search(
+        
+            inputs = self._tokenizer(query, return_tensors="tf", padding=True, truncation=True, max_length=512)
+            outputs = self._model(**inputs)
+            embeddings = outputs.last_hidden_state
+        
+            # Обработка эмбеддингов в TensorFlow
+            attention_mask = tf.cast(inputs['attention_mask'], tf.float32)
+            mask_expanded = tf.expand_dims(attention_mask, -1)
+            sum_embeddings = tf.reduce_sum(embeddings * mask_expanded, axis=1)
+            sum_mask = tf.maximum(tf.reduce_sum(mask_expanded, axis=1), 1e-9)
+            embeddings = sum_embeddings / sum_mask
+            embeddings = tf.math.l2_normalize(embeddings, axis=1)
+        
+            embedding = embeddings[0].numpy().tolist()
+        
+            # Используем query_points вместо устаревшего search
+            results = self.qdrant_client.query_points(
                 collection_name=QDRANT_COLLECTION,
-                query_vector=embedding,
+                query=embedding,  # параметр теперь называется query вместо query_vector
                 limit=top_k,
                 with_payload=True
-            )
+            ).points  # Получаем список точек из результата
+
             return [{
                 "id": res.id,
                 "score": res.score,
