@@ -11,7 +11,7 @@ import requests
 import json
 import numpy as np
 import networkx as nx
-import matplotlib.pyplot as plt
+
 from utils import initialize_session, setup_logging, file_to_text, clean_text
 from config import GEMINI_API_KEY, API_URL, API_TIMEOUT
 from web_search import WebSearcher
@@ -20,7 +20,7 @@ from indexing import IndexBuilder
 from processing import DataProcessor
 from prompts import get_prompt
 from typing import Dict, List, Tuple, Optional
-import pickle
+
 from pathlib import Path
 
 
