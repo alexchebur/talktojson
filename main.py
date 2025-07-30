@@ -87,10 +87,38 @@ def parse_stage1_response(response: str) -> dict:
     
     return result
 
-# Интерфейс приложения
-#st.title("ИИ-помощник по подготовке правовых заключений")
-#uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
-# Интерфейс приложения
+def parse_stage2_response(response: str) -> dict:
+    """Парсинг текстового ответа этапа 2"""
+    result = {
+        "reasoning": "",
+        "opinion_draft": ""
+    }
+    
+    # Разделяем анализ и заключение
+    analysis_part = ""
+    draft_part = ""
+    
+    if "Анализ:" in response:
+        parts = response.split("Анализ:", 1)
+        if "Проект заключения:" in parts[1]:
+            analysis_part, draft_part = parts[1].split("Проект заключения:", 1)
+        else:
+            analysis_part = parts[1]
+    elif "Проект заключения:" in response:
+        draft_part = response.split("Проект заключения:", 1)[1]
+    
+    # Очистка текста
+    result["reasoning"] = analysis_part.strip()
+    result["opinion_draft"] = draft_part.strip()
+    
+    # Проверка заполненности
+    if not result["opinion_draft"]:
+        raise ValueError("Не удалось извлечь проект заключения")
+    
+    return result
+    
+
+
 st.title("ИИ-помощник по подготовке правовых заключений")
 uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 
@@ -110,8 +138,6 @@ if uploaded_file:
         st.session_state.document_text = clean_text(file_text)[:10000]  # Первые 10k символов
 
 
-
-# ... (импорты и инициализация остаются без изменений) ...
 
 # Новая функция для вызова Gemini API
 def call_gemini_api(prompt: str, temperature=0.3, max_output_tokens=5000) -> str:
@@ -206,17 +232,33 @@ if st.button("Отправить", key="send_btn"):
     
     # Этап 3: Генерация проекта заключения
     with st.spinner("Подготовка проекта заключения..."):
-        stage2_prompt = get_prompt("stage2", {
-            "user_query": user_input,
-            "problem_formulation": search_data['problem_formulation'],
-            "context": full_context
-        })
-        stage2_response = call_gemini_api(stage2_prompt, max_output_tokens=10000)
-        
         try:
-            opinion_data = json.loads(stage2_response)
-        except:
-            st.error("Ошибка разбора JSON на этапе 2")
+            stage2_prompt = get_prompt("stage2", {
+                "user_query": user_input,
+                "problem_formulation": search_data['problem_formulation'],
+                "context": full_context
+            })
+        
+            stage2_response = call_gemini_api(stage2_prompt, max_output_tokens=10000)
+        
+            try:
+                opinion_data = parse_stage2_response(stage2_response)
+                st.session_state.opinion_data = opinion_data
+            
+                # Для отладки
+                with st.expander("Промежуточные результаты"):
+                    st.write("**Анализ:**")
+                    st.write(opinion_data["reasoning"])
+                    st.write("**Проект заключения (фрагмент):**")
+                    st.write(opinion_data["opinion_draft"][:1000] + "...")
+                
+            except Exception as e:
+                st.error(f"Ошибка разбора ответа: {str(e)}")
+                st.text_area("Полный ответ модели:", value=stage2_response, height=300)
+                st.stop()
+            
+        except Exception as e:
+            st.error(f"Ошибка при генерации заключения: {str(e)}")
             st.stop()
     
     # Этап 4: Финальная проверка и оформление
