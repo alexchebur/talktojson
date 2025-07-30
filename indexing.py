@@ -1,21 +1,18 @@
 import os
-
 from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from typing import List, Dict
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
-
-from transformers import TFAutoModel, AutoTokenizer
+from sentence_transformers import SentenceTransformer  # Только этот импорт нужен
 
 logger = logging.getLogger(__name__)
 
 class IndexBuilder:
     def __init__(self):
         self.qdrant_client = self._init_qdrant_client()
-        self._tokenizer = None
-        self._model = None
+        self.model = None  # Будет загружен при первом использовании
         
     def _init_qdrant_client(self):
         """Инициализация клиента Qdrant с обработкой ошибок"""
@@ -33,46 +30,35 @@ class IndexBuilder:
             logger.error(f"Ошибка подключения к Qdrant: {str(e)}")
             raise
 
-    def _load_models(self):
-        """Загрузка моделей для эмбеддингов"""
-        if self._tokenizer is None or self._model is None:
-            self._tokenizer = AutoTokenizer.from_pretrained("cointegrated/rubert-tiny2")
-            self._model = AutoModel.from_pretrained("cointegrated/rubert-tiny2")
-            self._model.eval()
-
-    def _load_models(self):
-        """Загрузка моделей TensorFlow для эмбеддингов"""
-        if self._tokenizer is None or self._model is None:
-            self._tokenizer = AutoTokenizer.from_pretrained("cointegrated/rubert-tiny2")
-            self._model = TFAutoModel.from_pretrained("cointegrated/rubert-tiny2", from_pt=True)
+    def _load_model(self):
+        """Загрузка модели sentence-transformers"""
+        if self.model is None:
+            self.model = SentenceTransformer(
+                "cointegrated/rubert-tiny2",
+                device="cpu",  # Используйте "cuda" если есть GPU
+                trust_remote_code=True  # Критично для rubert-tiny2
+            )
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def semantic_search(self, query: str, top_k: int = 5) -> List[Dict]:
-        """Семантический поиск с использованием TensorFlow и нового API Qdrant"""
+        """Семантический поиск с использованием sentence-transformers"""
         try:
-            self._load_models()
-        
-            inputs = self._tokenizer(query, return_tensors="tf", padding=True, truncation=True, max_length=512)
-            outputs = self._model(**inputs)
-            embeddings = outputs.last_hidden_state
-        
-            # Обработка эмбеддингов в TensorFlow
-            attention_mask = tf.cast(inputs['attention_mask'], tf.float32)
-            mask_expanded = tf.expand_dims(attention_mask, -1)
-            sum_embeddings = tf.reduce_sum(embeddings * mask_expanded, axis=1)
-            sum_mask = tf.maximum(tf.reduce_sum(mask_expanded, axis=1), 1e-9)
-            embeddings = sum_embeddings / sum_mask
-            embeddings = tf.math.l2_normalize(embeddings, axis=1)
-        
-            embedding = embeddings[0].numpy().tolist()
-        
-            # Используем query_points вместо устаревшего search
+            self._load_model()
+            
+            # Генерация эмбеддинга (sentence-transformers делает mean pooling + L2 нормализацию автоматически)
+            embedding = self.model.encode(
+                query,
+                normalize_embeddings=True,  # Обязательно для совместимости с Qdrant
+                convert_to_numpy=True
+            ).tolist()
+            
+            # Используем современный API Qdrant
             results = self.qdrant_client.query_points(
                 collection_name=QDRANT_COLLECTION,
-                query=embedding,  # параметр теперь называется query вместо query_vector
+                query=embedding,
                 limit=top_k,
                 with_payload=True
-            ).points  # Получаем список точек из результата
+            ).points
 
             return [{
                 "id": res.id,
@@ -80,12 +66,13 @@ class IndexBuilder:
                 "payload": res.payload,
                 "text": res.payload.get("text", "")
             } for res in results]
+            
         except Exception as e:
             logger.error(f"Ошибка семантического поиска: {str(e)}")
             return []
 
     def keyword_search(self, keywords: List[str], top_k: int = 5) -> List[dict]:
-        """Полнотекстовый поиск по ключевым словам (нестрогое соответствие)"""
+        """Полнотекстовый поиск по ключевым словам"""
         should_conditions = [
             models.FieldCondition(
                 key="text",
@@ -107,7 +94,7 @@ class IndexBuilder:
             "text": hit.payload.get("text", "")
         } for hit in results]
     
-    # Добавить словарь синонимов
+    # Словарь синонимов (оставлен без изменений)
     SYNONYMS = {
         "теплосетевая": ["сетевая", "теплосеть", "теплоснабжающая"],
         "электросетевая": ["сетевая", "электросеть", "электроснабжающая"],
@@ -119,14 +106,11 @@ class IndexBuilder:
     }
 
     def expand_query(self, query: str) -> str:
-        """Расширяет запрос синонимами и стеммингом"""
-        if self.mystem:
-            lemmas = self.mystem.lemmatize(query)
-            clean_query = ''.join(c.lower() if c.isalnum() or c.isspace() else ' ' for c in ' '.join(lemmas))
-        else:
-            clean_query = ''.join(c.lower() if c.isalnum() or c.isspace() else ' ' for c in query)
-    
+        """Расширяет запрос синонимами"""
+        # Упрощенная обработка (удалена зависимость от mystem)
+        clean_query = ''.join(c.lower() if c.isalnum() or c.isspace() else ' ' for c in query)
         words = clean_query.split()
+        
         expanded = []
         for word in words:
             expanded.append(word)
@@ -135,32 +119,34 @@ class IndexBuilder:
         return " ".join(expanded)
 
     def hybrid_search(self, query: str, top_k: int = 5, keyword_weight: float = 0.5) -> List[dict]:
-        """Обновленный гибридный поиск с расширением запроса"""
+        """Гибридный поиск с расширением запроса"""
         expanded_query = self.expand_query(query)
-    
-        # Семантический поиск
-        query_embedding = self.model.encode(expanded_query).tolist()
-        semantic_results = self.qdrant_client.search(
+        
+        # Семантический поиск через sentence-transformers
+        self._load_model()
+        query_embedding = self.model.encode(
+            expanded_query,
+            normalize_embeddings=True,
+            convert_to_numpy=True
+        ).tolist()
+        
+        semantic_results = self.qdrant_client.query_points(
             collection_name=QDRANT_COLLECTION,
-            query_vector=query_embedding,
+            query=query_embedding,
             limit=top_k * 2,
             with_payload=True
-        )
-    
+        ).points
+        
         # Полнотекстовый поиск
-        text_results = self.qdrant_client.search(
+        text_results = self.qdrant_client.query_points(
             collection_name=QDRANT_COLLECTION,
-            query_filter=models.Filter(
-                must=[models.FieldCondition(
-                    key="text",
-                    match=models.MatchText(text=expanded_query[:100])  # Ограничиваем длину запроса
-                )]
-            ),
+            query=expanded_query[:100],  # Используем текст как запрос
+            using="text_index",  # Убедитесь, что у вас есть текстовый индекс
             limit=top_k * 2,
             with_payload=True
-        )
-    
-        # Объединение и ранжирование (как в примере)
+        ).points
+        
+        # Объединение результатов
         combined = {}
         for res in semantic_results:
             combined[res.id] = {
@@ -168,7 +154,7 @@ class IndexBuilder:
                 "semantic_score": res.score,
                 "keyword_score": 0.0
             }
-    
+        
         for res in text_results:
             if res.id in combined:
                 combined[res.id]["keyword_score"] = res.score
@@ -178,7 +164,8 @@ class IndexBuilder:
                     "semantic_score": 0.0,
                     "keyword_score": res.score
                 }
-    
+        
+        # Ранжирование
         final_results = []
         for point_id, data in combined.items():
             if data["keyword_score"] > 0:
@@ -186,7 +173,7 @@ class IndexBuilder:
                        (1 - keyword_weight) * data["semantic_score"])
             else:
                 score = 0.9 * data["semantic_score"]
-        
+            
             final_results.append({
                 "id": point_id,
                 "payload": data["payload"],
@@ -194,5 +181,5 @@ class IndexBuilder:
                 "semantic_score": data["semantic_score"],
                 "keyword_score": data["keyword_score"]
             })
-    
+        
         return sorted(final_results, key=lambda x: x["score"], reverse=True)[:top_k]
