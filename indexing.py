@@ -1,3 +1,4 @@
+from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from typing import List, Dict
