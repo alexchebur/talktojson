@@ -1,17 +1,9 @@
-import os
-from qdrant_client import QdrantClient
-from qdrant_client.http import models
-from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
-from typing import Dict, List, Tuple, Optional
-import uuid
-from sentence_transformers import SentenceTransformer
-from pymystem3 import Mystem
-from qdrant_client.models import TextIndexParams, TokenizerType, KeywordIndexParams
 
 import os
+from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
+from qdrant_client.models import TextIndexParams, TokenizerType, KeywordIndexParams
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
 from typing import Dict, List, Tuple, Optional
 import uuid
 from transformers import AutoTokenizer, AutoModel
@@ -21,12 +13,24 @@ import re
 
 class IndexBuilder:
     def __init__(self):
-        self.qdrant_client = QdrantClient(
-            url=QDRANT_URL,
-            api_key=QDRANT_API_KEY,
-            prefer_grpc=True,
-            timeout=30
-        )
+        self.qdrant_client = self._init_qdrant_client()
+        self.model = None  # Инициализация модели будет ленивой
+        
+    def _init_qdrant_client(self):
+        """Инициализация клиента Qdrant с обработкой ошибок"""
+        try:
+            client = QdrantClient(
+                url=QDRANT_URL,
+                api_key=QDRANT_API_KEY,
+                prefer_grpc=True,
+                timeout=30
+            )
+            # Проверка соединения
+            client.get_collections()
+            return client
+        except Exception as e:
+            logger.error(f"Ошибка подключения к Qdrant: {str(e)}")
+            raise
         # Используем rubert-tiny2 как в скрипте индексации
         self.tokenizer = AutoTokenizer.from_pretrained("cointegrated/rubert-tiny2")
         self.model = AutoModel.from_pretrained("cointegrated/rubert-tiny2")
