@@ -107,6 +107,13 @@ def call_gemini_api(prompt: str, temperature=0.3, max_output_tokens=5000) -> str
         st.error(f"Ошибка API: {str(e)}")
         return ""
 
+user_input = st.text_area(
+    "Введите ваш вопрос:", 
+    height=150,
+    max_chars=600,
+    key="user_input_unique"  # Фиксированный ключ
+)
+
 if st.button("Отправить", key="send_btn"):
     user_input = st.session_state.user_input  # Получаем ввод пользователя из session_state
     
