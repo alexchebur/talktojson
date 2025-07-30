@@ -63,7 +63,9 @@ if "web_searcher" not in st.session_state:
 # Интерфейс приложения
 #st.title("ИИ-помощник по подготовке правовых заключений")
 #uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
-
+# Интерфейс приложения
+st.title("ИИ-помощник по подготовке правовых заключений")
+uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 
 # Убрана инициализация BM25
 if "index_builder" not in st.session_state:
@@ -107,9 +109,7 @@ def call_gemini_api(prompt: str, temperature=0.3, max_output_tokens=5000) -> str
         st.error(f"Ошибка API: {str(e)}")
         return ""
 
-# Интерфейс приложения
-st.title("ИИ-помощник по подготовке правовых заключений")
-uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
+
 
 # Инициализация ввода пользователя
 if 'user_input' not in st.session_state:
