@@ -132,6 +132,9 @@ def call_gemini_api(prompt: str, temperature=0.3, max_output_tokens=5000) -> str
         response.raise_for_status()
         data = response.json()
         return data['candidates'][0]['content']['parts'][0]['text']
+        time.sleep(1)  # 1 секунда между запросами
+
+
     except Exception as e:
         st.error(f"Ошибка API: {str(e)}")
         return ""
