@@ -82,150 +82,101 @@ if uploaded_file:
 
 
 
+# ... (импорты и инициализация остаются без изменений) ...
+
+# Новая функция для вызова Gemini API
+def call_gemini_api(prompt: str, temperature=0.3, max_output_tokens=5000) -> str:
+    try:
+        response = requests.post(
+            API_URL,
+            headers={"Content-Type": "application/json"},
+            params={"key": GEMINI_API_KEY},
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "temperature": temperature,
+                    "maxOutputTokens": max_output_tokens
+                }
+            },
+            timeout=API_TIMEOUT
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data['candidates'][0]['content']['parts'][0]['text']
+    except Exception as e:
+        st.error(f"Ошибка API: {str(e)}")
+        return ""
+
 if st.button("Отправить", key="send_btn"):
-    user_input = st.session_state.user_input  # Получаем ввод пользователя из session_state
+    user_input = st.session_state.user_input
     
-    if not user_input.strip():
-        st.error("Введите текст вопроса")
+    # Этап 1: Генерация структурированных данных для поиска
+    stage1_prompt = get_prompt("stage1", {"user_query": user_input})
+    stage1_response = call_gemini_api(stage1_prompt)
+    
+    try:
+        search_data = json.loads(stage1_response)
+    except:
+        st.error("Ошибка разбора JSON на этапе 1")
         st.stop()
     
-    st.session_state.last_query = user_input
-    
-    with st.spinner("Обработка запроса..."):
-        # 1. Генерация запросов (добавьте этот блок)
-        try:
-            keywords = st.session_state.data_processor.extract_keywords(user_input)
-            st.session_state.generated_queries = st.session_state.query_generator.generate(user_input, keywords)
-            st.write(f"Сгенерировано запросов: {len(st.session_state.generated_queries)}")  # Для отладки
-        except Exception as e:
-            st.error(f"Ошибка генерации запросов: {str(e)}")
-            st.session_state.generated_queries = []
-    
-    with st.spinner("Обработка запроса..."):
-        # 1. Инициализация переменных
-        if 'web_search_results' not in st.session_state:
-            st.session_state.web_search_results = []
-        if 'qdrant_chunks' not in st.session_state:
-            st.session_state.qdrant_chunks = []
-        if 'chat_log' not in st.session_state:
-            st.session_state.chat_log = ""
-
-        # 2. Веб-поиск
-        try:
-            queries = [user_input]
-            if 'generated_queries' in st.session_state:
-                queries.extend(st.session_state.generated_queries[:2])
-            
-            st.session_state.web_search_results = []
-            for query in queries[:3]:  # Максимум 3 запроса
-                results = web_searcher.perform_search(query, max_results=2)
-                if results:
-                    # Добавляем query к каждому результату
-                    for res in results:
-                        res['query'] = query  # Гарантируем наличие ключа 'query'
-                    st.session_state.web_search_results.extend(results)
-        except Exception as e:
-            st.error(f"Ошибка веб-поиска: {str(e)}")
-            st.session_state.web_search_results = []
-
-        # 3. Поиск в Qdrant
-        try:
-            top_k = st.session_state.get('qdrant_top_k', 10)
-            balance = st.session_state.get('search_balance', 0.5)
-            
-            st.session_state.qdrant_chunks = st.session_state.data_processor.enhance_with_qdrant_search(
-                query=user_input,
-                top_k=top_k,
-                keyword_weight=balance
-            ) or []  # Гарантируем список, даже если None
-        except Exception as e:
-            st.error(f"Ошибка поиска в Qdrant: {str(e)}")
-            st.session_state.qdrant_chunks = []
-
-
-
-
-        # 4. Формирование контекста
-        context_parts = []
+    # Этап 2: Поиск информации
+    with st.spinner("Поиск информации..."):
+        # Веб-поиск по сгенерированным запросам
+        web_results = []
+        for query in search_data['expanded_queries']:
+            web_results.extend(web_searcher.perform_search(query, max_results=2))
         
-        # Веб-результаты
-        if st.session_state.web_search_results:
-            web_context = []
-            for i, res in enumerate(st.session_state.web_search_results[:3]):
-                web_context.append(
-                    f"Источник {i+1} ({res.get('title', 'Без названия')}):\n"
-                    f"URL: {res.get('url', '')}\n"
-                    f"{res.get('snippet', 'Нет описания')}\n"
-                    f"{res.get('full_content', '')[:2000]}"
-                )
-            context_parts.append("Веб-результаты:\n" + "\n\n".join(web_context))
+        # Поиск в Qdrant
+        qdrant_results = []
+        # Семантический поиск по основному запросу и расширенным
+        for query in [user_input] + search_data['expanded_queries']:
+            qdrant_results.extend(index_builder.semantic_search(query, top_k=3))
+        # Полнотекстовый поиск по ключевым словам
+        qdrant_results.extend(index_builder.keyword_search(search_data['expanded_keywords'], top_k=5))
         
-        # Qdrant результаты
-        if st.session_state.qdrant_chunks:
-            context_parts.append("База знаний:\n" + "\n\n".join(
-                chunk[:2000] for chunk in st.session_state.qdrant_chunks[:5]
-            ))
-
-        if st.session_state.get('qdrant_chunks'):
-            st.subheader("📚 База знаний (Qdrant)")
-            for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
-                with st.expander(f"Фрагмент {i+1} (Оценка: {chunk.get('score', 0):.2f})", expanded=False):
-                    st.markdown(f"**Семантическая оценка:** {chunk.get('semantic_score', 0):.4f}")
-                    st.markdown(f"**Оценка ключевых слов:** {chunk.get('keyword_score', 0):.4f}")
-                    st.text_area(
-                        "Текст", 
-                        value=chunk['payload']['text'][:2000], 
-                        height=150,
-                        key=f"qdrant_chunk_{i}"
-                    )
+        # Формирование контекста
+        context_parts = [
+            f"Проблема: {search_data['problem_formulation']}",
+            "Веб-результаты:"
+        ]
         
-        # Загруженный документ
-        if 'document_text' in st.session_state and st.session_state.document_text:
-            context_parts.append("Загруженный документ:\n" + st.session_state.document_text[:5000])
+        for i, res in enumerate(web_results[:5]):
+            context_parts.append(f"{i+1}. [{res['title']}]({res['url']}): {res['snippet']}")
+        
+        context_parts.append("Базовые знания:")
+        for i, res in enumerate(qdrant_results[:10]):
+            context_parts.append(f"{i+1}. {res['text'][:500]}...")
         
         full_context = "\n\n".join(context_parts)[:15000]
-
-        # 5. Отправка в LLM
+    
+    # Этап 3: Генерация проекта заключения
+    with st.spinner("Подготовка проекта заключения..."):
+        stage2_prompt = get_prompt("stage2", {
+            "user_query": user_input,
+            "problem_formulation": search_data['problem_formulation'],
+            "context": full_context
+        })
+        stage2_response = call_gemini_api(stage2_prompt, max_output_tokens=10000)
+        
         try:
-            prompt = get_prompt("system", {
-                "user_query": user_input,
-                "context": full_context
-            })
-            
-            response = requests.post(
-                API_URL,
-                headers={"Content-Type": "application/json"},
-                params={"key": GEMINI_API_KEY},
-                json={
-                    "contents": [{
-                        "parts": [{"text": prompt}]
-                    }],
-                    "generationConfig": {
-                        "temperature": 0.3,
-                        "maxOutputTokens": 5000
-                    }
-                },
-                timeout=API_TIMEOUT
-            )
-            response.raise_for_status()
-            response_data = response.json()
-            
-            answer = (
-                response_data['candidates'][0]['content']['parts'][0]['text']
-                if 'candidates' in response_data and response_data['candidates']
-                else "Не удалось получить ответ от API"
-            )
-            
-            st.session_state.llm_response = answer
-            st.session_state.chat_log += f"\nПользователь: {user_input}\nАссистент: {answer}"
-            
-        except Exception as e:
-            st.error(f"Ошибка API: {str(e)}")
+            opinion_data = json.loads(stage2_response)
+        except:
+            st.error("Ошибка разбора JSON на этапе 2")
+            st.stop()
+    
+    # Этап 4: Финальная проверка и оформление
+    with st.spinner("Финальная проверка..."):
+        stage3_prompt = get_prompt("stage3", {
+            "opinion_draft": opinion_data['opinion_draft']
+        })
+        final_opinion = call_gemini_api(stage3_prompt, max_output_tokens=10000)
+        st.session_state.final_opinion = final_opinion
 
-# Основной ответ
-if st.session_state.get('llm_response'):
-    st.subheader("Ответ ассистента:")
-    st.markdown(st.session_state.llm_response)
+# Вывод результата
+if st.session_state.get('final_opinion'):
+    st.subheader("Правовое заключение")
+    st.markdown(st.session_state.final_opinion)
 
 # Сайдбар с дополнительной информацией
 with st.sidebar:
