@@ -21,16 +21,13 @@ class WebSearcher:
         self.cse_id = "a4f17489c6a0a4414"
         self.priority_sites = PRIORITY_SITES  # Используем из конфига
         
-    def perform_search(self, query: str, max_results: int = 1) -> List[Dict]:
+    # В методе perform_search
+    def perform_search(self, query: str, max_results: int = 1, query_type="generated") -> List[Dict]:
         try:
             results = self._execute_search(query, max_results)
-            # Гарантируем структуру результатов
             for res in results:
-                res['query'] = query  # Добавляем query
-                res.setdefault('title', 'Без названия')
-                res.setdefault('url', '')
-                res.setdefault('snippet', 'Нет описания')
-                res.setdefault('full_content', '')
+                res['query'] = query
+                res['query_type'] = query_type  # Добавляем тип запроса
             return results
         except Exception as e:
             logger.error(f"Ошибка поиска: {str(e)}")
