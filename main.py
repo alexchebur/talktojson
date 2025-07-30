@@ -1,5 +1,13 @@
 import os
 import re
+try:
+    from torch_fix import apply_torch_fix
+    apply_torch_fix()
+except ImportError:
+    pass
+import torch
+if hasattr(torch._classes, '__path__'):
+    delattr(torch._classes, '__path__')
 import streamlit as st
 import time
 import requests
@@ -18,12 +26,7 @@ from typing import Dict, List, Tuple, Optional
 import pickle
 from pathlib import Path
 
-# Фикс для конфликта Streamlit и PyTorch
-try:
-    from fix_torch import fix_torch_classes
-    fix_torch_classes()
-except ImportError:
-    pass
+
 
 logger = setup_logging()
 initialize_session()
