@@ -63,9 +63,28 @@ if 'generated_queries' not in st.session_state:
 if "web_searcher" not in st.session_state:
     st.session_state.web_searcher = web_searcher
 
-# Загрузка полного индекса (если нужно)
-#if not index_builder.load_full_index():
-#    print("Полный индекс не найден, будет построен при обработке документа")
+def parse_stage1_response(response: str) -> dict:
+    """Парсинг структурированного текстового ответа"""
+    result = {
+        "problem_formulation": "",
+        "expanded_queries": [],
+        "expanded_keywords": []
+    }
+    
+    lines = response.split('\n')
+    for line in lines:
+        line = line.strip()
+        if line.startswith("Проблема:"):
+            result["problem_formulation"] = line.replace("Проблема:", "").strip()
+        elif line.startswith("Вопросы:"):
+            continue
+        elif re.match(r'^\d+\.', line):
+            result["expanded_queries"].append(re.sub(r'^\d+\.\s*', '', line).strip())
+        elif line.startswith("Ключевые слова:"):
+            keywords = line.replace("Ключевые слова:", "").strip()
+            result["expanded_keywords"] = [k.strip() for k in keywords.split(',')]
+    
+    return result
 
 # Интерфейс приложения
 #st.title("ИИ-помощник по подготовке правовых заключений")
@@ -143,11 +162,12 @@ if st.button("Отправить", key="send_btn"):
     # Этап 1: Генерация структурированных данных для поиска
     stage1_prompt = get_prompt("stage1", {"user_query": user_input})
     stage1_response = call_gemini_api(stage1_prompt)
-    
     try:
-        search_data = json.loads(stage1_response)
-    except:
-        st.error("Ошибка разбора JSON на этапе 1")
+        search_data = parse_stage1_response(stage1_response)
+        st.session_state.search_data = search_data
+    except Exception as e:
+        st.error(f"Ошибка разбора ответа: {str(e)}")
+        st.text_area("Ответ модели для отладки:", value=stage1_response)
         st.stop()
     
     # Этап 2: Поиск информации
