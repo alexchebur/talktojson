@@ -61,8 +61,8 @@ if "web_searcher" not in st.session_state:
 #    print("Полный индекс не найден, будет построен при обработке документа")
 
 # Интерфейс приложения
-st.title("ИИ-помощник по подготовке правовых заключений")
-uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
+#st.title("ИИ-помощник по подготовке правовых заключений")
+#uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 
 
 # Убрана инициализация BM25
@@ -107,20 +107,30 @@ def call_gemini_api(prompt: str, temperature=0.3, max_output_tokens=5000) -> str
         st.error(f"Ошибка API: {str(e)}")
         return ""
 
-user_input = st.text_area(
+# Интерфейс приложения
+st.title("ИИ-помощник по подготовке правовых заключений")
+uploaded_file = st.file_uploader("Загрузите документ (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
+
+# Инициализация ввода пользователя
+if 'user_input' not in st.session_state:
+    st.session_state.user_input = ""
+
+# Поле для ввода вопроса пользователя
+st.session_state.user_input = st.text_area(
     "Введите ваш вопрос:", 
+    value=st.session_state.user_input,
     height=150,
     max_chars=600,
-    key="user_input_unique"  # Фиксированный ключ
+    key="user_input_area"
 )
 
 if st.button("Отправить", key="send_btn"):
-    user_input = st.session_state.user_input  # Получаем ввод пользователя из session_state
+    # Получаем ввод пользователя напрямую из session_state
+    user_input = st.session_state.user_input.strip()
     
-    if not user_input.strip():
+    if not user_input:
         st.error("Введите текст вопроса")
         st.stop()
-    
     st.session_state.last_query = user_input
     
     # Этап 1: Генерация структурированных данных для поиска
