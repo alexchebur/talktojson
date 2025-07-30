@@ -68,8 +68,8 @@ class IndexBuilder:
         should_conditions = [
             models.FieldCondition(
                 key="text",
-                match=models.MatchText(text=keyword)
-            for keyword in keywords
+                match=models.MatchText(text=keyword)  
+            ) for keyword in keywords
         ]
         
         results = self.qdrant_client.scroll(
