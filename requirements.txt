@@ -18,6 +18,7 @@ matplotlib
 qdrant-client
 pymystem3
 transformers
+tensorflow
 
 
 
