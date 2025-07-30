@@ -1,17 +1,10 @@
 import sys
 import os
-os.environ['STREAMLIT_DISABLE_WATCHDOG'] = 'true'
-os.environ['TORCH_DISABLE_PATH_CHECK'] = 'true'
+
 
 import re
-try:
-    from torch_fix import apply_torch_fix
-    apply_torch_fix()
-except ImportError:
-    pass
-import torch
-if hasattr(torch._classes, '__path__'):
-    delattr(torch._classes, '__path__')
+
+
 import streamlit as st
 import time
 import requests
