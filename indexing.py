@@ -1,20 +1,18 @@
-
-import os
-from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
-from qdrant_client.models import TextIndexParams, TokenizerType, KeywordIndexParams
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from typing import Dict, List, Tuple, Optional
-import uuid
-from transformers import AutoTokenizer, AutoModel
+from typing import List, Dict
+import logging
+from tenacity import retry, stop_after_attempt, wait_exponential
 import torch
-from pymystem3 import Mystem
-import re
+from transformers import AutoTokenizer, AutoModel
+
+logger = logging.getLogger(__name__)
 
 class IndexBuilder:
     def __init__(self):
         self.qdrant_client = self._init_qdrant_client()
-        self.model = None  # Инициализация модели будет ленивой
+        self._tokenizer = None
+        self._model = None
         
     def _init_qdrant_client(self):
         """Инициализация клиента Qdrant с обработкой ошибок"""
@@ -31,41 +29,47 @@ class IndexBuilder:
         except Exception as e:
             logger.error(f"Ошибка подключения к Qdrant: {str(e)}")
             raise
-        # Используем rubert-tiny2 как в скрипте индексации
-        self.tokenizer = AutoTokenizer.from_pretrained("cointegrated/rubert-tiny2")
-        self.model = AutoModel.from_pretrained("cointegrated/rubert-tiny2")
-        self.model.eval()
-        self.mystem = Mystem()
 
-    def get_embedding(self, text: str) -> List[float]:
-        """Генерация эмбеддингов с помощью rubert-tiny2"""
-        with torch.no_grad():
-            inputs = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
-            outputs = self.model(**inputs)
-            embeddings = outputs.last_hidden_state
-            attention_mask = inputs['attention_mask']
-            mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
-            sum_embeddings = torch.sum(embeddings * mask_expanded, 1)
-            sum_mask = torch.clamp(mask_expanded.sum(1), min=1e-9)
-            embeddings = sum_embeddings / sum_mask
-            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-        return embeddings[0].numpy().tolist()
+    def _load_models(self):
+        """Загрузка моделей для эмбеддингов"""
+        if self._tokenizer is None or self._model is None:
+            self._tokenizer = AutoTokenizer.from_pretrained("cointegrated/rubert-tiny2")
+            self._model = AutoModel.from_pretrained("cointegrated/rubert-tiny2")
+            self._model.eval()
 
-    def semantic_search(self, query: str, top_k: int = 5) -> List[dict]:
-        """Семантический поиск по векторным эмбеддингам"""
-        query_vector = self.get_embedding(query)
-        results = self.qdrant_client.search(
-            collection_name=QDRANT_COLLECTION,
-            query_vector=query_vector,
-            limit=top_k,
-            with_payload=True
-        )
-        return [{
-            "id": res.id,
-            "score": res.score,
-            "payload": res.payload,
-            "text": res.payload.get("text", "")
-        } for res in results]
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def semantic_search(self, query: str, top_k: int = 5) -> List[Dict]:
+        """Семантический поиск с повторами при ошибках"""
+        try:
+            self._load_models()
+            
+            with torch.no_grad():
+                inputs = self._tokenizer(query, return_tensors="pt", padding=True, truncation=True, max_length=512)
+                outputs = self._model(**inputs)
+                embeddings = outputs.last_hidden_state
+                attention_mask = inputs['attention_mask']
+                mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
+                sum_embeddings = torch.sum(embeddings * mask_expanded, 1)
+                sum_mask = torch.clamp(mask_expanded.sum(1), min=1e-9)
+                embeddings = sum_embeddings / sum_mask
+                embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+                embedding = embeddings[0].numpy().tolist()
+                
+            results = self.qdrant_client.search(
+                collection_name=QDRANT_COLLECTION,
+                query_vector=embedding,
+                limit=top_k,
+                with_payload=True
+            )
+            return [{
+                "id": res.id,
+                "score": res.score,
+                "payload": res.payload,
+                "text": res.payload.get("text", "")
+            } for res in results]
+        except Exception as e:
+            logger.error(f"Ошибка семантического поиска: {str(e)}")
+            return []
 
     def keyword_search(self, keywords: List[str], top_k: int = 5) -> List[dict]:
         """Полнотекстовый поиск по ключевым словам (нестрогое соответствие)"""
