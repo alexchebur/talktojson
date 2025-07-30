@@ -8,6 +8,17 @@ from sentence_transformers import SentenceTransformer
 from pymystem3 import Mystem
 from qdrant_client.models import TextIndexParams, TokenizerType, KeywordIndexParams
 
+import os
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
+from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
+from typing import Dict, List, Tuple, Optional
+import uuid
+from transformers import AutoTokenizer, AutoModel
+import torch
+from pymystem3 import Mystem
+import re
+
 class IndexBuilder:
     def __init__(self):
         self.qdrant_client = QdrantClient(
@@ -16,49 +27,64 @@ class IndexBuilder:
             prefer_grpc=True,
             timeout=30
         )
-        self.model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
-        self.mystem = Mystem() if self._check_mystem() else None
-        self._ensure_qdrant_collection()
-    
-    def _check_mystem(self):
-        try:
-            from pymystem3 import Mystem
-            return True
-        except ImportError:
-            print("ℹ️ Лемматизатор Mystem недоступен. Установите pymystem3 для лучшего поиска")
-            return False
-    
-    def _ensure_qdrant_collection(self):
-        try:
-            collection_info = self.qdrant_client.get_collection(QDRANT_COLLECTION)
-            # Проверяем наличие текстового индекса с русским стеммингом
-            if "text" not in collection_info.payload_schema:
-                self._create_text_index()
-        except Exception:
-            self._create_collection_with_indexes()
-    
-    def _create_collection_with_indexes(self):
-        self.qdrant_client.create_collection(
+        # Используем rubert-tiny2 как в скрипте индексации
+        self.tokenizer = AutoTokenizer.from_pretrained("cointegrated/rubert-tiny2")
+        self.model = AutoModel.from_pretrained("cointegrated/rubert-tiny2")
+        self.model.eval()
+        self.mystem = Mystem()
+
+    def get_embedding(self, text: str) -> List[float]:
+        """Генерация эмбеддингов с помощью rubert-tiny2"""
+        with torch.no_grad():
+            inputs = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+            outputs = self.model(**inputs)
+            embeddings = outputs.last_hidden_state
+            attention_mask = inputs['attention_mask']
+            mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
+            sum_embeddings = torch.sum(embeddings * mask_expanded, 1)
+            sum_mask = torch.clamp(mask_expanded.sum(1), min=1e-9)
+            embeddings = sum_embeddings / sum_mask
+            embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+        return embeddings[0].numpy().tolist()
+
+    def semantic_search(self, query: str, top_k: int = 5) -> List[dict]:
+        """Семантический поиск по векторным эмбеддингам"""
+        query_vector = self.get_embedding(query)
+        results = self.qdrant_client.search(
             collection_name=QDRANT_COLLECTION,
-            vectors_config=models.VectorParams(
-                size=768,
-                distance=models.Distance.COSINE
-            )
+            query_vector=query_vector,
+            limit=top_k,
+            with_payload=True
         )
-        self._create_text_index()
-    
-    def _create_text_index(self):
-        self.qdrant_client.create_payload_index(
+        return [{
+            "id": res.id,
+            "score": res.score,
+            "payload": res.payload,
+            "text": res.payload.get("text", "")
+        } for res in results]
+
+    def keyword_search(self, keywords: List[str], top_k: int = 5) -> List[dict]:
+        """Полнотекстовый поиск по ключевым словам (нестрогое соответствие)"""
+        should_conditions = [
+            models.FieldCondition(
+                key="text",
+                match=models.MatchText(text=keyword)
+            for keyword in keywords
+        ]
+        
+        results = self.qdrant_client.scroll(
             collection_name=QDRANT_COLLECTION,
-            field_name="text",
-            field_schema=TextIndexParams(
-                type="text",
-                tokenizer=TokenizerType.WORD,
-                min_token_len=2,
-                max_token_len=20,
-                lowercase=True
-            )
-        )
+            scroll_filter=models.Filter(should=should_conditions),
+            limit=top_k,
+            with_payload=True,
+            with_vectors=False
+        )[0]
+        
+        return [{
+            "id": hit.id,
+            "payload": hit.payload,
+            "text": hit.payload.get("text", "")
+        } for hit in results]
     
     # Добавить словарь синонимов
     SYNONYMS = {
