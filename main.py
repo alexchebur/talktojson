@@ -17,6 +17,13 @@ from typing import Dict, List, Tuple, Optional
 import pickle
 from pathlib import Path
 
+# Фикс для конфликта Streamlit и PyTorch
+try:
+    from fix_torch import fix_torch_classes
+    fix_torch_classes()
+except ImportError:
+    pass
+
 logger = setup_logging()
 initialize_session()
 
