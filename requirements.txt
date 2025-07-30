@@ -14,7 +14,7 @@ qdrant-client
 pymystem3
 sentence-transformers
 tenacity
-beautifulsoup
+bs4
 
 
 
