@@ -17,8 +17,9 @@ networkx
 matplotlib
 qdrant-client
 pymystem3
-transformers
-tensorflow
+tensorflow>=2.15,<2.17
+tf-keras>=2.15.0
+transformers[tf]
 
 
 
