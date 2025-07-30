@@ -108,7 +108,13 @@ def call_gemini_api(prompt: str, temperature=0.3, max_output_tokens=5000) -> str
         return ""
 
 if st.button("Отправить", key="send_btn"):
-    user_input = st.session_state.user_input
+    user_input = st.session_state.user_input  # Получаем ввод пользователя из session_state
+    
+    if not user_input.strip():
+        st.error("Введите текст вопроса")
+        st.stop()
+    
+    st.session_state.last_query = user_input
     
     # Этап 1: Генерация структурированных данных для поиска
     stage1_prompt = get_prompt("stage1", {"user_query": user_input})
