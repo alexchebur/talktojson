@@ -1,4 +1,6 @@
 # torch_fix.py
+os.environ['STREAMLIT_DISABLE_WATCHDOG'] = 'true'
+os.environ['TORCH_DISABLE_PATH_CHECK'] = 'true'
 import torch
 import warnings
 
