@@ -16,6 +16,7 @@ sentence-transformers
 tenacity
 bs4
 onnxruntime>=1.15.0
+nest-asyncio
 
 
 
