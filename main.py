@@ -221,14 +221,14 @@ if st.button("Отправить", key="send_btn"):
                 res['query_type'] = "generated"
             web_results.extend(results)
 
-# Добавляем поиск по основному запросу
-main_results = web_searcher.perform_search(user_input, max_results=2)
-for res in main_results:
-    res['query'] = user_input
-    res['query_type'] = "main"
-web_results.extend(main_results)
+        # Добавляем поиск по основному запросу
+        main_results = web_searcher.perform_search(user_input, max_results=2)
+        for res in main_results:
+            res['query'] = user_input
+            res['query_type'] = "main"
+        web_results.extend(main_results)
 
-st.session_state.web_search_results = web_results
+        st.session_state.web_search_results = web_results
     
         # Семантический поиск в Qdrant
         semantic_results = []
@@ -278,9 +278,7 @@ st.session_state.web_search_results = web_results
                     st.write("**Анализ:**")
                     st.write(opinion_data["reasoning"])
                     st.write("**Проект заключения (фрагмент):**")
-                    st.write(opinion_data["opinion_draft"][:1000] + "...")
-
-            
+                    st.write(opinion_data["opinion_draft"][:1000] + "...")          
         except Exception as e:
             st.error(f"Ошибка при генерации заключения: {str(e)}")
             st.stop()
