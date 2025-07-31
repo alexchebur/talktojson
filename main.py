@@ -279,11 +279,7 @@ st.session_state.web_search_results = web_results
                     st.write(opinion_data["reasoning"])
                     st.write("**Проект заключения (фрагмент):**")
                     st.write(opinion_data["opinion_draft"][:1000] + "...")
-                
-            except Exception as e:
-                st.error(f"Ошибка разбора ответа: {str(e)}")
-                st.text_area("Полный ответ модели:", value=stage2_response, height=300)
-                st.stop()
+
             
         except Exception as e:
             st.error(f"Ошибка при генерации заключения: {str(e)}")
@@ -296,7 +292,19 @@ st.session_state.web_search_results = web_results
         })
         final_opinion = call_gemini_api(stage3_prompt, max_output_tokens=10000)
         st.session_state.final_opinion = final_opinion
-
+    # После отправки запроса, перед выводом заключения
+    if st.session_state.get('search_data'):
+        st.subheader("Поисковые данные")
+        with st.expander("Показать детали поиска", expanded=False):
+            st.write(f"**Проблема:** {st.session_state.search_data['problem_formulation']}")
+            st.write("**Сгенерированные запросы:**")
+            for i, query in enumerate(st.session_state.search_data['expanded_queries']):
+                st.code(f"{i+1}. {query}")
+            st.write(f"**Ключевые слова:** {', '.join(st.session_state.search_data['expanded_keywords'])}")   
+                except Exception as e:
+                    st.error(f"Ошибка разбора ответа: {str(e)}")
+                    st.text_area("Полный ответ модели:", value=stage2_response, height=300)
+                    st.stop()
 # Вывод результата
 if st.session_state.get('final_opinion'):
     st.subheader("Правовое заключение")
