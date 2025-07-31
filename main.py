@@ -2,12 +2,11 @@ import sys
 import os
 os.environ["STREAMLIT_SERVER_ENABLE_STATIC_FILE_WATCHING"] = "false"
 os.environ["STREAMLIT_DISABLE_WATCHDOG"] = "true"
-import nest_asyncio
-nest_asyncio.apply()
+
 import re
 
 
-import streamlit as st
+
 import time
 import requests
 import json
@@ -24,6 +23,9 @@ from prompts import get_prompt
 from typing import Dict, List, Tuple, Optional
 
 from pathlib import Path
+import nest_asyncio
+nest_asyncio.apply()
+import streamlit as st
 
 
 
