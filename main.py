@@ -214,7 +214,21 @@ if st.button("Отправить", key="send_btn"):
         # Веб-поиск по сгенерированным запросам
         web_results = []
         for query in search_data['expanded_queries']:
-            web_results.extend(web_searcher.perform_search(query, max_results=2))
+            results = web_searcher.perform_search(query, max_results=2)
+            for res in results:
+                # Добавляем информацию о запросе к каждому результату
+                res['query'] = query
+                res['query_type'] = "generated"
+            web_results.extend(results)
+
+# Добавляем поиск по основному запросу
+main_results = web_searcher.perform_search(user_input, max_results=2)
+for res in main_results:
+    res['query'] = user_input
+    res['query_type'] = "main"
+web_results.extend(main_results)
+
+st.session_state.web_search_results = web_results
     
         # Семантический поиск в Qdrant
         semantic_results = []
