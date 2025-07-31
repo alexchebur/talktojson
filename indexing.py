@@ -35,19 +35,19 @@ class IndexBuilder:
     def _load_model(self):
         """Загрузка модели sentence-transformers"""
         if self.model is None:
-            #self.model = SentenceTransformer(
-                #"cointegrated/rubert-tiny2",
-                #device="cpu",  # Используйте "cuda" если есть GPU
-                #trust_remote_code=True  # Критично для rubert-tiny2
-            #)
-
-
             self.model = SentenceTransformer(
                 "cointegrated/rubert-tiny2",
-                device="cpu",
-                #use_onnx=True,  # АКТИВИРУЕМ ONNX
-                onnx_providers=["CPUExecutionProvider"]  # Используем CPU
+                device="cpu",  # Используйте "cuda" если есть GPU
+                trust_remote_code=True  # Критично для rubert-tiny2
             )
+
+
+            #self.model = SentenceTransformer(
+                #"cointegrated/rubert-tiny2",
+                #device="cpu",
+                #use_onnx=True,  # АКТИВИРУЕМ ONNX
+                #onnx_providers=["CPUExecutionProvider"]  # Используем CPU
+            #)
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def semantic_search(self, query: str, top_k: int = 5) -> List[Dict]:
