@@ -288,24 +288,27 @@ if st.button("Отправить", key="send_btn"):
     
     # Этап 4: Финальная проверка и оформление
     with st.spinner("Финальная проверка..."):
-        stage3_prompt = get_prompt("stage3", {
-            "opinion_draft": opinion_data['opinion_draft']
-        })
-        final_opinion = call_gemini_api(stage3_prompt, max_output_tokens=10000)
-        st.session_state.final_opinion = final_opinion
-    # После отправки запроса, перед выводом заключения
-    if st.session_state.get('search_data'):
-        st.subheader("Поисковые данные")
-        with st.expander("Показать детали поиска", expanded=False):
-            st.write(f"**Проблема:** {st.session_state.search_data['problem_formulation']}")
-            st.write("**Сгенерированные запросы:**")
-            for i, query in enumerate(st.session_state.search_data['expanded_queries']):
-                st.code(f"{i+1}. {query}")
-            st.write(f"**Ключевые слова:** {', '.join(st.session_state.search_data['expanded_keywords'])}")   
-                except Exception as e:
-                    st.error(f"Ошибка разбора ответа: {str(e)}")
-                    st.text_area("Полный ответ модели:", value=stage2_response, height=300)
-                    st.stop()
+        try:
+            stage3_prompt = get_prompt("stage3", {
+                "opinion_draft": opinion_data['opinion_draft']
+            })
+            final_opinion = call_gemini_api(stage3_prompt, max_output_tokens=10000)
+            st.session_state.final_opinion = final_opinion
+            
+            # Отображение поисковых данных после успешной генерации
+            if st.session_state.get('search_data'):
+                st.subheader("Поисковые данные")
+                with st.expander("Показать детали поиска", expanded=False):
+                    st.write(f"**Проблема:** {st.session_state.search_data['problem_formulation']}")
+                    st.write("**Сгенерированные запросы:**")
+                    for i, query in enumerate(st.session_state.search_data['expanded_queries']):
+                        st.code(f"{i+1}. {query}")
+                    st.write(f"**Ключевые слова:** {', '.join(st.session_state.search_data['expanded_keywords'])}")
+                    
+        except Exception as e:
+            st.error(f"Ошибка при финальной проверке: {str(e)}")
+            st.stop()
+
 # Вывод результата
 if st.session_state.get('final_opinion'):
     st.subheader("Правовое заключение")
