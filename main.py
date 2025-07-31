@@ -207,6 +207,8 @@ if st.button("Отправить", key="send_btn"):
         web_results = []
         for query in search_data['expanded_queries']:
             web_results.extend(web_searcher.perform_search(query, max_results=2))
+        # Сохраняем веб-результаты для отображения
+        st.session_state.web_search_results = web_results
         
         # Поиск в Qdrant
         qdrant_results = []
@@ -215,7 +217,9 @@ if st.button("Отправить", key="send_btn"):
             qdrant_results.extend(index_builder.semantic_search(query, top_k=3))
         # Полнотекстовый поиск по ключевым словам
         qdrant_results.extend(index_builder.keyword_search(search_data['expanded_keywords'], top_k=5))
-        
+                # Сохраняем результаты Qdrant для отображения
+            st.session_state.qdrant_semantic_results = semantic_results
+            st.session_state.qdrant_keyword_results = keyword_results
         # Формирование контекста
         context_parts = [
             f"Проблема: {search_data['problem_formulation']}",
@@ -282,30 +286,34 @@ with st.sidebar:
     # Блок веб-результатов
     if st.session_state.get('web_search_results'):
         st.subheader("🌐 Веб-результаты")
-        
-        # Разделяем результаты по источникам
-        main_query_results = [
-            r for r in st.session_state.web_search_results 
-            if r.get('query', '') == st.session_state.get('last_query', '')
-        ]
-        
-        if main_query_results:
-            st.caption(f"По основному запросу: '{st.session_state.last_query}'")
-            for i, res in enumerate(main_query_results[:3]):
-                with st.expander(f"{i+1}. {res.get('title', 'Без названия')[:50]}...", expanded=False):
-                    st.markdown(f"**URL:** [{res.get('url', '')[:30]}...]({res.get('url', '')})")
-                    st.markdown("**Сниппет:**")
-                    st.info(res.get('snippet', 'Нет описания')[:200] + "...")
-                    if res.get('full_content'):
-                        st.text_area(
-                            "Полный текст", 
-                            value=res['full_content'][:3000], 
-                            height=200,
-                            key=f"main_web_{i}"
-                        )
+        for i, res in enumerate(st.session_state.web_search_results[:3]):
+            with st.expander(f"{i+1}. {res.get('title', 'Без названия')[:50]}...", expanded=False):
+                st.markdown(f"**URL:** [{res.get('url', '')[:30]}...]({res.get('url', '')})")
+                st.markdown("**Сниппет:**")
+                st.info(res.get('snippet', 'Нет описания')[:200] + "...")
+    else:
+        st.subheader("🌐 Веб-результаты")
+        st.info("Нет веб-результатов")
 
-with st.sidebar:
-    # ... остальные блоки ...
+    # Блок семантического поиска в Qdrant
+    if st.session_state.get('qdrant_semantic_results'):
+        st.subheader("🧠 Семантический поиск (Qdrant)")
+        for i, res in enumerate(st.session_state.qdrant_semantic_results[:3]):
+            with st.expander(f"Сем. результат {i+1} (сходство: {res['score']:.2f})", expanded=False):
+                st.write(res['text'][:1000] + "...")
+    else:
+        st.subheader("🧠 Семантический поиск (Qdrant)")
+        st.info("Нет результатов семантического поиска")
+    
+    # Блок полнотекстового поиска в Qdrant
+    if st.session_state.get('qdrant_keyword_results'):
+        st.subheader("🔤 Полнотекстовый поиск (Qdrant)")
+        for i, res in enumerate(st.session_state.qdrant_keyword_results[:3]):
+            with st.expander(f"Текст. результат {i+1}", expanded=False):
+                st.write(res['text'][:1000] + "...")
+    else:
+        st.subheader("🔤 Полнотекстовый поиск (Qdrant)")
+        st.info("Нет результатов полнотекстового поиска")
     
     # Блок сгенерированных запросов
     if st.session_state.get('generated_queries'):
