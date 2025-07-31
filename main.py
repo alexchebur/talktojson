@@ -200,7 +200,6 @@ if st.button("Отправить", key="send_btn"):
         search_data = parse_stage1_response(stage1_response)
         st.session_state.search_data = search_data
 
-
         # Сохраняем для отображения в сайдбаре
         st.session_state.generated_queries = search_data['expanded_queries']
         st.session_state.generated_keywords = search_data['expanded_keywords']
@@ -209,7 +208,7 @@ if st.button("Отправить", key="send_btn"):
         st.text_area("Ответ модели для отладки:", value=stage1_response)
         st.stop()
     
-        # Этап 2: Поиск информации
+    # Этап 2: Поиск информации
     with st.spinner("Поиск информации..."):
         # Веб-поиск по сгенерированным запросам
         web_results = []
@@ -278,7 +277,11 @@ if st.button("Отправить", key="send_btn"):
                     st.write("**Анализ:**")
                     st.write(opinion_data["reasoning"])
                     st.write("**Проект заключения (фрагмент):**")
-                    st.write(opinion_data["opinion_draft"][:1000] + "...")          
+                    st.write(opinion_data["opinion_draft"][:1000] + "...")
+            except Exception as e:
+                st.error(f"Ошибка разбора ответа: {str(e)}")
+                st.text_area("Полный ответ модели:", value=stage2_response, height=300)
+                st.stop()
         except Exception as e:
             st.error(f"Ошибка при генерации заключения: {str(e)}")
             st.stop()
