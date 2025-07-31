@@ -45,7 +45,7 @@ class IndexBuilder:
             self.model = SentenceTransformer(
                 "cointegrated/rubert-tiny2",
                 device="cpu",
-                use_onnx=True,  # АКТИВИРУЕМ ONNX
+                #use_onnx=True,  # АКТИВИРУЕМ ONNX
                 onnx_providers=["CPUExecutionProvider"]  # Используем CPU
             )
 
