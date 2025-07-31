@@ -1,4 +1,6 @@
 import os
+os.environ["STREAMLIT_SERVER_ENABLE_STATIC_FILE_WATCHING"] = "false"
+os.environ["STREAMLIT_DISABLE_WATCHDOG"] = "true"
 from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -33,10 +35,18 @@ class IndexBuilder:
     def _load_model(self):
         """Загрузка модели sentence-transformers"""
         if self.model is None:
+            #self.model = SentenceTransformer(
+                #"cointegrated/rubert-tiny2",
+                #device="cpu",  # Используйте "cuda" если есть GPU
+                #trust_remote_code=True  # Критично для rubert-tiny2
+            #)
+
+
             self.model = SentenceTransformer(
                 "cointegrated/rubert-tiny2",
-                device="cpu",  # Используйте "cuda" если есть GPU
-                trust_remote_code=True  # Критично для rubert-tiny2
+                device="cpu",
+                use_onnx=True,  # АКТИВИРУЕМ ONNX
+                onnx_providers=["CPUExecutionProvider"]  # Используем CPU
             )
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
