@@ -201,45 +201,40 @@ if st.button("Отправить", key="send_btn"):
         st.text_area("Ответ модели для отладки:", value=stage1_response)
         st.stop()
     
-    # Этап 2: Поиск информации
+        # Этап 2: Поиск информации
     with st.spinner("Поиск информации..."):
         # Веб-поиск по сгенерированным запросам
         web_results = []
         for query in search_data['expanded_queries']:
             web_results.extend(web_searcher.perform_search(query, max_results=2))
-        
-        # Сохраняем веб-результаты для отображения
-        st.session_state.web_search_results = web_results
-        
-        # Поиск в Qdrant
-        # Семантический поиск
+    
+        # Семантический поиск в Qdrant
         semantic_results = []
         for query in [user_input] + search_data['expanded_queries']:
             semantic_results.extend(index_builder.semantic_search(query, top_k=3))
-        
-        # Полнотекстовый поиск
-        keyword_results = index_builder.keyword_search(
-            search_data['expanded_keywords'], 
-            top_k=3
-        )
-        
-        # Сохраняем результаты Qdrant для отображения
+    
+        # Полнотекстовый поиск в Qdrant
+        keyword_results = index_builder.keyword_search(search_data['expanded_keywords'], top_k=5)
+    
+        # Сохраняем результаты для отображения в сайдбаре
+        st.session_state.web_search_results = web_results
         st.session_state.qdrant_semantic_results = semantic_results
         st.session_state.qdrant_keyword_results = keyword_results
+    
         # Формирование контекста
         context_parts = [
             f"Проблема: {search_data['problem_formulation']}",
             "Веб-результаты:"
         ]
-        
+    
         for i, res in enumerate(web_results[:5]):
             context_parts.append(f"{i+1}. [{res['title']}]({res['url']}): {res['snippet']}")
-        
+    
         context_parts.append("Базовые знания:")
-        for i, res in enumerate(qdrant_results[:10]):
+        for i, res in enumerate((semantic_results + keyword_results)[:10]):
             context_parts.append(f"{i+1}. {res['text'][:500]}...")
-        
-        full_context = "\n\n".join(context_parts)[:15000]
+    
+        full_context = "\n\n".join(context_parts)[:30000]
     
     # Этап 3: Генерация проекта заключения
     with st.spinner("Подготовка проекта заключения..."):
