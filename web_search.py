@@ -26,8 +26,8 @@ class WebSearcher:
         try:
             results = self._execute_search(query, max_results)
             for res in results:
-                res['query'] = query
-                res['query_type'] = query_type  # Добавляем тип запроса
+                res['query'] = query  # Сохраняем запрос
+                res['query_type'] = query_type  # Тип запроса
             return results
         except Exception as e:
             logger.error(f"Ошибка поиска: {str(e)}")
