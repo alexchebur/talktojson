@@ -199,6 +199,11 @@ if st.button("Отправить", key="send_btn"):
     try:
         search_data = parse_stage1_response(stage1_response)
         st.session_state.search_data = search_data
+
+
+        # Сохраняем для отображения в сайдбаре
+        st.session_state.generated_queries = search_data['expanded_queries']
+        st.session_state.generated_keywords = search_data['expanded_keywords']
     except Exception as e:
         st.error(f"Ошибка разбора ответа: {str(e)}")
         st.text_area("Ответ модели для отладки:", value=stage1_response)
@@ -319,6 +324,41 @@ with st.sidebar:
         st.subheader("🔤 Полнотекстовый поиск (Qdrant)")
         st.info("Нет результатов полнотекстового поиска")
     
+    # Блок сгенерированных запросов
+    if st.session_state.get('generated_queries'):
+        st.subheader("🔍 Сгенерированные запросы")
+        st.write("Эти запросы были автоматически созданы для уточнения поиска:")
+        for i, query in enumerate(st.session_state.generated_queries):
+            st.code(f"{i+1}. {query}")
+    else:
+        st.subheader("🔍 Сгенерированные запросы")
+        st.info("Нет сгенерированных запросов")
+    
+    # Блок ключевых слов
+    if st.session_state.get('generated_keywords'):
+        st.subheader("🔑 Ключевые слова")
+        st.write("Ключевые термины, использованные для поиска:")
+        st.write(", ".join(st.session_state.generated_keywords))
+    else:
+        st.subheader("🔑 Ключевые слова")
+        st.info("Нет сгенерированных ключевых слов")
+    
+    # Блок веб-результатов с группировкой по запросам
+    if st.session_state.get('web_search_results'):
+        st.subheader("🌐 Веб-результаты")
+        
+        # Группируем результаты по запросам
+        queries = {res['query'] for res in st.session_state.web_search_results}
+        
+        for query in queries:
+            query_results = [res for res in st.session_state.web_search_results if res['query'] == query]
+            with st.expander(f"Запрос: '{query}' ({len(query_results)} результатов)", expanded=False):
+                for i, res in enumerate(query_results):
+                    st.markdown(f"**{i+1}. [{res['title']}]({res['url']})**")
+                    st.caption(res['snippet'][:200] + "...")
+    else:
+        st.subheader("🌐 Веб-результаты")
+        st.info("Нет веб-результатов")
     # Блок сгенерированных запросов
     if st.session_state.get('generated_queries'):
         st.subheader("🔍 Сгенерированные запросы")
