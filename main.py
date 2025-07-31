@@ -207,19 +207,25 @@ if st.button("Отправить", key="send_btn"):
         web_results = []
         for query in search_data['expanded_queries']:
             web_results.extend(web_searcher.perform_search(query, max_results=2))
+        
         # Сохраняем веб-результаты для отображения
         st.session_state.web_search_results = web_results
         
         # Поиск в Qdrant
-        qdrant_results = []
-        # Семантический поиск по основному запросу и расширенным
+        # Семантический поиск
+        semantic_results = []
         for query in [user_input] + search_data['expanded_queries']:
-            qdrant_results.extend(index_builder.semantic_search(query, top_k=3))
-        # Полнотекстовый поиск по ключевым словам
-        qdrant_results.extend(index_builder.keyword_search(search_data['expanded_keywords'], top_k=5))
-                # Сохраняем результаты Qdrant для отображения
-            st.session_state.qdrant_semantic_results = semantic_results
-            st.session_state.qdrant_keyword_results = keyword_results
+            semantic_results.extend(index_builder.semantic_search(query, top_k=3))
+        
+        # Полнотекстовый поиск
+        keyword_results = index_builder.keyword_search(
+            search_data['expanded_keywords'], 
+            top_k=3
+        )
+        
+        # Сохраняем результаты Qdrant для отображения
+        st.session_state.qdrant_semantic_results = semantic_results
+        st.session_state.qdrant_keyword_results = keyword_results
         # Формирование контекста
         context_parts = [
             f"Проблема: {search_data['problem_formulation']}",
