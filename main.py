@@ -2,7 +2,8 @@ import sys
 import os
 os.environ["STREAMLIT_SERVER_ENABLE_STATIC_FILE_WATCHING"] = "false"
 os.environ["STREAMLIT_DISABLE_WATCHDOG"] = "true"
-
+import nest_asyncio
+nest_asyncio.apply()
 import re
 
 
