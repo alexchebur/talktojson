@@ -407,17 +407,17 @@ with st.sidebar:
                     st.info(res.get('snippet', 'Нет описания')[:200] + "...")
     
     # Блок результатов из Qdrant
-    if st.session_state.get('qdrant_chunks'):
-        st.subheader("📚 База знаний (Qdrant)")
-        for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
-            st.text_area(
-                f"Фрагмент {i+1}", 
-                value=chunk[:2000], 
-                height=150,
-                key=f"qdrant_chunk_{i}"
-            )
-    else:
-        st.info("Нет результатов из базы знаний")
+    #if st.session_state.get('qdrant_chunks'):
+        #st.subheader("📚 База знаний (Qdrant)")
+        #for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
+            #st.text_area(
+                #f"Фрагмент {i+1}", 
+                #value=chunk[:2000], 
+                #height=150,
+                #key=f"qdrant_chunk_{i}"
+            #)
+    #else:
+        #st.info("Нет результатов из базы знаний")
 
     # Остальные блоки (документ, настройки, история)...
     
