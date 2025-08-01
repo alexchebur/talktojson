@@ -147,9 +147,9 @@ class IndexBuilder:
         
             return formatted_results
         
-    except Exception as e:
-        logger.error(f"Ошибка sparse поиска: {str(e)}", exc_info=True)
-        return []
+        except Exception as e:
+            logger.error(f"Ошибка sparse поиска: {str(e)}", exc_info=True)
+            return []
 
     def hybrid_search(self, query: Union[str, List[str]], top_k: int = 5, alpha: float = 0.5) -> List[dict]:
         """Гибридный поиск через query_points с использованием search_queries"""
