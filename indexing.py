@@ -4,24 +4,23 @@ os.environ["STREAMLIT_DISABLE_WATCHDOG"] = "true"
 from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from typing import List, Dict, Tuple
+from typing import List, Dict
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
 from sentence_transformers import SentenceTransformer
-import fasttext  # Добавляем FastText
+from fastembed import SparseTextEmbedding  # Новый импорт
 import numpy as np
-import re
 
 logger = logging.getLogger(__name__)
 
 class IndexBuilder:
     def __init__(self):
         self.qdrant_client = self._init_qdrant_client()
-        self.dense_model = None  # Для плотных векторов (sentence-transformers)
-        self.sparse_model = None  # Для разреженных векторов (FastText)
+        self.dense_model = None  # Для плотных векторов
+        self.sparse_model = None  # Для разреженных векторов
         
     def _init_qdrant_client(self):
-        """Инициализация клиента Qdrant с обработкой ошибок"""
+        """Инициализация клиента Qdrant"""
         try:
             client = QdrantClient(
                 url=QDRANT_URL,
@@ -29,8 +28,7 @@ class IndexBuilder:
                 prefer_grpc=True,
                 timeout=30
             )
-            # Проверка соединения
-            client.get_collections()
+            client.get_collections()  # Проверка соединения
             return client
         except Exception as e:
             logger.error(f"Ошибка подключения к Qdrant: {str(e)}")
@@ -38,7 +36,7 @@ class IndexBuilder:
 
     def _load_models(self):
         """Загрузка моделей для плотных и разреженных векторов"""
-        # Загрузка модели для плотных векторов
+        # Плотные векторы
         if self.dense_model is None:
             self.dense_model = SentenceTransformer(
                 "cointegrated/rubert-tiny2",
@@ -46,53 +44,14 @@ class IndexBuilder:
                 trust_remote_code=True
             )
         
-        # Загрузка модели для разреженных векторов (FastText)
+        # Разреженные векторы (используем fastembed)
         if self.sparse_model is None:
             try:
-                # Пытаемся загрузить предобученную модель
-                self.sparse_model = fasttext.load_model("cc.ru.300.bin")
-                logger.info("Загружена предобученная модель FastText")
-            except:
-                # Если не удалось, создаем простую модель на лету
-                logger.warning("Не найдена предобученная модель FastText, создаем временную")
-                self.sparse_model = fasttext.train_unsupervised(
-                    input="",  # Пустой ввод для простой модели
-                    model='skipgram',
-                    dim=100
-                )
-
-    def _generate_sparse_vector(self, text: str) -> Tuple[List[int], List[float]]:
-        """Генерация разреженного вектора с помощью FastText"""
-        self._load_models()
-        
-        # Очистка текста и токенизация
-        text = re.sub(r'[^\w\s]', '', text.lower())
-        words = text.split()
-        
-        # Фильтрация коротких слов
-        words = [word for word in words if len(word) > 2]
-        
-        # Создание разреженного вектора
-        indices = []
-        values = []
-        total_words = len(words)
-        
-        for word in set(words):  # Уникальные слова
-            try:
-                # Получаем эмбеддинг слова
-                word_emb = self.sparse_model.get_word_vector(word)
-                # Нормализуем и используем первый элемент как вес
-                norm = np.linalg.norm(word_emb)
-                weight = norm if norm > 0 else 1.0
-                
-                # Хешируем слово для получения индекса
-                index = hash(word) % 100000  # Фиксированный размер вектора
-                indices.append(index)
-                values.append(weight)
-            except:
-                continue
-        
-        return indices, values
+                self.sparse_model = SparseTextEmbedding("Qdrant/bm42-all-minilm-l6-v2-attentions")
+                logger.info("Модель для разреженных векторов загружена")
+            except Exception as e:
+                logger.error(f"Ошибка загрузки модели для разреженных векторов: {str(e)}")
+                raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def semantic_search(self, query: str, top_k: int = 5) -> List[Dict]:
@@ -107,7 +66,7 @@ class IndexBuilder:
             
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
-                query_vector=embedding,
+                query_vector=("dense", embedding),
                 limit=top_k,
                 with_payload=True
             )
@@ -122,29 +81,21 @@ class IndexBuilder:
             logger.error(f"Ошибка семантического поиска: {str(e)}")
             return []
 
-    def keyword_search(self, keywords: List[str], top_k: int = 5) -> List[dict]:
-        """Поиск по разреженным векторам FastText"""
+    def sparse_vector_search(self, keywords: List[str], top_k: int = 5) -> List[dict]:
+        """Поиск по разреженным векторам с использованием fastembed"""
         try:
             self._load_models()
-            # Объединяем ключевые слова в один запрос
             query_text = " ".join(keywords)
             
-            # Генерируем разреженный вектор
-            indices, values = self._generate_sparse_vector(query_text)
+            # Генерация разреженного вектора запроса
+            sparse_embedding = list(self.sparse_model.embed(query_text))[0]
             
-            if not indices:
-                return []
-                
-            # Выполняем поиск в Qdrant
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
-                query_vector=models.NamedVector(
-                    name="sparse",  # Имя поля с разреженными векторами
-                    vector=models.SparseVector(
-                        indices=indices,
-                        values=values
-                    )
-                ),
+                query_vector=("sparse", models.SparseVector(
+                    indices=sparse_embedding.indices.tolist(),
+                    values=sparse_embedding.values.tolist()
+                )),
                 limit=top_k,
                 with_payload=True
             )
@@ -158,6 +109,3 @@ class IndexBuilder:
         except Exception as e:
             logger.error(f"Ошибка поиска по разреженным векторам: {str(e)}")
             return []
-
-    # Удаляем гибридный поиск и расширение запроса, так как они больше не нужны
-    # (Оригинальные методы hybrid_search и expand_query удалены)
