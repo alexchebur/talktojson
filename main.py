@@ -186,83 +186,97 @@ st.session_state.user_input = st.text_area(
 )
 
 if st.button("Отправить", key="send_btn"):
-    # Получаем ввод пользователя напрямую из session_state
     user_input = st.session_state.user_input.strip()
     
     if not user_input:
         st.error("Введите текст вопроса")
         st.stop()
-    st.session_state.last_query = user_input
     
-    # Этап 1: Генерация структурированных данных для поиска
-    stage1_prompt = get_prompt("stage1", {"user_query": user_input})
-    stage1_response = call_gemini_api(stage1_prompt)
+    st.session_state.last_query = user_input
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
     try:
+        # Этап 1: Генерация поисковых запросов
+        status_text.text("Генерация поисковых запросов...")
+        progress_bar.progress(20)
+        
+        stage1_prompt = get_prompt("stage1", {"user_query": user_input})
+        stage1_response = call_gemini_api(stage1_prompt)
         search_data = parse_stage1_response(stage1_response)
         st.session_state.search_data = search_data
-
-        # Сохраняем для отображения в сайдбаре
         st.session_state.generated_queries = search_data['expanded_queries']
         st.session_state.generated_keywords = search_data['expanded_keywords']
-    except Exception as e:
-        st.error(f"Ошибка разбора ответа: {str(e)}")
-        st.text_area("Ответ модели для отладки:", value=stage1_response)
-        st.stop()
-    
-    # Этап 2: Поиск информации
-    with st.spinner("Поиск информации..."):
-        # Веб-поиск по сгенерированным запросам
-        web_results = []
-        for query in search_data['expanded_queries']:
-            results = web_searcher.perform_search(query, max_results=2)
-            for res in results:
-                # Добавляем информацию о запросе к каждому результату
-                res['query'] = query
-                res['query_type'] = "generated"
-            web_results.extend(results)
 
-        # Добавляем поиск по основному запросу
-        main_results = web_searcher.perform_search(user_input, max_results=2)
-        for res in main_results:
-            res['query'] = user_input
-            res['query_type'] = "main"
-        web_results.extend(main_results)
+        # Этап 2: Параллельный поиск
+        status_text.text("Выполнение поиска...")
+        progress_bar.progress(40)
+        
+        # Ограничиваем количество запросов
+        max_queries = 3
+        queries_to_search = [user_input] + search_data['expanded_queries'][:max_queries-1]
+        
+        # Создаем futures для параллельного выполнения
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            # Веб-поиск
+            web_future = executor.submit(
+                lambda: [web_searcher.perform_search(q, 2) for q in queries_to_search]
+            )
+            
+            # Семантический поиск
+            semantic_future = executor.submit(
+                lambda: [r for q in queries_to_search 
+                        for r in index_builder.semantic_search(q, 2)]
+            )
+            
+            # Поиск по разреженным векторам
+            sparse_future = executor.submit(
+                lambda: index_builder.sparse_vector_search(
+                    queries_to_search, 
+                    top_k=3
+                )
+            )
+            
+            web_results = []
+            for batch in web_future.result():
+                web_results.extend(batch)
+            
+            semantic_results = semantic_future.result()
+            sparse_results = sparse_future.result()
 
+        progress_bar.progress(80)
+        
+        # Сохраняем результаты
         st.session_state.web_search_results = web_results
-    
-        # Семантический поиск в Qdrant
-        semantic_results = []
-        for query in [user_input] + search_data['expanded_queries']:
-            semantic_results.extend(index_builder.semantic_search(query, top_k=3))
-    
-    
-    
-        # ПОИСК ПО РАЗРЕЖЕННЫМ ВЕКТОРАМ (ЗАМЕНА ПОЛНОТЕКСТОВОГО ПОИСКА)
-        sparse_results = index_builder.sparse_vector_search(search_data['expanded_queries'], top_k=5)
-    
-        # Обновляем названия для отображения
         st.session_state.qdrant_semantic_results = semantic_results
-        st.session_state.qdrant_sparse_results = sparse_results  # Новое название!
-    
-        # Сохраняем результаты для отображения в сайдбаре
-        st.session_state.web_search_results = web_results
+        st.session_state.qdrant_sparse_results = sparse_results
 
-    
-        # Формирование контекста
+        # Этап 3: Формирование контекста
+        status_text.text("Формирование ответа...")
         context_parts = [
             f"Проблема: {search_data['problem_formulation']}",
             "Веб-результаты:"
         ]
-    
+        
         for i, res in enumerate(web_results[:5]):
             context_parts.append(f"{i+1}. [{res['title']}]({res['url']}): {res['snippet']}")
-    
+        
         context_parts.append("Базовые знания:")
         for i, res in enumerate((semantic_results + sparse_results)[:10]):
-            context_parts.append(f"{i+1}. {res['content'][:500]}...")
-    
+            context_parts.append(f"{i+1}. {res.get('content', '')[:500]}...")
+        
         full_context = "\n\n".join(context_parts)[:30000]
-    
+        
+        progress_bar.progress(100)
+        status_text.text("Готово!")
+        time.sleep(0.5)
+        status_text.empty()
+        progress_bar.empty()
+
+    except Exception as e:
+        progress_bar.empty()
+        status_text.error(f"Ошибка обработки запроса: {str(e)}")
+        st.stop()
     # Этап 3: Генерация проекта заключения
     with st.spinner("Подготовка проекта заключения..."):
         try:
