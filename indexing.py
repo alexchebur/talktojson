@@ -95,7 +95,7 @@ class IndexBuilder:
                 "id": res.id,
                 "score": res.score,
                 "payload": res.payload,
-                "text": res.payload.get("text", "")
+                "content": res.payload.get("content", "")
             } for res in results]
         except Exception as e:
             logger.error(f"Ошибка семантического поиска: {str(e)}")
@@ -157,7 +157,7 @@ class IndexBuilder:
                         "id": res.id,
                         "score": float(res.score),
                         "payload": res.payload,
-                        "text": str(res.payload.get("text", ""))
+                        "content": str(res.payload.get("content", ""))
                     })
                 except Exception as e:
                     logger.error(f"Ошибка форматирования результата: {str(e)}")
@@ -224,7 +224,7 @@ class IndexBuilder:
                 "id": point.id,
                 "score": point.score,
                 "payload": point.payload,
-                "text": point.payload.get("text", "")
+                "content": point.payload.get("content", "")
             } for point in results]
         except Exception as e:
             logger.error(f"Ошибка гибридного поиска: {str(e)}")
