@@ -102,52 +102,46 @@ class IndexBuilder:
             return []
 
     def sparse_vector_search(self, query: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Поиск по разреженным векторам в точном соответствии с рабочим Colab-скриптом"""
+        """Корректная реализация поиска по разреженным векторам"""
         try:
             self._load_models()
         
             # Подготовка текста запроса
             query_text = " ".join(query) if isinstance(query, list) else query
         
-            # Генерация разреженного вектора как в Colab
+            # Генерация разреженного вектора
             sparse_embedding = list(self.sparse_model.embed(query_text))[0]
-            sparse_vector = models.SparseVector(
-                indices=sparse_embedding.indices.tolist(),
-                values=sparse_embedding.values.tolist()
-            )
         
-            # Формируем SearchRequest как в рабочем скрипте
-            search_request = models.SearchRequest(
-                vector=models.NamedVector(
-                    name="sparse",
-                    vector=sparse_vector
-                ),
-                limit=top_k,
-                with_payload=True,
-                with_vectors=False
-            )
+            # Создаем словарь с правильной структурой
+            sparse_data = {
+                "indices": sparse_embedding.indices.tolist(),
+                "values": [float(v) for v in sparse_embedding.values.tolist()]
+            }
         
-            # Выполняем запрос через query_points
-            results = self.qdrant_client.query_points(
+            # Вариант 1: Используем прямой формат для search
+            results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
-                queries=[search_request]
+                query_vector=("sparse", sparse_data),
+                limit=top_k,
+                with_payload=True
             )
         
-            # Форматируем результаты как в Colab
-            formatted_results = []
-            for point in results:
-                formatted_results.append({
-                    "id": point.id,
-                    "score": point.score,
-                    "payload": point.payload,
-                    "text": point.payload.get("text", "")
-                })
+            # Вариант 2 (если вариант 1 не работает):
+            # results = self.qdrant_client._client.search(
+            #     collection_name=QDRANT_COLLECTION,
+            #     query_vector={"name": "sparse", "vector": sparse_data},
+            #     limit=top_k,
+            #     with_payload=True
+            # )
         
-            return formatted_results
+            # Форматируем результаты
+            return [{
+                "id": res.id,
+                "score": float(res.score),
+                "payload": res.payload,
+                "text": res.payload.get("text", "")
+            } for res in results]
         
-        except IndexError:
-            logger.warning("Не удалось сгенерировать эмбеддинг для запроса")
-            return []
         except Exception as e:
             logger.error(f"Ошибка sparse поиска: {str(e)}", exc_info=True)
             return []
