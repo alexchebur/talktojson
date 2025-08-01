@@ -106,7 +106,7 @@ class IndexBuilder:
             unique_results = {res['id']: res for res in all_results}.values()
             return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
         
-       except Exception as e:
+        except Exception as e:
             logger.error(f"Ошибка семантического поиска: {str(e)}")
             return []
 
