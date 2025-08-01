@@ -102,53 +102,43 @@ class IndexBuilder:
             return []
 
     def sparse_vector_search(self, query: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Поиск по разреженным векторам с правильным форматом данных"""
+        """Альтернативная реализация через query_points"""
         try:
             self._load_models()
-        
-            # Подготовка текста запроса
             query_text = " ".join(query) if isinstance(query, list) else query
         
-            # Генерация разреженного вектора
             embeddings = list(self.sparse_model.embed(query_text))
             if not embeddings:
-                logger.warning("Не удалось сгенерировать эмбеддинг для запроса")
                 return []
             
             sparse_embedding = embeddings[0]
-        
-            # Создаем правильно форматированный вектор
             sparse_vector = {
                 "indices": sparse_embedding.indices.tolist(),
-                "values": [float(v) for v in sparse_embedding.values.tolist()]  # Явное преобразование в float
+                "values": [float(v) for v in sparse_embedding.values.tolist()]
             }
         
-            # Выполняем поиск с правильным форматом
-            results = self.qdrant_client.search(
+            # Используем query_points вместо search
+            results = self.qdrant_client.query_points(
                 collection_name=QDRANT_COLLECTION,
-                query_vector=models.NamedVector(
-                    name="sparse",
-                    vector=models.SparseVector(**sparse_vector)  # Явное создание SparseVector
-                ),
-                limit=top_k,
-                with_payload=True
+                query=models.SearchRequest(
+                    vector=models.NamedVector(
+                        name="sparse",
+                        vector=models.SparseVector(**sparse_vector)
+                    ),
+                    limit=top_k,
+                    with_payload=True
+                )
             )
         
-            # Форматируем результаты
-            formatted_results = []
-            for res in results:
-                if hasattr(res, 'payload') and hasattr(res, 'score'):
-                    formatted_results.append({
-                        "id": res.id,
-                        "score": float(res.score),  # Преобразуем в float
-                        "payload": res.payload,
-                        "text": res.payload.get("text", "") if res.payload else ""
-                    })
-        
-            return formatted_results
+            return [{
+                "id": point.id,
+                "score": point.score,
+                "payload": point.payload,
+                "text": point.payload.get("text", "")
+            } for point in results]
         
         except Exception as e:
-            logger.error(f"Ошибка sparse поиска: {str(e)}", exc_info=True)
+            logger.error(f"Ошибка sparse поиска (alt): {str(e)}")
             return []
 
     def hybrid_search(self, query: Union[str, List[str]], top_k: int = 5, alpha: float = 0.5) -> List[dict]:
