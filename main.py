@@ -234,13 +234,22 @@ if st.button("Отправить", key="send_btn"):
         for query in [user_input] + search_data['expanded_queries']:
             semantic_results.extend(index_builder.semantic_search(query, top_k=3))
     
-        # Полнотекстовый поиск в Qdrant
-        keyword_results = index_builder.keyword_search(search_data['expanded_keywords'], top_k=5)
+    with st.spinner("Поиск информации..."):
+        
+        semantic_results = []
+        for query in [user_input] + search_data['expanded_queries']:
+            semantic_results.extend(index_builder.semantic_search(query, top_k=3))
+    
+        # ПОИСК ПО РАЗРЕЖЕННЫМ ВЕКТОРАМ (ЗАМЕНА ПОЛНОТЕКСТОВОГО ПОИСКА)
+        sparse_results = index_builder.keyword_search(search_data['expanded_keywords'], top_k=5)
+    
+        # Обновляем названия для отображения
+        st.session_state.qdrant_semantic_results = semantic_results
+        st.session_state.qdrant_sparse_results = sparse_results  # Новое название!
     
         # Сохраняем результаты для отображения в сайдбаре
         st.session_state.web_search_results = web_results
-        st.session_state.qdrant_semantic_results = semantic_results
-        st.session_state.qdrant_keyword_results = keyword_results
+
     
         # Формирование контекста
         context_parts = [
@@ -340,15 +349,17 @@ with st.sidebar:
         st.subheader("🧠 Семантический поиск (Qdrant)")
         st.info("Нет результатов семантического поиска")
     
-    # Блок полнотекстового поиска в Qdrant
-    if st.session_state.get('qdrant_keyword_results'):
-        st.subheader("🔤 Полнотекстовый поиск (Qdrant)")
-        for i, res in enumerate(st.session_state.qdrant_keyword_results[:3]):
-            with st.expander(f"Текст. результат {i+1}", expanded=False):
+
+    
+    # Заменяем блок полнотекстового поиска
+    if st.session_state.get('qdrant_sparse_results'):  # Новое название!
+        st.subheader("🔤 Поиск по разреженным векторам (Qdrant)")
+        for i, res in enumerate(st.session_state.qdrant_sparse_results[:3]):
+            with st.expander(f"Разреженный результат {i+1} (сходство: {res['score']:.2f})", expanded=False):
                 st.write(res['text'][:1000] + "...")
     else:
-        st.subheader("🔤 Полнотекстовый поиск (Qdrant)")
-        st.info("Нет результатов полнотекстового поиска")
+        st.subheader("🔤 Поиск по разреженным векторам (Qdrant)")
+        st.info("Нет результатов поиска по разреженным векторам")
     
     # Блок сгенерированных запросов
     if st.session_state.get('generated_queries'):
