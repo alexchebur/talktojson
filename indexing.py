@@ -73,100 +73,78 @@ class IndexBuilder:
             return None
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def semantic_search(self, query: str, top_k: int = 5) -> List[Dict]:
-        """Семантический поиск через search (не через query_points)"""
-        try:
-            self._load_models()
-            dense_query = self.dense_model.encode(
+def semantic_search(self, queries: List[str], top_k: int = 5) -> List[Dict]:
+    """Семантический поиск по списку запросов (исходный + сгенерированные)"""
+    try:
+        self._load_models()
+        all_results = []
+        
+        for query in queries:
+            embedding = self.dense_model.encode(
                 query,
                 normalize_embeddings=True,
                 convert_to_numpy=True
             ).tolist()
             
-            # Используем обычный search вместо query_points
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
-                query_vector=("dense", dense_query),
+                query_vector=("dense", embedding),
                 limit=top_k,
                 with_payload=True
             )
             
-            return [{
-                "id": res.id,
-                "score": res.score,
-                "payload": res.payload,
-                "content": res.payload.get("content", "")
-            } for res in results]
-        except Exception as e:
-            logger.error(f"Ошибка семантического поиска: {str(e)}")
-            return []
+            for res in results:
+                all_results.append({
+                    "id": res.id,
+                    "score": res.score,
+                    "content": res.payload.get("content", ""),
+                    "query": query,  # Сохраняем запрос, который дал этот результат
+                    "payload": res.payload
+                })
+        
+        # Удаляем дубликаты и сортируем по score
+        unique_results = {res['id']: res for res in all_results}.values()
+        return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
+        
+    except Exception as e:
+        logger.error(f"Ошибка семантического поиска: {str(e)}")
+        return []
 
-    def sparse_vector_search(self, query: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Рабочая версия поиска по разреженным векторам"""
+    def sparse_vector_search(self, queries: List[str], top_k: int = 5) -> List[dict]:
+        """Поиск по разреженным векторам по списку запросов"""
         try:
             self._load_models()
+            all_results = []
         
-            # Подготовка текста запроса
-            query_text = " ".join(query) if isinstance(query, list) else query
-        
-            # Генерация разреженного вектора
-            embeddings = list(self.sparse_model.embed(query_text))
-            if not embeddings:
-                logger.warning("Не удалось сгенерировать эмбеддинг для запроса")
-                return []
+            for query in queries:
+                sparse_embedding = list(self.sparse_model.embed(query))[0]
+                sparse_vector = {
+                    "indices": sparse_embedding.indices.tolist(),
+                    "values": sparse_embedding.values.tolist()
+                }
             
-            sparse_embedding = embeddings[0]
-        
-            # Создаем словарь с явным преобразованием типов
-            sparse_vector = {
-                "indices": [int(i) for i in sparse_embedding.indices.tolist()],
-                "values": [float(v) for v in sparse_embedding.values.tolist()]
-            }
-        
-            # Вариант 1: Используем NamedSparseVector (для новых версий Qdrant)
-            try:
-                from qdrant_client.http.models import NamedSparseVector
                 results = self.qdrant_client.search(
                     collection_name=QDRANT_COLLECTION,
-                    query_vector=NamedSparseVector(
-                        name="sparse",
-                        vector=sparse_vector
-                    ),
+                    query_vector=("sparse", sparse_vector),
                     limit=top_k,
                     with_payload=True
                 )
-            except:
-                # Вариант 2: Старый формат для совместимости
-                results = self.qdrant_client.search(
-                    collection_name=QDRANT_COLLECTION,
-                    query_vector={
-                        "sparse": {
-                            "indices": sparse_vector["indices"],
-                            "values": sparse_vector["values"]
-                        }
-                    },
-                    limit=top_k,
-                    with_payload=True
-                )
-        
-            # Форматируем результаты с проверкой типов
-            formatted_results = []
-            for res in results:
-                try:
-                    formatted_results.append({
+            
+                for res in results:
+                    all_results.append({
                         "id": res.id,
-                        "score": float(res.score),
-                        "payload": res.payload,
-                        "content": str(res.payload.get("content", ""))
+                        "score": res.score,
+                        "content": res.payload.get("content", ""),
+                        "query": query,  # Сохраняем исходный запрос
+                        "payload": res.payload
                     })
-                except Exception as e:
-                    logger.error(f"Ошибка форматирования результата: {str(e)}")
-                    continue
-                
-            return formatted_results
+        
+            # Удаляем дубликаты и сортируем
+            unique_results = {res['id']: res for res in all_results}.values()
+            return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
         
         except Exception as e:
-            logger.error(f"Ошибка sparse поиска: {str(e)}", exc_info=True)
+            logger.error(f"Ошибка sparse поиска: {str(e)}")
             return []
 
     def hybrid_search(self, query: Union[str, List[str]], top_k: int = 5, alpha: float = 0.5) -> List[dict]:
