@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 class IndexBuilder:
     def __init__(self):
         self.qdrant_client = self._init_qdrant_client()
-        self.dense_model = None
-        self.sparse_model = None
+        self.dense_model = None  # Для плотных векторов (sentence-transformers)
+        self.sparse_model = None  # Для разреженных векторов (fastembed)
         
     def _init_qdrant_client(self):
         """Инициализация клиента Qdrant"""
@@ -73,118 +73,74 @@ class IndexBuilder:
             return None
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def semantic_search(self, queries: List[str], top_k: int = 5) -> List[Dict]:
-        """Семантический поиск по списку запросов (исходный + сгенерированные)"""
+    def semantic_search(self, query: str, top_k: int = 5) -> List[Dict]:
+        """Семантический поиск с использованием query_points"""
         try:
             self._load_models()
-            all_results = []
-        
-            for query in queries:
-                embedding = self.dense_model.encode(
-                    query,
-                    normalize_embeddings=True,
-                    convert_to_numpy=True
-                ).tolist()
+            dense_query = self.dense_model.encode(
+                query,
+                normalize_embeddings=True,
+                convert_to_numpy=True
+            ).tolist()
             
-                results = self.qdrant_client.search(
-                    collection_name=QDRANT_COLLECTION,
-                    query_vector=("dense", embedding),
-                    limit=top_k,
-                    with_payload=True
-                )
+            results = self.qdrant_client.query_points(
+                collection_name=QDRANT_COLLECTION,
+                prefetch=[
+                    models.Prefetch(
+                        query=dense_query,
+                        using="dense",
+                        limit=top_k*2
+                    )
+                ],
+                limit=top_k,
+                with_payload=True
+            )
             
-                for res in results:
-                    all_results.append({
-                        "id": res.id,
-                        "score": res.score,
-                        "content": res.payload.get("content", ""),
-                        "query": query,  # Сохраняем запрос, который дал этот результат
-                        "payload": res.payload
-                    })
-        
-            # Удаляем дубликаты и сортируем по score
-            unique_results = {res['id']: res for res in all_results}.values()
-            return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
-        
+            return [{
+                "id": point.id,
+                "score": point.score,
+                "payload": point.payload,
+                "text": point.payload.get("text", "")
+            } for point in results.points]
         except Exception as e:
             logger.error(f"Ошибка семантического поиска: {str(e)}")
             return []
 
-    def sparse_vector_search(self, queries: List[str], top_k: int = 5) -> List[dict]:
-        """Оптимизированный поиск по разреженным векторам"""
+    def sparse_vector_search(self, query: Union[str, List[str]], top_k: int = 5) -> List[dict]:
+        """Поиск по разреженным векторам через query_points"""
         try:
             self._load_models()
-            all_results = []
-        
-            # Ограничиваем количество параллельных запросов
-            max_parallel_queries = 3
-            query_batches = [queries[i:i+max_parallel_queries] for i in range(0, len(queries), max_parallel_queries)]
-        
-            for batch in query_batches:
-                batch_vectors = []
+            query_text = " ".join(query) if isinstance(query, list) else query
             
-                # Генерация векторов для батча
-                for query in batch:
-                    try:
-                        embedding = list(self.sparse_model.embed(query))[0]
-                        batch_vectors.append({
-                            "query": query,
-                            "vector": {
-                                "indices": embedding.indices.tolist(),
-                                "values": [float(v) for v in embedding.values.tolist()]
-                            }
-                        })
-                    except Exception as e:
-                        logger.warning(f"Ошибка генерации вектора для запроса '{query[:50]}...': {str(e)}")
-                        continue
+            sparse_vector = self._generate_sparse_vector(query_text)
+            if sparse_vector is None:
+                return []
             
-                # Пакетный поиск
-                try:
-                    search_requests = [
-                        models.SearchRequest(
-                            vector=models.NamedVector(
-                                name="sparse",
-                                vector=v["vector"]
-                            ),
-                            limit=top_k,
-                            with_payload=True
-                        ) for v in batch_vectors
-                    ]
-                
-                    batch_results = self.qdrant_client.search_batch(
-                        collection_name=QDRANT_COLLECTION,
-                        requests=search_requests
+            results = self.qdrant_client.query_points(
+                collection_name=QDRANT_COLLECTION,
+                prefetch=[
+                    models.Prefetch(
+                        query=sparse_vector,
+                        using="sparse",
+                        limit=top_k*2
                     )
-                
-                    # Обработка результатов
-                    for query, results in zip(batch_vectors, batch_results):
-                        for res in results:
-                            all_results.append({
-                                "id": res.id,
-                                "score": float(res.score),
-                                "content": res.payload.get("content", ""),
-                                "query": query["query"],
-                                "payload": res.payload
-                            })
-                        
-                except Exception as e:
-                    logger.error(f"Ошибка пакетного поиска: {str(e)}")
-                    continue
-        
-            # Дедупликация и сортировка
-            unique_results = {}
-            for res in all_results:
-                if res['id'] not in unique_results or res['score'] > unique_results[res['id']]['score']:
-                    unique_results[res['id']] = res
-                
-            return sorted(unique_results.values(), key=lambda x: x['score'], reverse=True)[:top_k]
-        
+                ],
+                limit=top_k,
+                with_payload=True
+            )
+            
+            return [{
+                "id": point.id,
+                "score": point.score,
+                "payload": point.payload,
+                "text": point.payload.get("text", "")
+            } for point in results.points]
         except Exception as e:
-            logger.error(f"Критическая ошибка sparse поиска: {str(e)}", exc_info=True)
+            logger.error(f"Ошибка sparse поиска: {str(e)}")
             return []
 
     def hybrid_search(self, query: Union[str, List[str]], top_k: int = 5, alpha: float = 0.5) -> List[dict]:
-        """Гибридный поиск через query_points с использованием search_queries"""
+        """Гибридный поиск как в Colab-скрипте"""
         try:
             self._load_models()
             query_text = " ".join(query) if isinstance(query, list) else query
@@ -200,31 +156,20 @@ class IndexBuilder:
             if sparse_vector is None:
                 return self.semantic_search(query_text, top_k)
             
-            # Формируем запросы для prefetch
-            dense_query_request = models.SearchRequest(
-                vector=models.NamedVector(
-                    name="dense",
-                    vector=dense_query
-                ),
-                limit=top_k*2,
-                with_payload=True
-            )
-            
-            sparse_query_request = models.SearchRequest(
-                vector=models.NamedVector(
-                    name="sparse",
-                    vector=sparse_vector
-                ),
-                limit=top_k*2,
-                with_payload=True
-            )
-            
-            # Выполняем гибридный поиск через query_points
+            # Выполняем гибридный поиск
             results = self.qdrant_client.query_points(
                 collection_name=QDRANT_COLLECTION,
-                queries=[
-                    dense_query_request,
-                    sparse_query_request
+                prefetch=[
+                    models.Prefetch(
+                        query=dense_query,
+                        using="dense",
+                        limit=top_k*2
+                    ),
+                    models.Prefetch(
+                        query=sparse_vector,
+                        using="sparse",
+                        limit=top_k*2
+                    )
                 ],
                 search_params=models.SearchParams(
                     fusion=models.Fusion.DBSF,
@@ -238,8 +183,8 @@ class IndexBuilder:
                 "id": point.id,
                 "score": point.score,
                 "payload": point.payload,
-                "content": point.payload.get("content", "")
-            } for point in results]
+                "text": point.payload.get("text", "")
+            } for point in results.points]
         except Exception as e:
             logger.error(f"Ошибка гибридного поиска: {str(e)}")
             return []
