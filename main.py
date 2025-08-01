@@ -262,7 +262,7 @@ if st.button("Отправить", key="send_btn"):
             context_parts.append(f"{i+1}. [{res['title']}]({res['url']}): {res['snippet']}")
     
         context_parts.append("Базовые знания:")
-        for i, res in enumerate((semantic_results + keyword_results)[:10]):
+        for i, res in enumerate((semantic_results + sparse_results)[:10]):
             context_parts.append(f"{i+1}. {res['text'][:500]}...")
     
         full_context = "\n\n".join(context_parts)[:30000]
