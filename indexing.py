@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 class IndexBuilder:
     def __init__(self):
         self.qdrant_client = self._init_qdrant_client()
-        self.dense_model = None  # Для плотных векторов (sentence-transformers)
-        self.sparse_model = None  # Для разреженных векторов (fastembed)
+        self.dense_model = None
+        self.sparse_model = None
         
     def _init_qdrant_client(self):
         """Инициализация клиента Qdrant"""
@@ -74,7 +74,7 @@ class IndexBuilder:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def semantic_search(self, query: str, top_k: int = 5) -> List[Dict]:
-        """Семантический поиск с использованием query_points"""
+        """Семантический поиск через search (не через query_points)"""
         try:
             self._load_models()
             dense_query = self.dense_model.encode(
@@ -83,31 +83,26 @@ class IndexBuilder:
                 convert_to_numpy=True
             ).tolist()
             
-            results = self.qdrant_client.query_points(
+            # Используем обычный search вместо query_points
+            results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
-                prefetch=[
-                    models.Prefetch(
-                        query=dense_query,
-                        using="dense",
-                        limit=top_k*2
-                    )
-                ],
+                query_vector=("dense", dense_query),
                 limit=top_k,
                 with_payload=True
             )
             
             return [{
-                "id": point.id,
-                "score": point.score,
-                "payload": point.payload,
-                "text": point.payload.get("text", "")
-            } for point in results.points]
+                "id": res.id,
+                "score": res.score,
+                "payload": res.payload,
+                "text": res.payload.get("text", "")
+            } for res in results]
         except Exception as e:
             logger.error(f"Ошибка семантического поиска: {str(e)}")
             return []
 
     def sparse_vector_search(self, query: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Поиск по разреженным векторам через query_points"""
+        """Поиск по разреженным векторам через search (не через query_points)"""
         try:
             self._load_models()
             query_text = " ".join(query) if isinstance(query, list) else query
@@ -116,31 +111,26 @@ class IndexBuilder:
             if sparse_vector is None:
                 return []
             
-            results = self.qdrant_client.query_points(
+            # Используем обычный search вместо query_points
+            results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
-                prefetch=[
-                    models.Prefetch(
-                        query=sparse_vector,
-                        using="sparse",
-                        limit=top_k*2
-                    )
-                ],
+                query_vector=("sparse", sparse_vector),
                 limit=top_k,
                 with_payload=True
             )
             
             return [{
-                "id": point.id,
-                "score": point.score,
-                "payload": point.payload,
-                "text": point.payload.get("text", "")
-            } for point in results.points]
+                "id": res.id,
+                "score": res.score,
+                "payload": res.payload,
+                "text": res.payload.get("text", "")
+            } for res in results]
         except Exception as e:
             logger.error(f"Ошибка sparse поиска: {str(e)}")
             return []
 
     def hybrid_search(self, query: Union[str, List[str]], top_k: int = 5, alpha: float = 0.5) -> List[dict]:
-        """Гибридный поиск как в Colab-скрипте"""
+        """Гибридный поиск через query_points с использованием search_queries"""
         try:
             self._load_models()
             query_text = " ".join(query) if isinstance(query, list) else query
@@ -156,20 +146,31 @@ class IndexBuilder:
             if sparse_vector is None:
                 return self.semantic_search(query_text, top_k)
             
-            # Выполняем гибридный поиск
+            # Формируем запросы для prefetch
+            dense_query_request = models.SearchRequest(
+                vector=models.NamedVector(
+                    name="dense",
+                    vector=dense_query
+                ),
+                limit=top_k*2,
+                with_payload=True
+            )
+            
+            sparse_query_request = models.SearchRequest(
+                vector=models.NamedVector(
+                    name="sparse",
+                    vector=sparse_vector
+                ),
+                limit=top_k*2,
+                with_payload=True
+            )
+            
+            # Выполняем гибридный поиск через query_points
             results = self.qdrant_client.query_points(
                 collection_name=QDRANT_COLLECTION,
-                prefetch=[
-                    models.Prefetch(
-                        query=dense_query,
-                        using="dense",
-                        limit=top_k*2
-                    ),
-                    models.Prefetch(
-                        query=sparse_vector,
-                        using="sparse",
-                        limit=top_k*2
-                    )
+                queries=[
+                    dense_query_request,
+                    sparse_query_request
                 ],
                 search_params=models.SearchParams(
                     fusion=models.Fusion.DBSF,
@@ -184,7 +185,7 @@ class IndexBuilder:
                 "score": point.score,
                 "payload": point.payload,
                 "text": point.payload.get("text", "")
-            } for point in results.points]
+            } for point in results]
         except Exception as e:
             logger.error(f"Ошибка гибридного поиска: {str(e)}")
             return []
