@@ -4,7 +4,7 @@ os.environ["STREAMLIT_DISABLE_WATCHDOG"] = "true"
 from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from typing import List, Dict
+from typing import List, Dict, Optional
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
 from sentence_transformers import SentenceTransformer
@@ -16,9 +16,8 @@ logger = logging.getLogger(__name__)
 class IndexBuilder:
     def __init__(self):
         self.qdrant_client = self._init_qdrant_client()
-        self.dense_model = None  # Для плотных векторов (sentence-transformers)
-        self.sparse_model = None  # Для разреженных векторов (fastembed)
-        self.SPARSE_MODEL_TYPE = "fastembed"  # Тип модели для разреженных векторов
+        self.dense_model = None
+        self.sparse_model = None
         
     def _init_qdrant_client(self):
         """Инициализация клиента Qdrant"""
@@ -46,13 +45,69 @@ class IndexBuilder:
             )
         
         # Разреженные векторы
-        if self.sparse_model is None and self.SPARSE_MODEL_TYPE == "fastembed":
+        if self.sparse_model is None:
             try:
                 self.sparse_model = SparseTextEmbedding("Qdrant/bm42-all-minilm-l6-v2-attentions")
-                logger.info("Модель для разреженных векторов fastembed загружена")
+                logger.info("Модель для разреженных векторов успешно загружена")
             except Exception as e:
                 logger.error(f"Ошибка загрузки sparse модели: {str(e)}")
                 raise
+
+    def _generate_sparse_vector(self, text: str) -> Optional[models.SparseVector]:
+        """Генерация разреженного вектора с защитой от пустых результатов"""
+        try:
+            if not text.strip():
+                return None
+                
+            # Получаем эмбеддинги (может вернуть несколько результатов для больших текстов)
+            embeddings = list(self.sparse_model.embed(text))
+            
+            if not embeddings:
+                logger.warning(f"Не удалось сгенерировать эмбеддинг для текста: {text[:50]}...")
+                return None
+                
+            # Берем первый эмбеддинг (для коротких запросов будет только один)
+            sparse_embedding = embeddings[0]
+            
+            # Преобразуем в формат Qdrant
+            return models.SparseVector(
+                indices=sparse_embedding.indices.tolist(),
+                values=sparse_embedding.values.tolist()
+            )
+            
+        except Exception as e:
+            logger.error(f"Ошибка генерации sparse вектора: {str(e)}")
+            return None
+
+    def sparse_vector_search(self, query: str, top_k: int = 5) -> List[dict]:
+        """Поиск по разреженным векторам с защитой от ошибок"""
+        try:
+            self._load_models()
+            
+            # Генерируем разреженный вектор
+            sparse_vector = self._generate_sparse_vector(query)
+            if sparse_vector is None:
+                logger.warning("Не удалось сгенерировать sparse вектор для поиска")
+                return []
+            
+            # Выполняем поиск
+            results = self.qdrant_client.search(
+                collection_name=QDRANT_COLLECTION,
+                query_vector=("sparse", sparse_vector),
+                limit=top_k,
+                with_payload=True
+            )
+            
+            return [{
+                "id": res.id,
+                "score": res.score,
+                "payload": res.payload,
+                "text": res.payload.get("text", "")
+            } for res in results]
+            
+        except Exception as e:
+            logger.error(f"Ошибка sparse поиска: {str(e)}", exc_info=True)
+            return []
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def semantic_search(self, query: str, top_k: int = 5) -> List[Dict]:
@@ -82,101 +137,34 @@ class IndexBuilder:
             logger.error(f"Ошибка семантического поиска: {str(e)}")
             return []
 
-    def sparse_vector_search(self, query: str, top_k: int = 5) -> List[dict]:
-        """Поиск по разреженным векторам (аналог из Colab)"""
-        try:
-            self._load_models()
-            
-            # Генерация разреженного вектора
-            if self.SPARSE_MODEL_TYPE == "fastembed":
-                sparse_query = list(self.sparse_model.embed(query))[0]
-                indices = sparse_query.indices.tolist()
-                values = sparse_query.values.tolist()
-            else:
-                # Fallback для FastText (если потребуется)
-                words = query.lower().split()
-                word_counts = {}
-                
-                for word in words:
-                    if len(word) > 2:
-                        word_counts[word] = word_counts.get(word, 0) + 1
-                
-                indices = []
-                values = []
-                total_words = len(words)
-                for word, count in word_counts.items():
-                    try:
-                        tf = count / total_words
-                        index = hash(word) % 100000
-                        indices.append(index)
-                        values.append(tf)
-                    except:
-                        pass
-            
-            # Формируем запрос аналогично Colab-скрипту
-            results = self.qdrant_client.query_points(
-                collection_name=QDRANT_COLLECTION,
-                prefetch=[
-                    models.Prefetch(
-                        query=models.NamedVector(
-                            name="sparse",
-                            vector=models.SparseVector(
-                                indices=indices,
-                                values=values
-                            )
-                        ),
-                        using="sparse",
-                        limit=top_k*2
-                    )
-                ],
-                limit=top_k,
-                with_payload=True
-            )
-            
-            return [{
-                "id": point.id,
-                "score": point.score,
-                "payload": point.payload,
-                "text": point.payload.get("text", "")
-            } for point in results.points]
-            
-        except Exception as e:
-            logger.error(f"Ошибка sparse поиска: {str(e)}", exc_info=True)
-            return []
-
     def hybrid_search(self, query: str, top_k: int = 5, alpha: float = 0.5) -> List[dict]:
-        """Гибридный поиск как в Colab"""
+        """Гибридный поиск с защитой от ошибок"""
         try:
             self._load_models()
             
             # Плотный вектор
-            dense_query = self.dense_model.encode(
+            dense_embedding = self.dense_model.encode(
                 query,
                 convert_to_numpy=True
             ).tolist()
             
             # Разреженный вектор
-            if self.SPARSE_MODEL_TYPE == "fastembed":
-                sparse_query = list(self.sparse_model.embed(query))[0]
-                indices = sparse_query.indices.tolist()
-                values = sparse_query.values.tolist()
-            else:
-                indices, values = [], []
+            sparse_vector = self._generate_sparse_vector(query)
+            if sparse_vector is None:
+                logger.warning("Используем только плотные векторы (не удалось сгенерировать sparse)")
+                return self.semantic_search(query, top_k)
             
-            # Формируем запрос аналогично Colab
+            # Выполняем гибридный поиск
             results = self.qdrant_client.query_points(
                 collection_name=QDRANT_COLLECTION,
                 prefetch=[
                     models.Prefetch(
-                        query=dense_query,
+                        query=dense_embedding,
                         using="dense",
                         limit=top_k*2
                     ),
                     models.Prefetch(
-                        query=models.SparseVector(
-                            indices=indices,
-                            values=values
-                        ),
+                        query=sparse_vector,
                         using="sparse",
                         limit=top_k*2
                     )
