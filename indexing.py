@@ -102,31 +102,46 @@ class IndexBuilder:
             return []
 
     def sparse_vector_search(self, query: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Поиск по разреженным векторам через search (не через query_points)"""
+        """Поиск по разреженным векторам с улучшенной обработкой"""
         try:
             self._load_models()
             query_text = " ".join(query) if isinstance(query, list) else query
-            
-            sparse_vector = self._generate_sparse_vector(query_text)
-            if sparse_vector is None:
+        
+            # Генерация вектора с дополнительной проверкой
+            embeddings = list(self.sparse_model.embed(query_text))
+            if not embeddings:
+                logger.warning(f"Не удалось сгенерировать эмбеддинг для: {query_text[:50]}...")
                 return []
             
-            # Используем обычный search вместо query_points
+            sparse_embedding = embeddings[0]
+            sparse_vector = models.SparseVector(
+                indices=sparse_embedding.indices.tolist(),
+                values=[float(v) for v in sparse_embedding.values.tolist()]  # Явное преобразование
+            )
+        
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
                 query_vector=("sparse", sparse_vector),
                 limit=top_k,
-                with_payload=True
+                with_payload=True,
+                score_threshold=0.3  # Минимальный порог релевантности
             )
-            
-            return [{
-                "id": res.id,
-                "score": res.score,
-                "payload": res.payload,
-                "text": res.payload.get("text", "")
-            } for res in results]
+        
+            # Дополнительная проверка payload
+            valid_results = []
+            for res in results:
+                if res.payload and "text" in res.payload:
+                    valid_results.append({
+                        "id": res.id,
+                        "score": float(res.score),  # Преобразуем в float
+                        "payload": res.payload,
+                        "text": str(res.payload["text"])  # Гарантируем строку
+                    })
+        
+            return valid_results
+        
         except Exception as e:
-            logger.error(f"Ошибка sparse поиска: {str(e)}")
+            logger.error(f"Ошибка sparse поиска: {str(e)}", exc_info=True)
             return []
 
     def hybrid_search(self, query: Union[str, List[str]], top_k: int = 5, alpha: float = 0.5) -> List[dict]:
