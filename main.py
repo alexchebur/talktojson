@@ -238,7 +238,7 @@ if st.button("Отправить", key="send_btn"):
     
     
         # ПОИСК ПО РАЗРЕЖЕННЫМ ВЕКТОРАМ (ЗАМЕНА ПОЛНОТЕКСТОВОГО ПОИСКА)
-        sparse_results = index_builder.sparse_vector_search(search_data['query'], top_k=5)
+        sparse_results = index_builder.sparse_vector_search(search_data['expanded_queries'], top_k=5)
     
         # Обновляем названия для отображения
         st.session_state.qdrant_semantic_results = semantic_results
