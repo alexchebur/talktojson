@@ -341,7 +341,7 @@ with st.sidebar:
         st.subheader("🧠 Семантический поиск (Qdrant)")
         for i, res in enumerate(st.session_state.qdrant_semantic_results[:3]):
             with st.expander(f"Сем. результат {i+1} (сходство: {res['score']:.2f})", expanded=False):
-                st.write(res['text'][:1000] + "...")
+                st.write(res['text'][:200] + "...")
     else:
         st.subheader("🧠 Семантический поиск (Qdrant)")
         st.info("Нет результатов семантического поиска")
@@ -353,7 +353,7 @@ with st.sidebar:
         st.subheader("🔤 Поиск по разреженным векторам (Qdrant)")
         for i, res in enumerate(st.session_state.qdrant_sparse_results[:3]):
             with st.expander(f"Разреженный результат {i+1} (сходство: {res['score']:.2f})", expanded=False):
-                st.write(res['text'][:1000] + "...")
+                st.write(res['text'][:200] + "...")
     else:
         st.subheader("🔤 Поиск по разреженным векторам (Qdrant)")
         st.info("Нет результатов поиска по разреженным векторам")
