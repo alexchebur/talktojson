@@ -102,43 +102,54 @@ class IndexBuilder:
             return []
 
     def sparse_vector_search(self, query: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Альтернативная реализация через query_points"""
+        """Поиск по разреженным векторам в точном соответствии с рабочим Colab-скриптом"""
         try:
             self._load_models()
+        
+            # Подготовка текста запроса
             query_text = " ".join(query) if isinstance(query, list) else query
         
-            embeddings = list(self.sparse_model.embed(query_text))
-            if not embeddings:
-                return []
-            
-            sparse_embedding = embeddings[0]
-            sparse_vector = {
-                "indices": sparse_embedding.indices.tolist(),
-                "values": [float(v) for v in sparse_embedding.values.tolist()]
-            }
-        
-            # Используем query_points вместо search
-            results = self.qdrant_client.query_points(
-                collection_name=QDRANT_COLLECTION,
-                query=models.SearchRequest(
-                    vector=models.NamedVector(
-                        name="sparse",
-                        vector=models.SparseVector(**sparse_vector)
-                    ),
-                    limit=top_k,
-                    with_payload=True
-                )
+            # Генерация разреженного вектора как в Colab
+            sparse_embedding = list(self.sparse_model.embed(query_text))[0]
+            sparse_vector = models.SparseVector(
+                indices=sparse_embedding.indices.tolist(),
+                values=sparse_embedding.values.tolist()
             )
         
-            return [{
-                "id": point.id,
-                "score": point.score,
-                "payload": point.payload,
-                "text": point.payload.get("text", "")
-            } for point in results]
+            # Формируем SearchRequest как в рабочем скрипте
+            search_request = models.SearchRequest(
+                vector=models.NamedVector(
+                    name="sparse",
+                    vector=sparse_vector
+                ),
+                limit=top_k,
+                with_payload=True,
+                with_vectors=False
+            )
         
+            # Выполняем запрос через query_points
+            results = self.qdrant_client.query_points(
+                collection_name=QDRANT_COLLECTION,
+                queries=[search_request]
+            )
+        
+            # Форматируем результаты как в Colab
+            formatted_results = []
+            for point in results:
+                formatted_results.append({
+                    "id": point.id,
+                    "score": point.score,
+                    "payload": point.payload,
+                    "text": point.payload.get("text", "")
+                })
+        
+            return formatted_results
+        
+        except IndexError:
+            logger.warning("Не удалось сгенерировать эмбеддинг для запроса")
+            return []
         except Exception as e:
-            logger.error(f"Ошибка sparse поиска (alt): {str(e)}")
+            logger.error(f"Ошибка sparse поиска: {str(e)}", exc_info=True)
             return []
 
     def hybrid_search(self, query: Union[str, List[str]], top_k: int = 5, alpha: float = 0.5) -> List[dict]:
