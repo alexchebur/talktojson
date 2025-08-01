@@ -102,7 +102,7 @@ class IndexBuilder:
             return []
 
     def sparse_vector_search(self, query: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Корректная реализация поиска по разреженным векторам"""
+        """Рабочая версия поиска по разреженным векторам"""
         try:
             self._load_models()
         
@@ -110,37 +110,60 @@ class IndexBuilder:
             query_text = " ".join(query) if isinstance(query, list) else query
         
             # Генерация разреженного вектора
-            sparse_embedding = list(self.sparse_model.embed(query_text))[0]
+            embeddings = list(self.sparse_model.embed(query_text))
+            if not embeddings:
+                logger.warning("Не удалось сгенерировать эмбеддинг для запроса")
+                return []
+            
+            sparse_embedding = embeddings[0]
         
-            # Создаем словарь с правильной структурой
-            sparse_data = {
-                "indices": sparse_embedding.indices.tolist(),
+            # Создаем словарь с явным преобразованием типов
+            sparse_vector = {
+                "indices": [int(i) for i in sparse_embedding.indices.tolist()],
                 "values": [float(v) for v in sparse_embedding.values.tolist()]
             }
         
-            # Вариант 1: Используем прямой формат для search
-            results = self.qdrant_client.search(
-                collection_name=QDRANT_COLLECTION,
-                query_vector=("sparse", sparse_data),
-                limit=top_k,
-                with_payload=True
-            )
+            # Вариант 1: Используем NamedSparseVector (для новых версий Qdrant)
+            try:
+                from qdrant_client.http.models import NamedSparseVector
+                results = self.qdrant_client.search(
+                    collection_name=QDRANT_COLLECTION,
+                    query_vector=NamedSparseVector(
+                        name="sparse",
+                        vector=sparse_vector
+                    ),
+                    limit=top_k,
+                    with_payload=True
+                )
+            except:
+                # Вариант 2: Старый формат для совместимости
+                results = self.qdrant_client.search(
+                    collection_name=QDRANT_COLLECTION,
+                    query_vector={
+                        "sparse": {
+                            "indices": sparse_vector["indices"],
+                            "values": sparse_vector["values"]
+                        }
+                    },
+                    limit=top_k,
+                    with_payload=True
+                )
         
-            # Вариант 2 (если вариант 1 не работает):
-            # results = self.qdrant_client._client.search(
-            #     collection_name=QDRANT_COLLECTION,
-            #     query_vector={"name": "sparse", "vector": sparse_data},
-            #     limit=top_k,
-            #     with_payload=True
-            # )
-        
-            # Форматируем результаты
-            return [{
-                "id": res.id,
-                "score": float(res.score),
-                "payload": res.payload,
-                "text": res.payload.get("text", "")
-            } for res in results]
+            # Форматируем результаты с проверкой типов
+            formatted_results = []
+            for res in results:
+                try:
+                    formatted_results.append({
+                        "id": res.id,
+                        "score": float(res.score),
+                        "payload": res.payload,
+                        "text": str(res.payload.get("text", ""))
+                    })
+                except Exception as e:
+                    logger.error(f"Ошибка форматирования результата: {str(e)}")
+                    continue
+                
+            return formatted_results
         
         except Exception as e:
             logger.error(f"Ошибка sparse поиска: {str(e)}", exc_info=True)
