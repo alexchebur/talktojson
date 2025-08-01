@@ -73,42 +73,42 @@ class IndexBuilder:
             return None
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-def semantic_search(self, queries: List[str], top_k: int = 5) -> List[Dict]:
-    """Семантический поиск по списку запросов (исходный + сгенерированные)"""
-    try:
-        self._load_models()
-        all_results = []
+    def semantic_search(self, queries: List[str], top_k: int = 5) -> List[Dict]:
+        """Семантический поиск по списку запросов (исходный + сгенерированные)"""
+        try:
+            self._load_models()
+            all_results = []
         
-        for query in queries:
-            embedding = self.dense_model.encode(
-                query,
-                normalize_embeddings=True,
-                convert_to_numpy=True
-            ).tolist()
+            for query in queries:
+                embedding = self.dense_model.encode(
+                    query,
+                    normalize_embeddings=True,
+                    convert_to_numpy=True
+                ).tolist()
             
-            results = self.qdrant_client.search(
-                collection_name=QDRANT_COLLECTION,
-                query_vector=("dense", embedding),
-                limit=top_k,
-                with_payload=True
-            )
+                results = self.qdrant_client.search(
+                    collection_name=QDRANT_COLLECTION,
+                    query_vector=("dense", embedding),
+                    limit=top_k,
+                    with_payload=True
+                )
             
-            for res in results:
-                all_results.append({
-                    "id": res.id,
-                    "score": res.score,
-                    "content": res.payload.get("content", ""),
-                    "query": query,  # Сохраняем запрос, который дал этот результат
-                    "payload": res.payload
-                })
+                for res in results:
+                    all_results.append({
+                        "id": res.id,
+                        "score": res.score,
+                        "content": res.payload.get("content", ""),
+                        "query": query,  # Сохраняем запрос, который дал этот результат
+                        "payload": res.payload
+                    })
         
-        # Удаляем дубликаты и сортируем по score
-        unique_results = {res['id']: res for res in all_results}.values()
-        return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
+            # Удаляем дубликаты и сортируем по score
+            unique_results = {res['id']: res for res in all_results}.values()
+            return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
         
-    except Exception as e:
-        logger.error(f"Ошибка семантического поиска: {str(e)}")
-        return []
+        except Exception as e:
+            logger.error(f"Ошибка семантического поиска: {str(e)}")
+            return []
 
     def sparse_vector_search(self, queries: List[str], top_k: int = 5) -> List[dict]:
         """Поиск по разреженным векторам по списку запросов"""
