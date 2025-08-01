@@ -235,14 +235,10 @@ if st.button("Отправить", key="send_btn"):
         for query in [user_input] + search_data['expanded_queries']:
             semantic_results.extend(index_builder.semantic_search(query, top_k=3))
     
-    with st.spinner("Поиск информации..."):
-        
-        semantic_results = []
-        for query in [user_input] + search_data['expanded_queries']:
-            semantic_results.extend(index_builder.semantic_search(query, top_k=3))
+    
     
         # ПОИСК ПО РАЗРЕЖЕННЫМ ВЕКТОРАМ (ЗАМЕНА ПОЛНОТЕКСТОВОГО ПОИСКА)
-        sparse_results = index_builder.keyword_search(search_data['expanded_keywords'], top_k=5)
+        sparse_results = index_builder.sparse_vector_search(search_data['expanded_keywords'], top_k=5)
     
         # Обновляем названия для отображения
         st.session_state.qdrant_semantic_results = semantic_results
