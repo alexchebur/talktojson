@@ -74,56 +74,43 @@ class IndexBuilder:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def semantic_search(self, query: str, top_k: int = 5) -> List[Dict]:
-        """Семантический поиск через search (не через query_points)"""
         try:
-            self._load_models()
-            dense_query = self.dense_model.encode(
-                query,
-                normalize_embeddings=True,
-                convert_to_numpy=True
-            ).tolist()
-            
-            # Используем обычный search вместо query_points
+            embedding = self.dense_model.encode(query, convert_to_numpy=True).tolist()
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
-                query_vector=("dense", dense_query),
+                query_vector=("dense", embedding),
                 limit=top_k,
                 with_payload=True
             )
-            
+        
             return [{
                 "id": res.id,
                 "score": res.score,
-                "payload": res.payload,
-                "content": res.payload.get("content", "")
+                "content": res.payload.get("content", ""),  # Исправлено на content
+                "payload": res.payload
             } for res in results]
         except Exception as e:
             logger.error(f"Ошибка семантического поиска: {str(e)}")
             return []
 
     def sparse_vector_search(self, query: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Поиск по разреженным векторам через search (не через query_points)"""
         try:
-            self._load_models()
-            query_text = " ".join(query) if isinstance(query, list) else query
-            
-            sparse_vector = self._generate_sparse_vector(query_text)
-            if sparse_vector is None:
-                return []
-            
-            # Используем обычный search вместо query_points
+            sparse_embedding = list(self.sparse_model.embed(query))[0]
             results = self.qdrant_client.search(
                 collection_name=QDRANT_COLLECTION,
-                query_vector=("sparse", sparse_vector),
+                query_vector=("sparse", {
+                    "indices": sparse_embedding.indices.tolist(),
+                    "values": sparse_embedding.values.tolist()
+                }),
                 limit=top_k,
                 with_payload=True
             )
-            
+        
             return [{
                 "id": res.id,
                 "score": res.score,
-                "payload": res.payload,
-                "content": res.payload.get("content", "")
+                "content": res.payload.get("content", ""),  # Исправлено на content
+                "payload": res.payload
             } for res in results]
         except Exception as e:
             logger.error(f"Ошибка sparse поиска: {str(e)}")
