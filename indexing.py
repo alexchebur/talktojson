@@ -9,7 +9,7 @@ import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
 from sentence_transformers import SentenceTransformer
 from fastembed import SparseTextEmbedding
-import numpy as np
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,7 @@ class IndexBuilder:
         self.qdrant_client = self._init_qdrant_client()
         self.dense_model = None
         self.sparse_model = None
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
     def _init_qdrant_client(self):
         """Инициализация клиента Qdrant"""
@@ -40,22 +41,25 @@ class IndexBuilder:
         if self.dense_model is None:
             self.dense_model = SentenceTransformer(
                 "cointegrated/rubert-tiny2",
-                device="cpu",
+                device=self.device,
                 trust_remote_code=True
             )
+            self.dense_model.to(self.device)
         
         # Разреженные векторы
         if self.sparse_model is None:
             try:
-                self.sparse_model = SparseTextEmbedding("Qdrant/bm42-all-minilm-l6-v2-attentions")
+                self.sparse_model = SparseTextEmbedding(
+                    "Qdrant/bm42-all-minilm-l6-v2-attentions",
+                    device=self.device
+                )
                 logger.info("Модель для разреженных векторов успешно загружена")
             except Exception as e:
                 logger.error(f"Ошибка загрузки sparse модели: {str(e)}")
                 raise
 
-
     def _generate_sparse_vector(self, text: str) -> Optional[models.SparseVector]:
-        """Генерация разреженного вектора с обработкой ошибок"""
+        """Генерация разреженного вектора"""
         try:
             if not text.strip():
                 return None
@@ -66,89 +70,49 @@ class IndexBuilder:
                 
             sparse_embedding = embeddings[0]
             return models.SparseVector(
-                indices=sparse_embedding.indices.tolist(),
-                values=sparse_embedding.values.tolist()
+                indices=sparse_embedding.indices.cpu().numpy().tolist(),
+                values=sparse_embedding.values.cpu().numpy().tolist()
             )
         except Exception as e:
             logger.error(f"Ошибка генерации sparse вектора: {str(e)}")
             return None
 
-
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def semantic_search(self, queries: List[str], top_k: int = 5) -> List[Dict]:
+    def hybrid_search(self, queries: Union[str, List[str]], top_k: int = 5) -> List[dict]:
+        """Унифицированный гибридный поиск (плотные + разреженные векторы)"""
+        if isinstance(queries, str):
+            queries = [queries]
+            
         try:
             self._load_models()
-            embeddings = self.dense_model.encode(
-                queries,
-                normalize_embeddings=True,
-                convert_to_numpy=True
-            )
-        
-            # Исправленный формат запроса
-            search_requests = [
-                models.SearchRequest(
-                    vector=models.NamedVector(
-                        name="dense",
-                        vector=emb.tolist()
-                    ),
-                    limit=top_k,
-                    with_payload=True
-                ) for emb in embeddings
-            ]
-        
-            batch_results = self.qdrant_client.search_batch(
-                collection_name=QDRANT_COLLECTION,
-                requests=search_requests
-            )
-        
             all_results = []
-            for query, results in zip(queries, batch_results):
-                for res in results:
-                    all_results.append({
-                        "id": res.id,
-                        "score": res.score,
-                        "content": res.payload.get("content", ""),
-                        "query": query,
-                        "payload": res.payload
-                    })
-        
-            unique_results = {res['id']: res for res in all_results}.values()
-            return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
-    
-        except Exception as e:
-            logger.error(f"Ошибка семантического поиска: {str(e)}")
-            return []
-
-    def sparse_vector_search(self, queries: List[str], top_k: int = 5) -> List[dict]:
-        try:
-            self._load_models()
-            # Генерируем векторы для всех запросов
-            sparse_vectors = []
+            
             for query in queries:
-                if not query.strip():
-                    continue
-                embeddings = list(self.sparse_model.embed(query))
-                if embeddings:
-                    sparse_embedding = embeddings[0]
-                    sparse_vectors.append(models.SparseVector(
-                        indices=sparse_embedding.indices.tolist(),
-                        values=sparse_embedding.values.tolist()
-                    ))
-            
-            # Выполняем batch-поиск
-            batch_results = self.qdrant_client.search_batch(
-                collection_name=QDRANT_COLLECTION,
-                requests=[
-                    models.SearchRequest(
-                        vector=("sparse", vector),
-                        limit=top_k,
-                        with_payload=True
-                    ) for vector in sparse_vectors
-                ]
-            )
-            
-            all_results = []
-            for query, results in zip(queries, batch_results):
+                # Плотный вектор
+                with torch.no_grad():
+                    dense_embedding = self.dense_model.encode(
+                        query,
+                        normalize_embeddings=True,
+                        convert_to_tensor=True
+                    ).cpu().numpy().tolist()
+                
+                # Разреженный вектор
+                sparse_vector = self._generate_sparse_vector(query)
+                
+                # Формируем запрос
+                search_params = {
+                    "collection_name": QDRANT_COLLECTION,
+                    "query_vector": ("dense", dense_embedding),
+                    "limit": top_k,
+                    "with_payload": True
+                }
+                
+                if sparse_vector:
+                    search_params["query_sparse_vector"] = ("sparse", sparse_vector)
+                
+                # Выполняем поиск
+                results = self.qdrant_client.search(**search_params)
+                
                 for res in results:
                     all_results.append({
                         "id": res.id,
@@ -161,62 +125,7 @@ class IndexBuilder:
             # Удаляем дубликаты и сортируем
             unique_results = {res['id']: res for res in all_results}.values()
             return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
-        
-        except Exception as e:
-            logger.error(f"Ошибка sparse поиска: {str(e)}")
-            return []
-
-
-    def hybrid_search(self, queries: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        if isinstance(queries, str):
-            queries = [queries]
-        
-        try:
-            self._load_models()
-            all_results = []
-        
-            for query in queries:
-                # Плотный вектор
-                dense_embedding = self.dense_model.encode(
-                    query,
-                    normalize_embeddings=True,
-                    convert_to_numpy=True
-                ).tolist()
             
-                # Разреженный вектор
-                sparse_vector = self._generate_sparse_vector(query)
-            
-                # Формируем запрос в правильном формате
-                search_request = models.SearchRequest(
-                    vector=models.NamedVector(
-                        name="dense",
-                        vector=dense_embedding
-                    ),
-                    sparse_vector=models.NamedSparseVector(
-                        name="sparse",
-                        vector=sparse_vector
-                    ) if sparse_vector else None,
-                    limit=top_k,
-                    with_payload=True
-                )
-            
-                results = self.qdrant_client.search_batch(
-                    collection_name=QDRANT_COLLECTION,
-                    requests=[search_request]
-                )[0]  # Берем первый (и единственный) результат
-            
-                for res in results:
-                    all_results.append({
-                        "id": res.id,
-                        "score": res.score,
-                        "content": res.payload.get("content", ""),
-                        "query": query,
-                        "payload": res.payload
-                    })
-        
-            unique_results = {res['id']: res for res in all_results}.values()
-            return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
-        
         except Exception as e:
             logger.error(f"Ошибка гибридного поиска: {str(e)}")
             return []
