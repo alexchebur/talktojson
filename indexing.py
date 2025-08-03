@@ -74,47 +74,50 @@ class IndexBuilder:
             return None
 
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-    def semantic_search(self, queries: List[str], top_k: int = 5) -> List[Dict]:
-        try:
-            self._load_models()
-            # Кодируем все запросы разом
-            embeddings = self.dense_model.encode(
-                queries,
-                normalize_embeddings=True,
-                convert_to_numpy=True
-            )
-            
-            # Выполняем batch-поиск
-            batch_results = self.qdrant_client.search_batch(
-                collection_name=QDRANT_COLLECTION,
-                requests=[
-                    models.SearchRequest(
-                        vector=("dense", emb.tolist()),
-                        limit=top_k,
-                        with_payload=True
-                    ) for emb in embeddings
-                ]
-            )
-            
-            all_results = []
-            for query, results in zip(queries, batch_results):
-                for res in results:
-                    all_results.append({
-                        "id": res.id,
-                        "score": res.score,
-                        "content": res.payload.get("content", ""),
-                        "query": query,
-                        "payload": res.payload
-                    })
-            
-            # Удаляем дубликаты и сортируем
-            unique_results = {res['id']: res for res in all_results}.values()
-            return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+def semantic_search(self, queries: List[str], top_k: int = 5) -> List[Dict]:
+    try:
+        self._load_models()
+        embeddings = self.dense_model.encode(
+            queries,
+            normalize_embeddings=True,
+            convert_to_numpy=True
+        )
         
-        except Exception as e:
-            logger.error(f"Ошибка семантического поиска: {str(e)}")
-            return []
+        # Исправленный формат запроса
+        search_requests = [
+            models.SearchRequest(
+                vector=models.NamedVector(
+                    name="dense",
+                    vector=emb.tolist()
+                ),
+                limit=top_k,
+                with_payload=True
+            ) for emb in embeddings
+        ]
+        
+        batch_results = self.qdrant_client.search_batch(
+            collection_name=QDRANT_COLLECTION,
+            requests=search_requests
+        )
+        
+        all_results = []
+        for query, results in zip(queries, batch_results):
+            for res in results:
+                all_results.append({
+                    "id": res.id,
+                    "score": res.score,
+                    "content": res.payload.get("content", ""),
+                    "query": query,
+                    "payload": res.payload
+                })
+        
+        unique_results = {res['id']: res for res in all_results}.values()
+        return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
+    
+    except Exception as e:
+        logger.error(f"Ошибка семантического поиска: {str(e)}")
+        return []
 
     def sparse_vector_search(self, queries: List[str], top_k: int = 5) -> List[dict]:
         try:
@@ -165,14 +168,13 @@ class IndexBuilder:
 
 
     def hybrid_search(self, queries: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Гибридный поиск с обработкой списка запросов (включая исходный)"""
         if isinstance(queries, str):
             queries = [queries]
-            
+        
         try:
             self._load_models()
             all_results = []
-            
+        
             for query in queries:
                 # Плотный вектор
                 dense_embedding = self.dense_model.encode(
@@ -180,45 +182,41 @@ class IndexBuilder:
                     normalize_embeddings=True,
                     convert_to_numpy=True
                 ).tolist()
-                
+            
                 # Разреженный вектор
                 sparse_vector = self._generate_sparse_vector(query)
-                
-                # Базовый поиск (если sparse вектор не сгенерирован)
-                if sparse_vector is None:
-                    results = self.qdrant_client.search(
-                        collection_name=QDRANT_COLLECTION,
-                        query_vector=("dense", dense_embedding),
-                        limit=top_k,
-                        with_payload=True
-                    )
-                else:
-                    # Гибридный поиск
-                    results = self.qdrant_client.search(
-                        collection_name=QDRANT_COLLECTION,
-                        query_vector=("dense", dense_embedding),
-                        query_sparse_vector=("sparse", sparse_vector),
-                        limit=top_k,
-                        with_payload=True
-                    )
-                
+            
+                # Формируем запрос в правильном формате
+                search_request = models.SearchRequest(
+                    vector=models.NamedVector(
+                        name="dense",
+                        vector=dense_embedding
+                    ),
+                    sparse_vector=models.NamedSparseVector(
+                        name="sparse",
+                        vector=sparse_vector
+                    ) if sparse_vector else None,
+                    limit=top_k,
+                    with_payload=True
+                )
+            
+                results = self.qdrant_client.search_batch(
+                    collection_name=QDRANT_COLLECTION,
+                    requests=[search_request]
+                )[0]  # Берем первый (и единственный) результат
+            
                 for res in results:
                     all_results.append({
                         "id": res.id,
                         "score": res.score,
                         "content": res.payload.get("content", ""),
-                        "query": query,  # Сохраняем, какой запрос дал этот результат
+                        "query": query,
                         "payload": res.payload
                     })
-            
-            # Удаляем дубликаты и сортируем
+        
             unique_results = {res['id']: res for res in all_results}.values()
             return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
-            
-        except Exception as e:
-            logger.error(f"Ошибка гибридного поиска: {str(e)}")
-            return []
-            
+        
         except Exception as e:
             logger.error(f"Ошибка гибридного поиска: {str(e)}")
             return []
