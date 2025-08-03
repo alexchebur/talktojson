@@ -162,48 +162,62 @@ class IndexBuilder:
         except Exception as e:
             logger.error(f"Ошибка sparse поиска: {str(e)}")
             return []
-class IndexBuilder:
-    # ... (предыдущий код)
 
-    def hybrid_search(self, query: str, top_k: int = 5, alpha: float = 0.7) -> List[dict]:
-        """Упрощенный гибридный поиск"""
+
+    def hybrid_search(self, queries: Union[str, List[str]], top_k: int = 5) -> List[dict]:
+        """Гибридный поиск с обработкой списка запросов (включая исходный)"""
+        if isinstance(queries, str):
+            queries = [queries]
+            
         try:
             self._load_models()
+            all_results = []
             
-            # Плотный вектор
-            dense_embedding = self.dense_model.encode(
-                query,
-                normalize_embeddings=True,
-                convert_to_numpy=True
-            ).tolist()
+            for query in queries:
+                # Плотный вектор
+                dense_embedding = self.dense_model.encode(
+                    query,
+                    normalize_embeddings=True,
+                    convert_to_numpy=True
+                ).tolist()
+                
+                # Разреженный вектор
+                sparse_vector = self._generate_sparse_vector(query)
+                
+                # Базовый поиск (если sparse вектор не сгенерирован)
+                if sparse_vector is None:
+                    results = self.qdrant_client.search(
+                        collection_name=QDRANT_COLLECTION,
+                        query_vector=("dense", dense_embedding),
+                        limit=top_k,
+                        with_payload=True
+                    )
+                else:
+                    # Гибридный поиск
+                    results = self.qdrant_client.search(
+                        collection_name=QDRANT_COLLECTION,
+                        query_vector=("dense", dense_embedding),
+                        query_sparse_vector=("sparse", sparse_vector),
+                        limit=top_k,
+                        with_payload=True
+                    )
+                
+                for res in results:
+                    all_results.append({
+                        "id": res.id,
+                        "score": res.score,
+                        "content": res.payload.get("content", ""),
+                        "query": query,  # Сохраняем, какой запрос дал этот результат
+                        "payload": res.payload
+                    })
             
-            # Разреженный вектор
-            sparse_vector = self._generate_sparse_vector(query)
+            # Удаляем дубликаты и сортируем
+            unique_results = {res['id']: res for res in all_results}.values()
+            return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
             
-            # Если нет sparse вектора - используем только dense
-            if sparse_vector is None:
-                results = self.qdrant_client.search(
-                    collection_name=QDRANT_COLLECTION,
-                    query_vector=("dense", dense_embedding),
-                    limit=top_k * 2,
-                    with_payload=True
-                )
-            else:
-                # Гибридный поиск
-                results = self.qdrant_client.search(
-                    collection_name=QDRANT_COLLECTION,
-                    query_vector=("dense", dense_embedding),
-                    query_sparse_vector=("sparse", sparse_vector),
-                    limit=top_k,
-                    with_payload=True
-                )
-            
-            return [{
-                "id": res.id,
-                "score": res.score,
-                "content": res.payload.get("content", ""),
-                "payload": res.payload
-            } for res in results]
+        except Exception as e:
+            logger.error(f"Ошибка гибридного поиска: {str(e)}")
+            return []
             
         except Exception as e:
             logger.error(f"Ошибка гибридного поиска: {str(e)}")
