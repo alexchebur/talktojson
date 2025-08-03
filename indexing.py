@@ -10,13 +10,41 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
+import os
+os.environ["STREAMLIT_SERVER_ENABLE_STATIC_FILE_WATCHING"] = "false"
+os.environ["STREAMLIT_DISABLE_WATCHDOG"] = "true"
+from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
+from typing import List, Dict, Optional, Union
+import logging
+from tenacity import retry, stop_after_attempt, wait_exponential
+from sentence_transformers import SentenceTransformer
+from fastembed import SparseTextEmbedding
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
 class IndexBuilder:
     def __init__(self):
         self.qdrant_client = self._init_qdrant_client()
-        self.device = "cpu"  # Принудительно используем CPU для стабильности
-        self.dense_model = self._init_dense_model()
-        self.sparse_model = self._init_sparse_model()
-        logger.info(f"Инициализация завершена. Устройство: {self.device}")
+        self.dense_model = None
+        self.sparse_model = None
+        
+    def _init_qdrant_client(self):
+        """Инициализация клиента Qdrant"""
+        try:
+            client = QdrantClient(
+                url=QDRANT_URL,
+                api_key=QDRANT_API_KEY,
+                prefer_grpc=True,
+                timeout=30
+            )
+            client.get_collections()
+            return client
+        except Exception as e:
+            logger.error(f"Ошибка подключения к Qdrant: {str(e)}")
+            raise
 
     def _init_dense_model(self) -> SentenceTransformer:
         """Безопасная инициализация модели для плотных векторов"""
