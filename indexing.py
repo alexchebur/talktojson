@@ -162,63 +162,49 @@ class IndexBuilder:
         except Exception as e:
             logger.error(f"Ошибка sparse поиска: {str(e)}")
             return []
-    def hybrid_search(self, query: Union[str, List[str]], top_k: int = 5, alpha: float = 0.5) -> List[dict]:
-        """Гибридный поиск через query_points с использованием search_queries"""
+class IndexBuilder:
+    # ... (предыдущий код)
+
+    def hybrid_search(self, query: str, top_k: int = 5, alpha: float = 0.7) -> List[dict]:
+        """Упрощенный гибридный поиск"""
         try:
             self._load_models()
-            query_text = " ".join(query) if isinstance(query, list) else query
             
             # Плотный вектор
-            dense_query = self.dense_model.encode(
-                query_text,
+            dense_embedding = self.dense_model.encode(
+                query,
+                normalize_embeddings=True,
                 convert_to_numpy=True
             ).tolist()
             
             # Разреженный вектор
-            sparse_vector = self._generate_sparse_vector(query_text)
+            sparse_vector = self._generate_sparse_vector(query)
+            
+            # Если нет sparse вектора - используем только dense
             if sparse_vector is None:
-                return self.semantic_search(query_text, top_k)
-            
-            # Формируем запросы для prefetch
-            dense_query_request = models.SearchRequest(
-                vector=models.NamedVector(
-                    name="dense",
-                    vector=dense_query
-                ),
-                limit=top_k*2,
-                with_payload=True
-            )
-            
-            sparse_query_request = models.SearchRequest(
-                vector=models.NamedVector(
-                    name="sparse",
-                    vector=sparse_vector
-                ),
-                limit=top_k*2,
-                with_payload=True
-            )
-            
-            # Выполняем гибридный поиск через query_points
-            results = self.qdrant_client.query_points(
-                collection_name=QDRANT_COLLECTION,
-                queries=[
-                    dense_query_request,
-                    sparse_query_request
-                ],
-                search_params=models.SearchParams(
-                    fusion=models.Fusion.DBSF,
-                    alpha=alpha
-                ),
-                limit=top_k,
-                with_payload=True
-            )
+                results = self.qdrant_client.search(
+                    collection_name=QDRANT_COLLECTION,
+                    query_vector=("dense", dense_embedding),
+                    limit=top_k * 2,
+                    with_payload=True
+                )
+            else:
+                # Гибридный поиск
+                results = self.qdrant_client.search(
+                    collection_name=QDRANT_COLLECTION,
+                    query_vector=("dense", dense_embedding),
+                    query_sparse_vector=("sparse", sparse_vector),
+                    limit=top_k,
+                    with_payload=True
+                )
             
             return [{
-                "id": point.id,
-                "score": point.score,
-                "payload": point.payload,
-                "text": point.payload.get("text", "")
-            } for point in results]
+                "id": res.id,
+                "score": res.score,
+                "content": res.payload.get("content", ""),
+                "payload": res.payload
+            } for res in results]
+            
         except Exception as e:
             logger.error(f"Ошибка гибридного поиска: {str(e)}")
             return []
