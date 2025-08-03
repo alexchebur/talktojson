@@ -53,8 +53,9 @@ class IndexBuilder:
                 logger.error(f"Ошибка загрузки sparse модели: {str(e)}")
                 raise
 
+
     def _generate_sparse_vector(self, text: str) -> Optional[models.SparseVector]:
-        """Генерация разреженного вектора"""
+        """Генерация разреженного вектора с обработкой ошибок"""
         try:
             if not text.strip():
                 return None
