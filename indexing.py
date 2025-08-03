@@ -149,29 +149,26 @@ class IndexBuilder:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def hybrid_search(self, queries: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Гибридный поиск для списка запросов"""
+        """Гибридный поиск без использования torch.no_grad()"""
         try:
             self._load_models()
-    
-            # Если пришел единичный запрос, преобразуем в список
+        
             if isinstance(queries, str):
                 queries = [queries]
-        
+            
             all_results = []
-    
+        
             for query in queries:
-                # Плотный вектор
-                with torch.no_grad():
-                    dense_embedding = self.dense_model.encode(
-                        query,
-                        normalize_embeddings=True,
-                        convert_to_numpy=True
-                    ).tolist()
+                # Плотный вектор (без torch контекста)
+                dense_embedding = self.dense_model.encode(
+                    query,
+                    normalize_embeddings=True,
+                    convert_to_numpy=True
+                ).tolist()
             
                 # Разреженный вектор
                 sparse_vector = self._generate_sparse_vector(query)
             
-                # Формируем параметры поиска
                 search_params = {
                     "collection_name": QDRANT_COLLECTION,
                     "query_vector": ("dense", dense_embedding),
@@ -179,11 +176,9 @@ class IndexBuilder:
                     "with_payload": True
                 }
             
-                # Добавляем sparse вектор если он есть
                 if sparse_vector:
                     search_params["query_sparse_vector"] = ("sparse", sparse_vector)
             
-                # Выполняем поиск
                 results = self.qdrant_client.search(**search_params)
             
                 for res in results:
@@ -194,19 +189,12 @@ class IndexBuilder:
                         "query": query,
                         "payload": res.payload
                     })
-    
-            # Дедупликация результатов
+        
+            # Дедупликация
             seen_ids = set()
-            unique_results = []
-            for res in sorted(all_results, key=lambda x: x['score'], reverse=True):
-                if res['id'] not in seen_ids:
-                    seen_ids.add(res['id'])
-                    unique_results.append(res)
-                    if len(unique_results) >= top_k:
-                        break
-                
-            return unique_results
-    
+            return [res for res in sorted(all_results, key=lambda x: -x['score']) 
+                    if res['id'] not in seen_ids and not seen_ids.add(res['id'])][:top_k]
+        
         except Exception as e:
-            logger.error(f"Ошибка гибридного поиска: {str(e)}")
+            logger.error(f"Ошибка поиска: {str(e)}")
             return []
