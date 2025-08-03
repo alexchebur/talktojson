@@ -77,7 +77,7 @@ class IndexBuilder:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def hybrid_search(self, queries: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Правильный гибридный поиск для Qdrant 1.15+"""
+        """Исправленный гибридный поиск с правильным форматом векторов"""
         try:
             self._load_models()
         
@@ -87,16 +87,28 @@ class IndexBuilder:
             all_results = []
         
             for query in queries:
-                # Генерация векторов
+                # Генерация плотного вектора
                 dense_embedding = self.dense_model.encode(
                     query,
                     normalize_embeddings=True,
                     convert_to_numpy=True
                 ).tolist()
             
-                sparse_vector = self._generate_sparse_vector(query)
+                # Генерация sparse-вектора в правильном формате
+                sparse_vector = None
+                if self.sparse_model:
+                    try:
+                        embeddings = list(self.sparse_model.embed(query))
+                        if embeddings:
+                            sparse_embedding = embeddings[0]
+                            sparse_vector = {
+                                "indices": sparse_embedding.indices.tolist(),
+                                "values": sparse_embedding.values.tolist()
+                            }
+                    except Exception as e:
+                        logger.warning(f"Ошибка генерации sparse вектора: {str(e)}")
             
-                # Формируем запросы для гибридного поиска
+                # Формируем запросы
                 requests = []
             
                 # Запрос для плотного вектора
@@ -112,18 +124,15 @@ class IndexBuilder:
                 # Запрос для разреженного вектора (если доступен)
                 if sparse_vector:
                     requests.append(models.SearchRequest(
-                        vector=models.NamedVector(
+                        vector=models.NamedSparseVector(
                             name="sparse",
-                            vector=sparse_vector
+                            vector=models.SparseVector(**sparse_vector)
                         ),
                         limit=top_k * 2,
                         with_payload=True
                     ))
             
                 # Выполняем поиск
-                if not requests:
-                    continue
-                
                 batch_results = self.qdrant_client.search_batch(
                     collection_name=QDRANT_COLLECTION,
                     requests=requests
