@@ -152,82 +152,49 @@ class IndexBuilder:
         """Гибридный поиск для списка запросов"""
         try:
             self._load_models()
-        
+    
             # Если пришел единичный запрос, преобразуем в список
             if isinstance(queries, str):
                 queries = [queries]
-            
-            all_results = []
         
+            all_results = []
+    
             for query in queries:
                 # Плотный вектор
-                dense_query = self.dense_model.encode(
-                    query,
-                    convert_to_numpy=True
-                ).tolist()
+                with torch.no_grad():
+                    dense_embedding = self.dense_model.encode(
+                        query,
+                        normalize_embeddings=True,
+                        convert_to_numpy=True
+                    ).tolist()
             
                 # Разреженный вектор
                 sparse_vector = self._generate_sparse_vector(query)
             
-                # Если sparse_vector не сгенерирован, используем только dense
-                if sparse_vector is None:
-                    results = self.qdrant_client.search(
-                        collection_name=QDRANT_COLLECTION,
-                        query_vector=("dense", dense_query),
-                        limit=top_k,
-                        with_payload=True
-                    )
-                
-                    for res in results:
-                        all_results.append({
-                            "id": res.id,
-                            "score": res.score,
-                            "content": res.payload.get("content", ""),
-                            "query": query,
-                            "payload": res.payload
-                        })
-                    continue
+                # Формируем параметры поиска
+                search_params = {
+                    "collection_name": QDRANT_COLLECTION,
+                    "query_vector": ("dense", dense_embedding),
+                    "limit": top_k,
+                    "with_payload": True
+                }
             
-                # Формируем запросы для гибридного поиска
-                dense_query_request = models.SearchRequest(
-                    vector=models.NamedVector(
-                        name="dense",
-                        vector=dense_query
-                    ),
-                    limit=top_k*2,
-                    with_payload=True
-                )
+                # Добавляем sparse вектор если он есть
+                if sparse_vector:
+                    search_params["query_sparse_vector"] = ("sparse", sparse_vector)
             
-                sparse_query_request = models.SearchRequest(
-                    vector=models.NamedVector(
-                        name="sparse",
-                        vector=sparse_vector
-                    ),
-                    limit=top_k*2,
-                    with_payload=True
-                )
+                # Выполняем поиск
+                results = self.qdrant_client.search(**search_params)
             
-                # Выполняем гибридный поиск
-                results = self.qdrant_client.query_points(
-                    collection_name=QDRANT_COLLECTION,
-                    queries=[dense_query_request, sparse_query_request],
-                    search_params=models.SearchParams(
-                        fusion=models.Fusion.DBSF,
-                        alpha=0.5  # Значение по умолчанию
-                    ),
-                    limit=top_k,
-                    with_payload=True
-                )
-            
-                for point in results:
+                for res in results:
                     all_results.append({
-                        "id": point.id,
-                        "score": point.score,
+                        "id": res.id,
+                        "score": res.score,
+                        "content": res.payload.get("content", ""),
                         "query": query,
-                        "payload": point.payload,
-                        "content": point.payload.get("content", "")
+                        "payload": res.payload
                     })
-        
+    
             # Дедупликация результатов
             seen_ids = set()
             unique_results = []
@@ -237,9 +204,9 @@ class IndexBuilder:
                     unique_results.append(res)
                     if len(unique_results) >= top_k:
                         break
-                    
+                
             return unique_results
-        
-        except Exception as e:
-            logger.error(f"Ошибка гибридного поиска: {str(e)}")
-            return []
+    
+    except Exception as e:
+        logger.error(f"Ошибка гибридного поиска: {str(e)}")
+        return []
