@@ -13,65 +13,80 @@ logger = logging.getLogger(__name__)
 class IndexBuilder:
     def __init__(self):
         self.qdrant_client = self._init_qdrant_client()
-        self.device = self._get_device()
+        self.device = "cpu"  # Принудительно используем CPU для стабильности
         self.dense_model = self._init_dense_model()
         self.sparse_model = self._init_sparse_model()
+        logger.info(f"Инициализация завершена. Устройство: {self.device}")
 
-    def _get_device(self):
-        """Определяем доступное устройство"""
-        return "cuda" if torch.cuda.is_available() else "cpu"
-
-    def _init_dense_model(self):
-        """Инициализация модели для плотных векторов"""
+    def _init_dense_model(self) -> SentenceTransformer:
+        """Безопасная инициализация модели для плотных векторов"""
         try:
+            # Загрузка без автоматического перемещения на устройство
             model = SentenceTransformer(
                 "cointegrated/rubert-tiny2",
-                device=self.device,
+                device=None,  # Не перемещаем автоматически
                 trust_remote_code=True
             )
-            # Явная инициализация весов
-            if next(model.parameters()).is_meta:
-                model.to_empty(device=self.device)
-            else:
-                model.to(self.device)
+            
+            # Явная инициализация на CPU
+            model = model.to(self.device)
+            
+            # Проверка весов
+            for param in model.parameters():
+                if param.is_meta:
+                    raise RuntimeError("Обнаружены мета-тензоры")
+            
+            logger.info("Dense модель успешно загружена")
             return model
         except Exception as e:
-            logger.error(f"Ошибка загрузки dense модели: {str(e)}")
+            logger.error(f"Ошибка инициализации dense модели: {str(e)}")
             raise
 
-    def _init_sparse_model(self):
+    def _init_sparse_model(self) -> Optional[SparseTextEmbedding]:
         """Инициализация модели для разреженных векторов"""
         try:
             model = SparseTextEmbedding(
                 model_name="Qdrant/bm42-all-minilm-l6-v2-attentions",
                 device=self.device
             )
+            logger.info("Sparse модель успешно загружена")
             return model
         except Exception as e:
-            logger.warning(f"Ошибка загрузки sparse модели: {str(e)}")
+            logger.warning(f"Не удалось загрузить sparse модель: {str(e)}")
             return None
 
-    def _init_qdrant_client(self):
+    def _init_qdrant_client(self) -> QdrantClient:
         """Инициализация клиента Qdrant"""
         try:
-            return QdrantClient(
+            client = QdrantClient(
                 url=os.getenv("QDRANT_URL"),
                 api_key=os.getenv("QDRANT_API_KEY"),
                 prefer_grpc=True,
                 timeout=30
             )
+            client.get_collections()  # Проверка подключения
+            return client
         except Exception as e:
             logger.error(f"Ошибка подключения к Qdrant: {str(e)}")
             raise
 
     def _generate_dense_embedding(self, text: str) -> List[float]:
-        """Генерация плотного вектора"""
-        with torch.no_grad():
-            return self.dense_model.encode(
-                text,
-                normalize_embeddings=True,
-                convert_to_numpy=True
-            ).tolist()
+        """Генерация плотного вектора с обработкой ошибок"""
+        if not text.strip():
+            return []
+            
+        try:
+            with torch.no_grad():
+                embedding = self.dense_model.encode(
+                    text,
+                    normalize_embeddings=True,
+                    convert_to_numpy=True,
+                    show_progress_bar=False
+                )
+                return embedding.tolist()
+        except Exception as e:
+            logger.error(f"Ошибка генерации dense вектора: {str(e)}")
+            return []
 
     def _generate_sparse_vector(self, text: str) -> Optional[models.SparseVector]:
         """Генерация разреженного вектора"""
@@ -81,8 +96,8 @@ class IndexBuilder:
         try:
             embeddings = next(self.sparse_model.embed(text))
             return models.SparseVector(
-                indices=embeddings.indices.cpu().numpy().tolist(),
-                values=embeddings.values.cpu().numpy().tolist()
+                indices=embeddings.indices.tolist(),
+                values=embeddings.values.tolist()
             )
         except Exception as e:
             logger.warning(f"Ошибка генерации sparse вектора: {str(e)}")
@@ -90,7 +105,7 @@ class IndexBuilder:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def hybrid_search(self, queries: Union[str, List[str]], top_k: int = 5) -> List[Dict]:
-        """Гибридный поиск с обработкой мета-тензоров"""
+        """Устойчивый гибридный поиск"""
         if isinstance(queries, str):
             queries = [queries]
             
@@ -102,7 +117,10 @@ class IndexBuilder:
                 dense_vec = self._generate_dense_embedding(query)
                 sparse_vec = self._generate_sparse_vector(query)
                 
-                # Параметры поиска
+                if not dense_vec:
+                    continue
+                
+                # Формирование запроса
                 search_params = {
                     "collection_name": os.getenv("QDRANT_COLLECTION"),
                     "query_vector": ("dense", dense_vec),
@@ -129,10 +147,14 @@ class IndexBuilder:
                 logger.error(f"Ошибка обработки запроса '{query}': {str(e)}")
                 continue
         
-        # Дедупликация и сортировка результатов
-        unique_results = {}
-        for res in all_results:
-            if res['id'] not in unique_results or res['score'] > unique_results[res['id']]['score']:
-                unique_results[res['id']] = res
-                
-        return sorted(unique_results.values(), key=lambda x: x['score'], reverse=True)[:top_k]
+        # Дедупликация результатов
+        seen_ids = set()
+        unique_results = []
+        for res in sorted(all_results, key=lambda x: x['score'], reverse=True):
+            if res['id'] not in seen_ids:
+                seen_ids.add(res['id'])
+                unique_results.append(res)
+                if len(unique_results) >= top_k:
+                    break
+                    
+        return unique_results
