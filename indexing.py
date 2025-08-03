@@ -71,8 +71,7 @@ class IndexBuilder:
         except Exception as e:
             logger.error(f"Ошибка генерации sparse вектора: {str(e)}")
             return None
-class IndexBuilder:
-    # ... (предыдущий код)
+
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def semantic_search(self, queries: List[str], top_k: int = 5) -> List[Dict]:
