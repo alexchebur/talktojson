@@ -147,63 +147,99 @@ class IndexBuilder:
             logger.error(f"Ошибка sparse поиска: {str(e)}")
             return []
 
-    def hybrid_search(self, query: Union[str, List[str]], top_k: int = 5, alpha: float = 0.5) -> List[dict]:
-        """Гибридный поиск через query_points с использованием search_queries"""
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def hybrid_search(self, queries: Union[str, List[str]], top_k: int = 5) -> List[dict]:
+        """Гибридный поиск для списка запросов"""
         try:
             self._load_models()
-            query_text = " ".join(query) if isinstance(query, list) else query
+        
+            # Если пришел единичный запрос, преобразуем в список
+            if isinstance(queries, str):
+                queries = [queries]
             
-            # Плотный вектор
-            dense_query = self.dense_model.encode(
-                query_text,
-                convert_to_numpy=True
-            ).tolist()
+            all_results = []
+        
+            for query in queries:
+                # Плотный вектор
+                dense_query = self.dense_model.encode(
+                    query,
+                    convert_to_numpy=True
+                ).tolist()
             
-            # Разреженный вектор
-            sparse_vector = self._generate_sparse_vector(query_text)
-            if sparse_vector is None:
-                return self.semantic_search(query_text, top_k)
+                # Разреженный вектор
+                sparse_vector = self._generate_sparse_vector(query)
             
-            # Формируем запросы для prefetch
-            dense_query_request = models.SearchRequest(
-                vector=models.NamedVector(
-                    name="dense",
-                    vector=dense_query
-                ),
-                limit=top_k*2,
-                with_payload=True
-            )
+                # Если sparse_vector не сгенерирован, используем только dense
+                if sparse_vector is None:
+                    results = self.qdrant_client.search(
+                        collection_name=QDRANT_COLLECTION,
+                        query_vector=("dense", dense_query),
+                        limit=top_k,
+                        with_payload=True
+                    )
+                
+                    for res in results:
+                        all_results.append({
+                            "id": res.id,
+                            "score": res.score,
+                            "content": res.payload.get("content", ""),
+                            "query": query,
+                            "payload": res.payload
+                        })
+                    continue
             
-            sparse_query_request = models.SearchRequest(
-                vector=models.NamedVector(
-                    name="sparse",
-                    vector=sparse_vector
-                ),
-                limit=top_k*2,
-                with_payload=True
-            )
+                # Формируем запросы для гибридного поиска
+                dense_query_request = models.SearchRequest(
+                    vector=models.NamedVector(
+                        name="dense",
+                        vector=dense_query
+                    ),
+                    limit=top_k*2,
+                    with_payload=True
+                )
             
-            # Выполняем гибридный поиск через query_points
-            results = self.qdrant_client.query_points(
-                collection_name=QDRANT_COLLECTION,
-                queries=[
-                    dense_query_request,
-                    sparse_query_request
-                ],
-                search_params=models.SearchParams(
-                    fusion=models.Fusion.DBSF,
-                    alpha=alpha
-                ),
-                limit=top_k,
-                with_payload=True
-            )
+                sparse_query_request = models.SearchRequest(
+                    vector=models.NamedVector(
+                        name="sparse",
+                        vector=sparse_vector
+                    ),
+                    limit=top_k*2,
+                    with_payload=True
+                )
             
-            return [{
-                "id": point.id,
-                "score": point.score,
-                "payload": point.payload,
-                "content": point.payload.get("content", "")
-            } for point in results]
-        except Exception as e:
-            logger.error(f"Ошибка гибридного поиска: {str(e)}")
-            return []
+                # Выполняем гибридный поиск
+                results = self.qdrant_client.query_points(
+                    collection_name=QDRANT_COLLECTION,
+                    queries=[dense_query_request, sparse_query_request],
+                    search_params=models.SearchParams(
+                        fusion=models.Fusion.DBSF,
+                        alpha=0.5  # Значение по умолчанию
+                    ),
+                    limit=top_k,
+                    with_payload=True
+                )
+            
+                for point in results:
+                    all_results.append({
+                        "id": point.id,
+                        "score": point.score,
+                        "query": query,
+                        "payload": point.payload,
+                        "content": point.payload.get("content", "")
+                    })
+        
+            # Дедупликация результатов
+            seen_ids = set()
+            unique_results = []
+            for res in sorted(all_results, key=lambda x: x['score'], reverse=True):
+                if res['id'] not in seen_ids:
+                    seen_ids.add(res['id'])
+                    unique_results.append(res)
+                    if len(unique_results) >= top_k:
+                        break
+                    
+            return unique_results
+        
+    except Exception as e:
+        logger.error(f"Ошибка гибридного поиска: {str(e)}")
+        return []
