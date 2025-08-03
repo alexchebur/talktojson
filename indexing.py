@@ -77,15 +77,15 @@ class IndexBuilder:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def hybrid_search(self, queries: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Гибридный поиск для Qdrant 1.15+"""
+        """Правильный гибридный поиск для Qdrant 1.15+"""
         try:
             self._load_models()
-            
+        
             if isinstance(queries, str):
                 queries = [queries]
-                
-            all_results = []
             
+            all_results = []
+        
             for query in queries:
                 # Генерация векторов
                 dense_embedding = self.dense_model.encode(
@@ -93,40 +93,54 @@ class IndexBuilder:
                     normalize_embeddings=True,
                     convert_to_numpy=True
                 ).tolist()
-                
+            
                 sparse_vector = self._generate_sparse_vector(query)
-                
-                # Формируем запрос для гибридного поиска
-                search_params = {
-                    "collection_name": QDRANT_COLLECTION,
-                    "query_vector": models.NamedVector(
+            
+                # Формируем запросы для гибридного поиска
+                requests = []
+            
+                # Запрос для плотного вектора
+                requests.append(models.SearchRequest(
+                    vector=models.NamedVector(
                         name="dense",
                         vector=dense_embedding
                     ),
-                    "limit": top_k,
-                    "with_payload": True
-                }
-                
-                # Добавляем sparse вектор если доступен
-                if sparse_vector:
-                    search_params["sparse_vector"] = models.NamedSparseVector(
-                        name="sparse",
-                        vector=sparse_vector
-                    )
-                
-                # Выполняем поиск
-                results = self.qdrant_client.search(**search_params)
-                
-                for res in results:
-                    all_results.append({
-                        "id": res.id,
-                        "score": res.score,
-                        "content": res.payload.get("content", ""),
-                        "query": query,
-                        "payload": res.payload
-                    })
+                    limit=top_k * 2,
+                    with_payload=True
+                ))
             
-            # Дедупликация результатов
+                # Запрос для разреженного вектора (если доступен)
+                if sparse_vector:
+                    requests.append(models.SearchRequest(
+                        vector=models.NamedVector(
+                            name="sparse",
+                            vector=sparse_vector
+                        ),
+                        limit=top_k * 2,
+                        with_payload=True
+                    ))
+            
+                # Выполняем поиск
+                if not requests:
+                    continue
+                
+                batch_results = self.qdrant_client.search_batch(
+                    collection_name=QDRANT_COLLECTION,
+                    requests=requests
+                )
+            
+                # Обрабатываем результаты
+                for result_list in batch_results:
+                    for res in result_list:
+                        all_results.append({
+                            "id": res.id,
+                            "score": res.score,
+                            "content": res.payload.get("content", ""),
+                            "query": query,
+                            "payload": res.payload
+                        })
+        
+            # Дедупликация и сортировка
             seen_ids = set()
             unique_results = []
             for res in sorted(all_results, key=lambda x: x['score'], reverse=True):
@@ -135,9 +149,9 @@ class IndexBuilder:
                     unique_results.append(res)
                     if len(unique_results) >= top_k:
                         break
-                        
+                    
             return unique_results
-            
+        
         except Exception as e:
             logger.error(f"Ошибка гибридного поиска: {str(e)}")
             return []
