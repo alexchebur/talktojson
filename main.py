@@ -185,6 +185,8 @@ st.session_state.user_input = st.text_area(
     key="user_input_area"
 )
 
+# ... (предыдущий код)
+
 if st.button("Отправить", key="send_btn"):
     user_input = st.session_state.user_input.strip()
     
@@ -198,58 +200,48 @@ if st.button("Отправить", key="send_btn"):
 
     try:
         # Этап 1: Генерация поисковых запросов
-        status_text.text("Генерация поисковых запросов...")
+        status_text.text("Анализ вопроса...")
         progress_bar.progress(20)
         
         stage1_prompt = get_prompt("stage1", {"user_query": user_input})
-        stage1_response = call_gemini_api(stage1_prompt)
+        stage1_response = call_gemini_api(stage1_prompt, temperature=0.5)
         search_data = parse_stage1_response(stage1_response)
+        
+        # Фильтруем и ограничиваем запросы
+        valid_queries = [
+            q for q in search_data['expanded_queries'] 
+            if q and len(q.split()) <= 10
+        ][:3]
+        
         st.session_state.search_data = search_data
-        st.session_state.generated_queries = search_data['expanded_queries']
-        st.session_state.generated_keywords = search_data['expanded_keywords']
+        st.session_state.generated_queries = valid_queries
+        st.session_state.generated_keywords = search_data['expanded_keywords'][:5]
 
         # Этап 2: Параллельный поиск
-        status_text.text("Выполнение поиска...")
+        status_text.text("Поиск информации...")
         progress_bar.progress(40)
         
-        # Ограничиваем количество запросов
-        max_queries = 3
-        queries_to_search = [user_input] + search_data['expanded_queries'][:max_queries-1]
+        all_queries = [user_input] + valid_queries
         
-        # Создаем futures для параллельного выполнения
         with ThreadPoolExecutor(max_workers=3) as executor:
             # Веб-поиск
             web_future = executor.submit(
-                lambda: [web_searcher.perform_search(q, 2) for q in queries_to_search]
+                lambda: [res for q in all_queries for res in web_searcher.perform_search(q, 2)]
             )
             
-            # Семантический поиск
-            semantic_future = executor.submit(
-                lambda: [r for q in queries_to_search 
-                        for r in index_builder.semantic_search(q, 2)]
+            # Гибридный поиск в Qdrant
+            qdrant_future = executor.submit(
+                lambda: [res for q in all_queries for res in index_builder.hybrid_search(q, top_k=3)]
             )
             
-            # Поиск по разреженным векторам
-            sparse_future = executor.submit(
-                lambda: index_builder.sparse_vector_search(
-                    queries_to_search, 
-                    top_k=3
-                )
-            )
-            
-            web_results = []
-            for batch in web_future.result():
-                web_results.extend(batch)
-            
-            semantic_results = semantic_future.result()
-            sparse_results = sparse_future.result()
+            web_results = web_future.result()
+            qdrant_results = qdrant_future.result()
 
         progress_bar.progress(80)
         
         # Сохраняем результаты
         st.session_state.web_search_results = web_results
-        st.session_state.qdrant_semantic_results = semantic_results
-        st.session_state.qdrant_sparse_results = sparse_results
+        st.session_state.qdrant_results = qdrant_results
 
         # Этап 3: Формирование контекста
         status_text.text("Формирование ответа...")
@@ -262,8 +254,9 @@ if st.button("Отправить", key="send_btn"):
             context_parts.append(f"{i+1}. [{res['title']}]({res['url']}): {res['snippet']}")
         
         context_parts.append("Базовые знания:")
-        for i, res in enumerate((semantic_results + sparse_results)[:10]):
-            context_parts.append(f"{i+1}. {res.get('content', '')[:500]}...")
+        for i, res in enumerate(qdrant_results[:10]):
+            content = res.get('content') or res.get('text', '')
+            context_parts.append(f"{i+1}. {content[:500]}...")
         
         full_context = "\n\n".join(context_parts)[:30000]
         
