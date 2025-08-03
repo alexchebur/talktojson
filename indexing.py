@@ -74,50 +74,50 @@ class IndexBuilder:
             return None
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-def semantic_search(self, queries: List[str], top_k: int = 5) -> List[Dict]:
-    try:
-        self._load_models()
-        embeddings = self.dense_model.encode(
-            queries,
-            normalize_embeddings=True,
-            convert_to_numpy=True
-        )
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def semantic_search(self, queries: List[str], top_k: int = 5) -> List[Dict]:
+        try:
+            self._load_models()
+            embeddings = self.dense_model.encode(
+                queries,
+                normalize_embeddings=True,
+                convert_to_numpy=True
+            )
         
-        # Исправленный формат запроса
-        search_requests = [
-            models.SearchRequest(
-                vector=models.NamedVector(
-                    name="dense",
-                    vector=emb.tolist()
-                ),
-                limit=top_k,
-                with_payload=True
-            ) for emb in embeddings
-        ]
+            # Исправленный формат запроса
+            search_requests = [
+                models.SearchRequest(
+                    vector=models.NamedVector(
+                        name="dense",
+                        vector=emb.tolist()
+                    ),
+                    limit=top_k,
+                    with_payload=True
+                ) for emb in embeddings
+            ]
         
-        batch_results = self.qdrant_client.search_batch(
-            collection_name=QDRANT_COLLECTION,
-            requests=search_requests
-        )
+            batch_results = self.qdrant_client.search_batch(
+                collection_name=QDRANT_COLLECTION,
+                requests=search_requests
+            )
         
-        all_results = []
-        for query, results in zip(queries, batch_results):
-            for res in results:
-                all_results.append({
-                    "id": res.id,
-                    "score": res.score,
-                    "content": res.payload.get("content", ""),
-                    "query": query,
-                    "payload": res.payload
-                })
+            all_results = []
+            for query, results in zip(queries, batch_results):
+                for res in results:
+                    all_results.append({
+                        "id": res.id,
+                        "score": res.score,
+                        "content": res.payload.get("content", ""),
+                        "query": query,
+                        "payload": res.payload
+                    })
         
-        unique_results = {res['id']: res for res in all_results}.values()
-        return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
+            unique_results = {res['id']: res for res in all_results}.values()
+            return sorted(unique_results, key=lambda x: x['score'], reverse=True)[:top_k]
     
-    except Exception as e:
-        logger.error(f"Ошибка семантического поиска: {str(e)}")
-        return []
+        except Exception as e:
+            logger.error(f"Ошибка семантического поиска: {str(e)}")
+            return []
 
     def sparse_vector_search(self, queries: List[str], top_k: int = 5) -> List[dict]:
         try:
