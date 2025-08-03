@@ -221,17 +221,18 @@ if st.button("Отправить", key="send_btn"):
         status_text.text("Поиск информации...")
         progress_bar.progress(40)
         
-        all_queries = [user_input] + valid_queries
-        
         with ThreadPoolExecutor(max_workers=3) as executor:
             # Веб-поиск
             web_future = executor.submit(
-                lambda: [res for q in all_queries for res in web_searcher.perform_search(q, 2)]
+                lambda: [res for q in [user_input] + valid_queries for res in web_searcher.perform_search(q, 2)]
             )
-            
-            # Гибридный поиск в Qdrant
+    
+            # Гибридный поиск в Qdrant (ИСПРАВЛЕНО - добавляем user_input)
             qdrant_future = executor.submit(
-                lambda: [res for q in all_queries for res in index_builder.hybrid_search(q, top_k=3)]
+                lambda: index_builder.hybrid_search(
+                    queries=[user_input] + valid_queries,  # <- Главное исправление
+                    top_k=3
+                )
             )
             
             web_results = web_future.result()
