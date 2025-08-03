@@ -344,6 +344,47 @@ with st.sidebar:
         st.subheader("🌐 Веб-результаты")
         st.info("Нет веб-результатов")
 
+    # В разделе отображения результатов замените текущий код на:
+
+    if st.session_state.get('hybrid_results'):
+        st.subheader("🔍 Результаты гибридного поиска")
+    
+        # Группировка результатов по типу
+        dense_results = []
+        sparse_results = []
+    
+        for res in st.session_state.hybrid_results:
+            if 'dense' in res.get('vector_name', ''):
+                dense_results.append(res)
+            elif 'sparse' in res.get('vector_name', ''):
+                sparse_results.append(res)
+    
+        # Вкладки для разных типов результатов
+        tab1, tab2 = st.tabs(["Плотные векторы", "Разреженные векторы"])
+    
+        with tab1:
+            if dense_results:
+                for i, res in enumerate(dense_results[:5]):
+                    with st.expander(f"Результат {i+1} (сходство: {res['score']:.2f})", expanded=False):
+                        st.write(f"**Запрос:** {res.get('query', '')}")
+                        st.write(f"**Содержание:** {res.get('content', '')[:500]}...")
+                        st.write(f"**ID:** {res['id']} | **Score:** {res['score']:.4f}")
+            else:
+                st.warning("Нет результатов по плотным векторам")
+    
+        with tab2:
+            if sparse_results:
+                for i, res in enumerate(sparse_results[:5]):
+                    with st.expander(f"Результат {i+1} (сходство: {res['score']:.2f})", expanded=False):
+                        st.write(f"**Запрос:** {res.get('query', '')}")
+                        st.write(f"**Содержание:** {res.get('content', '')[:500]}...")
+                        st.write(f"**ID:** {res['id']} | **Score:** {res['score']:.4f}")
+            else:
+                st.warning("Нет результатов по разреженным векторам")
+    else:
+        st.info("Результаты поиска не найдены")
+    
+
     # Блок семантического поиска в Qdrant
     if st.session_state.get('qdrant_semantic_results'):
         st.subheader("🧠 Семантический поиск (Qdrant)")
