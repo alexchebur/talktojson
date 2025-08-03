@@ -322,6 +322,39 @@ if st.button("Отправить", key="send_btn"):
         except Exception as e:
             st.error(f"Ошибка при финальной проверке: {str(e)}")
             st.stop()
+# Где-то в основном интерфейсе (не в сайдбаре!)
+if st.session_state.get('hybrid_results'):
+    st.subheader("🔍 Результаты гибридного поиска")
+    
+    # Разделяем dense и sparse результаты
+    dense_results = [r for r in st.session_state.hybrid_results if r.get('vector_name') == 'dense']
+    sparse_results = [r for r in st.session_state.hybrid_results if r.get('vector_name') == 'sparse']
+    
+    # Вкладки для удобного просмотра
+    tab_dense, tab_sparse = st.tabs(["Плотные векторы", "Разреженные векторы"])
+    
+    with tab_dense:
+        if dense_results:
+            for i, res in enumerate(dense_results[:5]):  # Показываем топ-5
+                with st.expander(f"#{i+1} (Score: {res['score']:.2f})", expanded=False):
+                    st.write(f"**Запрос:** `{res.get('query', '')}`")
+                    st.write(f"**Текст:** {res.get('content', '')[:500]}...")
+                    st.write(f"**ID:** `{res['id']}`")
+        else:
+            st.warning("Нет результатов по плотным векторам")
+    
+    with tab_sparse:
+        if sparse_results:
+            for i, res in enumerate(sparse_results[:5]):
+                with st.expander(f"#{i+1} (Score: {res['score']:.2f})", expanded=False):
+                    st.write(f"**Запрос:** `{res.get('query', '')}`")
+                    st.write(f"**Текст:** {res.get('content', '')[:500]}...")
+                    st.write(f"**ID:** `{res['id']}`")
+        else:
+            st.warning("Нет результатов по разреженным векторам")
+else:
+    st.info("Гибридный поиск не выполнен")
+
 
 # Вывод результата
 if st.session_state.get('final_opinion'):
