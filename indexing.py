@@ -240,6 +240,6 @@ class IndexBuilder:
                     
             return unique_results
         
-    except Exception as e:
-        logger.error(f"Ошибка гибридного поиска: {str(e)}")
-        return []
+        except Exception as e:
+            logger.error(f"Ошибка гибридного поиска: {str(e)}")
+            return []
