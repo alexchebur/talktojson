@@ -328,155 +328,51 @@ if st.session_state.get('final_opinion'):
     st.subheader("Правовое заключение")
     st.markdown(st.session_state.final_opinion)
 
-# Сайдбар с дополнительной информацией
 with st.sidebar:
     st.subheader("Результаты поиска")
     
-    # Блок веб-результатов
-    if st.session_state.get('web_search_results'):
-        st.subheader("🌐 Веб-результаты")
-        for i, res in enumerate(st.session_state.web_search_results[:3]):
-            with st.expander(f"{i+1}. {res.get('title', 'Без названия')[:50]}...", expanded=False):
-                st.markdown(f"**URL:** [{res.get('url', '')[:30]}...]({res.get('url', '')})")
-                st.markdown("**Сниппет:**")
-                st.info(res.get('snippet', 'Нет описания')[:200] + "...")
-    else:
-        st.subheader("🌐 Веб-результаты")
-        st.info("Нет веб-результатов")
-
-    # В разделе отображения результатов замените текущий код на:
-
-    if st.session_state.get('hybrid_results'):
-        st.subheader("🔍 Результаты гибридного поиска")
-    
-        # Группировка результатов по типу
-        dense_results = []
-        sparse_results = []
-    
-        for res in st.session_state.hybrid_results:
-            if 'dense' in res.get('vector_name', ''):
-                dense_results.append(res)
-            elif 'sparse' in res.get('vector_name', ''):
-                sparse_results.append(res)
-    
-        # Вкладки для разных типов результатов
-        tab1, tab2 = st.tabs(["Плотные векторы", "Разреженные векторы"])
-    
-        with tab1:
-            if dense_results:
-                for i, res in enumerate(dense_results[:5]):
-                    with st.expander(f"Результат {i+1} (сходство: {res['score']:.2f})", expanded=False):
-                        st.write(f"**Запрос:** {res.get('query', '')}")
-                        st.write(f"**Содержание:** {res.get('content', '')[:500]}...")
-                        st.write(f"**ID:** {res['id']} | **Score:** {res['score']:.4f}")
-            else:
-                st.warning("Нет результатов по плотным векторам")
-    
-        with tab2:
-            if sparse_results:
-                for i, res in enumerate(sparse_results[:5]):
-                    with st.expander(f"Результат {i+1} (сходство: {res['score']:.2f})", expanded=False):
-                        st.write(f"**Запрос:** {res.get('query', '')}")
-                        st.write(f"**Содержание:** {res.get('content', '')[:500]}...")
-                        st.write(f"**ID:** {res['id']} | **Score:** {res['score']:.4f}")
-            else:
-                st.warning("Нет результатов по разреженным векторам")
-    else:
-        st.info("Результаты поиска не найдены")
-    
-
-    # Блок семантического поиска в Qdrant
-    if st.session_state.get('qdrant_semantic_results'):
-        st.subheader("🧠 Семантический поиск (Qdrant)")
-        for i, res in enumerate(st.session_state.qdrant_semantic_results[:3]):
-            with st.expander(f"Сем. результат {i+1} (сходство: {res['score']:.2f})", expanded=False):
-                st.write(res['content'][:200] + "...")
-    else:
-        st.subheader("🧠 Семантический поиск (Qdrant)")
-        st.info("Нет результатов семантического поиска")
-    
-
-    
-    # Заменяем блок полнотекстового поиска
-    if st.session_state.get('qdrant_sparse_results'):  # Новое название!
-        st.subheader("🔤 Поиск по разреженным векторам (Qdrant)")
-        for i, res in enumerate(st.session_state.qdrant_sparse_results[:3]):
-            with st.expander(f"Разреженный результат {i+1} (сходство: {res['score']:.2f})", expanded=False):
-                st.write(res['content'][:200] + "...")
-    else:
-        st.subheader("🔤 Поиск по разреженным векторам (Qdrant)")
-        st.info("Нет результатов поиска по разреженным векторам")
-    
-    # Блок сгенерированных запросов
-    if st.session_state.get('generated_queries'):
-        st.subheader("🔍 Сгенерированные запросы")
-        st.write("Эти запросы были автоматически созданы для уточнения поиска:")
-        for i, query in enumerate(st.session_state.generated_queries):
-            st.code(f"{i+1}. {query}")
-    else:
-        st.subheader("🔍 Сгенерированные запросы")
-        st.info("Нет сгенерированных запросов")
-    
-    # Блок ключевых слов
-    if st.session_state.get('generated_keywords'):
-        st.subheader("🔑 Ключевые слова")
-        st.write("Ключевые термины, использованные для поиска:")
-        st.write(", ".join(st.session_state.generated_keywords))
-    else:
-        st.subheader("🔑 Ключевые слова")
-        st.info("Нет сгенерированных ключевых слов")
-    
-    # Блок веб-результатов с группировкой по запросам
-    if st.session_state.get('web_search_results'):
-        st.subheader("🌐 Веб-результаты")
-        
-        # Группируем результаты по запросам
-        queries = {res['query'] for res in st.session_state.web_search_results}
-        
+    # Веб-результаты (единый блок)
+    web_results = st.session_state.get('web_search_results', [])
+    st.subheader("🌐 Веб-результаты")
+    if web_results:
+        queries = {res['query'] for res in web_results}
         for query in queries:
-            query_results = [res for res in st.session_state.web_search_results if res['query'] == query]
+            query_results = [res for res in web_results if res['query'] == query]
             with st.expander(f"Запрос: '{query}' ({len(query_results)} результатов)", expanded=False):
                 for i, res in enumerate(query_results):
                     st.markdown(f"**{i+1}. [{res['title']}]({res['url']})**")
                     st.caption(res['snippet'][:200] + "...")
     else:
-        st.subheader("🌐 Веб-результаты")
         st.info("Нет веб-результатов")
-    # Блок сгенерированных запросов
-    if st.session_state.get('generated_queries'):
-        st.subheader("🔍 Сгенерированные запросы")
-        st.write("Эти запросы были автоматически созданы для уточнения поиска:")
-        for i, query in enumerate(st.session_state.generated_queries[:3]):
-            st.code(f"{i+1}. {query}")
-            
-        # Результаты по сгенерированным запросам
-        gen_results = [
-            r for r in st.session_state.get('web_search_results', [])
-            if r.get('query_type') == 'generated'
-        ]
-        
-        if gen_results:
-            st.subheader("📌 Результаты по уточняющим запросам")
-            for i, res in enumerate(gen_results[:4]):
-                with st.expander(f"Запрос: '{res.get('query', '')}'", expanded=False):
-                    st.markdown(f"**URL:** [{res.get('url', '')[:30]}...]({res.get('url', '')})")
-                    st.markdown("**Сниппет:**")
-                    st.info(res.get('snippet', 'Нет описания')[:200] + "...")
-    
-    # Блок результатов из Qdrant
-    #if st.session_state.get('qdrant_chunks'):
-        #st.subheader("📚 База знаний (Qdrant)")
-        #for i, chunk in enumerate(st.session_state.qdrant_chunks[:5]):
-            #st.text_area(
-                #f"Фрагмент {i+1}", 
-                #value=chunk[:2000], 
-                #height=150,
-                #key=f"qdrant_chunk_{i}"
-            #)
-    #else:
-        #st.info("Нет результатов из базы знаний")
 
-    # Остальные блоки (документ, настройки, история)...
+    # Гибридные результаты (упрощенный вариант)
+    hybrid_results = st.session_state.get('hybrid_results', [])
+    st.subheader("🔍 Результаты векторного поиска")
+    if hybrid_results:
+        for i, res in enumerate(hybrid_results[:5]):
+            vector_type = "Плотный" if 'dense' in res.get('vector_name', '') else "Разреженный"
+            with st.expander(f"{vector_type} результат {i+1} (score: {res['score']:.2f})", expanded=False):
+                st.write(f"**Содержание:** {res.get('content', '')[:300]}...")
+                st.write(f"**ID:** {res['id']} | **Тип:** {vector_type}")
+    else:
+        st.info("Нет результатов векторного поиска")
+
+    # Сгенерированные запросы (единый блок)
+    generated_queries = st.session_state.get('generated_queries', [])
+    st.subheader("🔍 Сгенерированные запросы")
+    if generated_queries:
+        for i, query in enumerate(generated_queries[:3]):
+            st.code(f"{i+1}. {query}")
+    else:
+        st.info("Нет сгенерированных запросов")
+
+    # Ключевые слова
+    keywords = st.session_state.get('generated_keywords', [])
+    st.subheader("🔑 Ключевые слова")
+    if keywords:
+        st.write(", ".join(keywords))
+    else:
+        st.info("Нет ключевых слов")
     
 
     # Блок загруженного документа
