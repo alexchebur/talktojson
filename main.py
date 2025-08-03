@@ -323,7 +323,7 @@ if st.button("Отправить", key="send_btn"):
             st.error(f"Ошибка при финальной проверке: {str(e)}")
             st.stop()
 # Где-то в основном интерфейсе (не в сайдбаре!)
-if st.session_state.get('hybrid_results'):
+#if st.session_state.get('hybrid_results'):
     st.subheader("🔍 Результаты гибридного поиска")
     
     # Разделяем dense и sparse результаты
