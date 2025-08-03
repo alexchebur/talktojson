@@ -31,20 +31,57 @@ class IndexBuilder:
         self.dense_model = None
         self.sparse_model = None
         
-    def _init_qdrant_client(self):
-        """Инициализация клиента Qdrant"""
+    def _init_qdrant_client(self) -> QdrantClient:
+        """Надежная инициализация клиента Qdrant"""
+        qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+        api_key = os.getenv("QDRANT_API_KEY")
+    
+        # Логирование для отладки
+        logger.info(f"Подключение к Qdrant по адресу: {qdrant_url}")
+    
+        # Проверка и корректировка URL
+        if "://" not in qdrant_url:
+            qdrant_url = "http://" + qdrant_url
+            logger.warning(f"Добавлен протокол по умолчанию: {qdrant_url}")
+    
         try:
-            client = QdrantClient(
-                url=QDRANT_URL,
-                api_key=QDRANT_API_KEY,
-                prefer_grpc=True,
-                timeout=30
-            )
-            client.get_collections()
+            # Пробуем разные варианты подключения
+            if qdrant_url.startswith("https://"):
+                client = QdrantClient(
+                    url=qdrant_url,
+                    api_key=api_key,
+                    port=443,  # Стандартный порт для HTTPS
+                    prefer_grpc=False,
+                    timeout=15
+                )
+            else:
+                # Для HTTP используем порт 6333
+                client = QdrantClient(
+                    url=qdrant_url,
+                    api_key=api_key,
+                    port=6333,
+                    prefer_grpc=False,
+                    timeout=15
+                )
+        
+            # Упрощенная проверка подключения
+            client._client.openapi_client.models_api.models_get()
+            logger.info("Подключение к Qdrant установлено")
             return client
         except Exception as e:
             logger.error(f"Ошибка подключения к Qdrant: {str(e)}")
-            raise
+            # Попытка fallback на HTTP
+            try:
+                logger.warning("Пробуем подключение по HTTP...")
+                return QdrantClient(
+                    url=qdrant_url.replace("grpc://", "http://"),
+                    api_key=api_key,
+                    prefer_grpc=False,
+                    timeout=15
+                )
+            except Exception as fallback_e:
+                logger.critical(f"Фолбэк подключение не удалось: {str(fallback_e)}")
+                raise ConnectionError("Не удалось подключиться к Qdrant") from fallback_e
 
     def _init_dense_model(self) -> SentenceTransformer:
         """Безопасная инициализация модели для плотных векторов"""
