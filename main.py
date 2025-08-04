@@ -443,31 +443,10 @@ with st.sidebar:
         )
 with st.sidebar:
     if st.button("Техническая информация"):
-        try:
-            tech_info = {
-                "dense_model_loaded": st.session_state.index_builder.dense_model is not None,
-                "sparse_model_loaded": st.session_state.index_builder.sparse_model is not None,
-                "collection_exists": QDRANT_COLLECTION in [c.name for c in st.session_state.index_builder.qdrant_client.get_collections().collections],
-                "last_error": st.session_state.get('search_error', 'Нет ошибок'),
-                "web_results_count": len(st.session_state.get('web_search_results', [])),
-                "qdrant_results_count": len(st.session_state.get('hybrid_results', []))
-            }
-            st.json(tech_info)
-            
-            # Дополнительная диагностика sparse-модели
-            if st.session_state.index_builder.sparse_model:
-                with st.expander("Тест sparse-вектора"):
-                    test_text = st.text_input("Введите текст для теста sparse-вектора", "тестовый запрос")
-                    if st.button("Протестировать"):
-                        try:
-                            vector = st.session_state.index_builder._generate_sparse_vector(test_text)
-                            if vector:
-                                st.success("Sparse-вектор сгенерирован успешно!")
-                                st.write(f"Размерность: {len(vector.indices)} индексов")
-                            else:
-                                st.error("Не удалось сгенерировать sparse-вектор")
-                        except Exception as e:
-                            st.error(f"Ошибка генерации: {str(e)}")
-        except Exception as e:
-            st.error(f"Ошибка получения технической информации: {str(e)}")
-                  
+        st.write("**Состояние системы:**")
+        st.json({
+            "dense_model": st.session_state.index_builder.dense_model is not None,
+            "sparse_model": st.session_state.index_builder.sparse_model is not None,
+            "last_error": st.session_state.get('qdrant_error', 'Нет ошибок'),
+            "results_count": len(st.session_state.get('hybrid_results', []))
+        })
