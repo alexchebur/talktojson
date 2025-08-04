@@ -43,6 +43,13 @@ if 'index_builder' not in st.session_state:
     st.session_state.index_builder = IndexBuilder()
     st.session_state.model_loaded = False
 
+if 'test_results' not in st.session_state:
+    st.session_state.test_results = {
+        'dense': None,
+        'sparse': None,
+        'last_test': None
+    }
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMBEDDINGS_DIR = os.path.join(REPO_ROOT, "data", "embeddings")
 DOCUMENTS_DIR = os.path.join(REPO_ROOT, "documents")
