@@ -206,19 +206,22 @@ class IndexBuilder:
                     logger.error(f"Ошибка поиска для запроса '{query}': {str(e)}")
                     continue
 
-                # Обрабатываем результаты с учетом типа вектора
-                for req_idx, result_set in enumerate(batch_results):
-                    vector_type = "dense" if req_idx == 0 else "sparse"
-                
-                    for res in result_set:
-                        all_results.append({
-                            "id": res.id,
-                            "score": res.score,
-                            "content": res.payload.get("content", ""),
-                            "query": query,
-                            "vector_name": vector_type,
-                            "payload": res.payload
-                        })
+
+
+            # Обработка результатов с явным указанием типа вектора
+            for req_idx, result_set in enumerate(batch_results):
+                vector_type = "dense" if req_idx % 2 == 0 else "sparse"  # Чётные - dense, нечётные - sparse
+            
+                for res in result_set:
+                    all_results.append({
+                        "id": res.id,
+                        "score": res.score,
+                        "content": res.payload.get("content", ""),
+                        "query": query,
+                        "vector_type": vector_type,  # Явное указание типа
+                        "payload": res.payload
+                    })
+
 
             # Дедупликация и сортировка
             seen_ids = set()
