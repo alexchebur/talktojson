@@ -491,32 +491,78 @@ with st.sidebar:
                     st.write("**Ошибки:**")
                     st.info("Нет зарегистрированных ошибок")
                 
+
+
                 # Тест моделей
-                with st.expander("🧪 Тестирование моделей"):
-                    test_text = st.text_input("Введите текст для теста", "правовой вопрос")
+                with st.expander("🧪 Тестирование моделей", expanded=False):
+                    test_text = st.text_input(
+                        "Введите текст для теста", 
+                        "пример правового запроса",
+                        key="test_input_text"
+                    )
                     
-                    if st.button("Тест dense-кодирования"):
-                        if st.session_state.index_builder.dense_model:
-                            try:
+                    # Кнопки тестирования с callback
+                    if st.button("Тест dense-кодирования", 
+                                key="test_dense_btn",
+                                help="Проверка работы dense-модели"):
+                        try:
+                            if st.session_state.index_builder.dense_model:
                                 embedding = st.session_state.index_builder.dense_model.encode(test_text)
-                                st.success(f"Успешно! Размерность: {len(embedding)}")
-                            except Exception as e:
-                                st.error(f"Ошибка: {str(e)}")
-                        else:
-                            st.warning("Dense-модель не загружена")
+                                st.session_state.test_results['dense'] = {
+                                    'dim': len(embedding),
+                                    'sample': embedding[:3].tolist()  # Первые 3 значения для примера
+                                }
+                                st.session_state.test_results['last_test'] = 'dense'
+                                st.rerun()  # Обновляем интерфейс
+                            else:
+                                st.session_state.test_results['last_test'] = 'dense_error'
+                                st.rerun()
+                        except Exception as e:
+                            st.session_state.test_results['last_test'] = f"dense_error: {str(e)}"
+                            st.rerun()
                     
-                    if st.button("Тест sparse-кодирования"):
-                        if st.session_state.index_builder.sparse_model:
-                            try:
+                    if st.button("Тест sparse-кодирования",
+                                key="test_sparse_btn",
+                                help="Проверка работы sparse-модели"):
+                        try:
+                            if st.session_state.index_builder.sparse_model:
                                 vector = st.session_state.index_builder._generate_sparse_vector(test_text)
                                 if vector:
-                                    st.success(f"Успешно! Индексов: {len(vector.indices)}")
+                                    st.session_state.test_results['sparse'] = {
+                                        'indices': len(vector.indices),
+                                        'sample_indices': vector.indices[:3].tolist(),
+                                        'sample_values': vector.values[:3].tolist()
+                                    }
+                                    st.session_state.test_results['last_test'] = 'sparse'
+                                    st.rerun()
                                 else:
-                                    st.error("Не удалось сгенерировать вектор")
-                            except Exception as e:
-                                st.error(f"Ошибка: {str(e)}")
-                        else:
-                            st.warning("Sparse-модель не загружена")
+                                    st.session_state.test_results['last_test'] = 'sparse_error'
+                                    st.rerun()
+                            else:
+                                st.session_state.test_results['last_test'] = 'sparse_error'
+                                st.rerun()
+                        except Exception as e:
+                            st.session_state.test_results['last_test'] = f"sparse_error: {str(e)}"
+                            st.rerun()
+                    
+                    # Отображение результатов тестов
+                    if st.session_state.test_results['last_test']:
+                        st.write("**Последний тест:**")
+                        
+                        if st.session_state.test_results['last_test'] == 'dense':
+                            res = st.session_state.test_results['dense']
+                            st.success(f"Dense-модель: размерность {res['dim']}")
+                            st.code(f"Пример вектора: {res['sample']}...")
+                        
+                        elif st.session_state.test_results['last_test'] == 'sparse':
+                            res = st.session_state.test_results['sparse']
+                            st.success(f"Sparse-модель: {res['indices']} индексов")
+                            st.code(f"Пример индексов: {res['sample_indices']}\n"
+                                   f"Пример значений: {res['sample_values']}")
+                        
+                        elif 'error' in st.session_state.test_results['last_test']:
+                            st.error("Ошибка тестирования:")
+                            st.code(st.session_state.test_results['last_test'])
         
         except Exception as e:
-            st.error(f"Ошибка при получении диагностики: {str(e)}")
+            st.error(f"Ошибка диагностики: {str(e)}")
