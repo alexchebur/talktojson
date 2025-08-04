@@ -39,9 +39,17 @@ if "context_parts" not in st.session_state:
 if 'user_input' not in st.session_state:
     st.session_state.user_input = ""
 
+
 if 'index_builder' not in st.session_state:
     st.session_state.index_builder = IndexBuilder()
-    st.session_state.model_loaded = False
+    # Принудительная загрузка при старте
+    with st.spinner("Инициализация моделей..."):
+        try:
+            st.session_state.index_builder._load_models()
+            st.session_state.models_loaded = True
+        except Exception as e:
+            st.error(f"Ошибка загрузки моделей: {str(e)}")
+            st.session_state.models_loaded = False
 
 if 'test_results' not in st.session_state:
     st.session_state.test_results = {
