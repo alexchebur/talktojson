@@ -36,16 +36,31 @@ class IndexBuilder:
             logger.error(f"Ошибка подключения к Qdrant: {str(e)}")
             raise
 
-    def _load_models(self):
-        """Загрузка моделей для векторизации"""
-        # Плотные векторы
-        if self.dense_model is None:
-            self.dense_model = SentenceTransformer(
-                "cointegrated/rubert-tiny2",
-                device="cpu",
-                trust_remote_code=True
-            )
-            logger.info("Dense модель успешно загружена")
+    def _load_models(self) -> Tuple[bool, str]:
+        """Возвращает (успех, сообщение)"""
+        try:
+            # Загрузка dense-модели
+            if self.dense_model is None:
+                self.dense_model = SentenceTransformer(
+                    "cointegrated/rubert-tiny2", 
+                    device="cpu",
+                    cache_folder="/tmp/models"
+                )
+        
+            # Загрузка sparse-модели
+            if self.sparse_model is None:
+                try:
+                    self.sparse_model = SparseTextEmbedding(
+                        "Qdrant/bm42-all-minilm-l6-v2-attentions",
+                        cache_dir="/tmp/models"
+                    )
+                except Exception as e:
+                    return False, f"Sparse-модель: {str(e)}"
+        
+            return True, "Все модели загружены"
+    
+        except Exception as e:
+            return False, str(e)
         
         # Разреженные векторы
         if self.sparse_model is None:
