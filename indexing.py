@@ -75,6 +75,14 @@ class IndexBuilder:
             logger.error(f"Критическая ошибка загрузки моделей: {str(e)}")
             return False, f"Критическая ошибка: {str(e)}"
 
+    def get_models_status(self) -> dict:
+        return {
+            'dense_loaded': self.dense_model is not None,
+            'sparse_loaded': self.sparse_model is not None,
+            'dense_dim': self.dense_model.get_sentence_embedding_dimension() 
+                         if self.dense_model else 0
+        }
+
     def _generate_sparse_vector(self, text: str) -> Optional[models.SparseVector]:
         """Генерация разреженного вектора для Qdrant 1.15+"""
         try:
