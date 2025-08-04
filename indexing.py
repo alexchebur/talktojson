@@ -44,39 +44,36 @@ class IndexBuilder:
             raise
 
     def _load_models(self) -> Tuple[bool, str]:
-        """Возвращает (успех, сообщение)"""
+        """Загрузка моделей с явным указанием возвращаемого типа"""
         try:
-            # Загрузка dense-модели
+            # Dense модель
             if self.dense_model is None:
                 self.dense_model = SentenceTransformer(
-                    "cointegrated/rubert-tiny2", 
+                    "cointegrated/rubert-tiny2",
                     device="cpu",
-                    cache_folder="/tmp/models"
+                    cache_folder=os.path.join(os.getcwd(), "models")
                 )
-        
-            # Загрузка sparse-модели
+                logger.info("Dense модель загружена")
+
+            # Sparse модель
             if self.sparse_model is None:
                 try:
                     self.sparse_model = SparseTextEmbedding(
                         "Qdrant/bm42-all-minilm-l6-v2-attentions",
-                        cache_dir="/tmp/models"
+                        cache_dir=os.path.join(os.getcwd(), "models")
                     )
+                    logger.info("Sparse модель загружена")
+                    return True, "Все модели успешно загружены"
                 except Exception as e:
-                    return False, f"Sparse-модель: {str(e)}"
-        
-            return True, "Все модели загружены"
+                    logger.error(f"Ошибка загрузки sparse модели: {str(e)}")
+                    return False, f"Ошибка sparse модели: {str(e)}"
+
+            return True, "Модели уже были загружены"
     
         except Exception as e:
-            return False, str(e)
-        
-        # Разреженные векторы
-        if self.sparse_model is None:
-            try:
-                self.sparse_model = SparseTextEmbedding("Qdrant/bm42-all-minilm-l6-v2-attentions")
-                logger.info("Sparse модель успешно загружена")
-            except Exception as e:
-                logger.error(f"Ошибка загрузки sparse модели: {str(e)}")
-                self.sparse_model = None
+            logger.error(f"Критическая ошибка загрузки моделей: {str(e)}")
+            return False, f"Критическая ошибка: {str(e)}"зки sparse модели: {str(e)}")
+                    self.sparse_model = None
 
     def _generate_sparse_vector(self, text: str) -> Optional[models.SparseVector]:
         """Генерация разреженного вектора для Qdrant 1.15+"""
