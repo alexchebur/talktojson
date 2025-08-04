@@ -449,11 +449,5 @@ with st.sidebar:
             "collection_exists": collection_info is not None,
             "last_error": st.session_state.get('search_error')
         })
-    # История диалога
-    if st.session_state.get('chat_log'):
-        st.subheader("История диалога")
-        st.text_area(label="История", 
-                    value=st.session_state.chat_log, 
-                    height=300, 
-                    key="chat_history_unique",
+
                     disabled=True)
