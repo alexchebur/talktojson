@@ -74,6 +74,44 @@ class IndexBuilder:
         except Exception as e:
             logger.error(f"Ошибка генерации sparse вектора: {str(e)}")
             return None
+    def _is_valid_sparse_vector(self, sparse_vector: models.SparseVector) -> bool:
+        """Проверка корректности формата sparse-вектора"""
+        try:
+            # Проверка наличия обязательных атрибутов
+            if not hasattr(sparse_vector, 'indices') or not hasattr(sparse_vector, 'values'):
+                logger.error("Sparse-вектор не содержит indices или values")
+                return False
+            
+            # Проверка типов
+            if not isinstance(sparse_vector.indices, list) or not isinstance(sparse_vector.values, list):
+                logger.error("Sparse-вектор содержит неверные типы данных")
+                return False
+            
+            # Проверка длины массивов
+            if len(sparse_vector.indices) != len(sparse_vector.values):
+                logger.error("Длина indices и values не совпадает")
+                return False
+            
+            # Проверка на пустые данные
+            if len(sparse_vector.indices) == 0:
+                logger.warning("Пустой sparse-вектор")
+                return False
+            
+            # Проверка на допустимость значений индексов
+            if any(i < 0 for i in sparse_vector.indices):
+                logger.error("Отрицательные индексы в sparse-векторе")
+                return False
+            
+            # Проверка на допустимость значений
+            if any(not isinstance(v, float) for v in sparse_vector.values):
+                logger.error("Некорректные типы значений в sparse-векторе")
+                return False
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"Ошибка проверки sparse-вектора: {str(e)}")
+            return False
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def hybrid_search(self, queries: Union[str, List[str]], top_k: int = 5) -> List[dict]:
