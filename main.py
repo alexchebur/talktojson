@@ -236,7 +236,10 @@ if st.button("Отправить", key="send_btn"):
             )
             
             web_results = web_future.result()
-            qdrant_results = qdrant_future.result()
+            qdrant_results, search_error = qdrant_future.result()
+            if search_error:
+                st.warning(search_error)
+            st.session_state.search_error = search_error    
             # Где-то в основном интерфейсе (не в сайдбаре!)
             if st.session_state.get('hybrid_results'):
                 st.subheader("🔍 Результаты гибридного поиска")
