@@ -13,6 +13,7 @@ from fastembed import SparseTextEmbedding
 import numpy as np
 
 
+Path("models").mkdir(exist_ok=True)
 
 
 
