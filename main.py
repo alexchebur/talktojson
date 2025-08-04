@@ -39,6 +39,10 @@ if "context_parts" not in st.session_state:
 if 'user_input' not in st.session_state:
     st.session_state.user_input = ""
 
+if 'index_builder' not in st.session_state:
+    st.session_state.index_builder = IndexBuilder()
+    st.session_state.model_loaded = False
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EMBEDDINGS_DIR = os.path.join(REPO_ROOT, "data", "embeddings")
 DOCUMENTS_DIR = os.path.join(REPO_ROOT, "documents")
