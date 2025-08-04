@@ -144,7 +144,7 @@ class IndexBuilder:
                 logger.info(f"Коллекция {QDRANT_COLLECTION} найдена")
             except Exception as e:
                 logger.error(f"Коллекция {QDRANT_COLLECTION} не найдена: {str(e)}")
-                return []
+                return [], str(e) 
 
             if isinstance(queries, str):
                 queries = [queries]
