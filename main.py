@@ -441,7 +441,14 @@ with st.sidebar:
             help="0 - только семантика, 1 - только текст",
             key="search_balance"
         )
-
+with st.sidebar:
+    if st.button("Техническая информация"):
+        st.json({
+            "dense_model_loaded": self.dense_model is not None,
+            "sparse_model_loaded": self.sparse_model is not None,
+            "collection_exists": collection_info is not None,
+            "last_error": st.session_state.get('search_error')
+        })
     # История диалога
     if st.session_state.get('chat_log'):
         st.subheader("История диалога")
