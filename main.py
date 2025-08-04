@@ -450,4 +450,4 @@ with st.sidebar:
             "last_error": st.session_state.get('search_error')
         })
 
-                    disabled=True)
+                  
