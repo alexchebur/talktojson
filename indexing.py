@@ -77,16 +77,33 @@ class IndexBuilder:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def hybrid_search(self, queries: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Исправленный гибридный поиск с правильным форматом векторов"""
+        """Гибридный поиск с плотными и разреженными векторами"""
         try:
+            # Загрузка моделей при первом вызове
             self._load_models()
         
+            # Проверка существования коллекции
+            try:
+                collection_info = self.qdrant_client.get_collection(QDRANT_COLLECTION)
+                logger.info(f"Коллекция {QDRANT_COLLECTION} найдена, размер: {collection_info.points_count} точек")
+            except Exception as e:
+                logger.error(f"Коллекция {QDRANT_COLLECTION} не найдена: {str(e)}")
+                return []
+        
+            # Нормализация запросов
             if isinstance(queries, str):
                 queries = [queries]
-            
+        
             all_results = []
+            logger.info(f"Начало гибридного поиска по {len(queries)} запросам")
         
             for query in queries:
+                # Пропускаем пустые запросы
+                if not query.strip():
+                    continue
+                
+                logger.debug(f"Обработка запроса: '{query}'")
+            
                 # Генерация плотного вектора
                 dense_embedding = self.dense_model.encode(
                     query,
@@ -94,25 +111,14 @@ class IndexBuilder:
                     convert_to_numpy=True
                 ).tolist()
             
-                # Генерация sparse-вектора в правильном формате
-                sparse_vector = None
-                if self.sparse_model:
-                    try:
-                        embeddings = list(self.sparse_model.embed(query))
-                        if embeddings:
-                            sparse_embedding = embeddings[0]
-                            sparse_vector = {
-                                "indices": sparse_embedding.indices.tolist(),
-                                "values": sparse_embedding.values.tolist()
-                            }
-                    except Exception as e:
-                        logger.warning(f"Ошибка генерации sparse вектора: {str(e)}")
+                # Генерация sparse-вектора
+                sparse_vector = self._generate_sparse_vector(query)
             
-                # Формируем запросы
-                requests = []
+                # Формируем запросы для Qdrant
+                search_requests = []
             
                 # Запрос для плотного вектора
-                requests.append(models.SearchRequest(
+                search_requests.append(models.SearchRequest(
                     vector=models.NamedVector(
                         name="dense",
                         vector=dense_embedding
@@ -123,44 +129,66 @@ class IndexBuilder:
             
                 # Запрос для разреженного вектора (если доступен)
                 if sparse_vector:
-                    requests.append(models.SearchRequest(
-                        vector=models.NamedSparseVector(
-                            name="sparse",
-                            vector=models.SparseVector(**sparse_vector)
-                        ),
-                        limit=top_k * 2,
-                        with_payload=True
-                    ))
+                    # Проверка формата sparse-вектора
+                    if self._is_valid_sparse_vector(sparse_vector):
+                        search_requests.append(models.SearchRequest(
+                            vector=models.NamedSparseVector(
+                                name="sparse",
+                                vector=sparse_vector
+                            ),
+                            limit=top_k * 2,
+                            with_payload=True
+                        ))
+                    else:
+                        logger.warning(f"Некорректный sparse-вектор для запроса: '{query}'")
             
                 # Выполняем поиск
-                batch_results = self.qdrant_client.search_batch(
-                    collection_name=QDRANT_COLLECTION,
-                    requests=requests
-                )
+                try:
+                    batch_results = self.qdrant_client.search_batch(
+                        collection_name=QDRANT_COLLECTION,
+                        requests=search_requests
+                    )
+                    logger.debug(f"Получено {len(batch_results)} наборов результатов")
+                except Exception as e:
+                    logger.error(f"Ошибка поиска в Qdrant: {str(e)}")
+                    continue
             
-                # Обрабатываем результаты
-                for result_list in batch_results:
-                    for res in result_list:
-                        all_results.append({
+                # Обработка результатов
+                for result_set in batch_results:
+                    for res in result_set:
+                        result_data = {
                             "id": res.id,
                             "score": res.score,
                             "content": res.payload.get("content", ""),
                             "query": query,
                             "payload": res.payload
-                        })
+                        }
+                    
+                        # Определяем тип вектора
+                        if "dense" in str(res.vector_name):
+                            result_data["vector_name"] = "dense"
+                        elif "sparse" in str(res.vector_name):
+                            result_data["vector_name"] = "sparse"
+                    
+                        all_results.append(result_data)
         
-            # Дедупликация и сортировка
+            # Дедупликация и сортировка результатов
             seen_ids = set()
             unique_results = []
-            for res in sorted(all_results, key=lambda x: x['score'], reverse=True):
+        
+            # Сначала сортируем по релевантности
+            sorted_results = sorted(all_results, key=lambda x: x['score'], reverse=True)
+        
+            for res in sorted_results:
                 if res['id'] not in seen_ids:
                     seen_ids.add(res['id'])
                     unique_results.append(res)
                     if len(unique_results) >= top_k:
                         break
-                    
+        
+            logger.info(f"Найдено {len(unique_results)} уникальных результатов")
             return unique_results
         
         except Exception as e:
-            logger.error(f"Ошибка гибридного поиска: {str(e)}")
+            logger.error(f"Критическая ошибка гибридного поиска: {str(e)}", exc_info=True)
             return []
