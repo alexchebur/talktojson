@@ -1,15 +1,22 @@
 import os
 os.environ["STREAMLIT_SERVER_ENABLE_STATIC_FILE_WATCHING"] = "false"
 os.environ["STREAMLIT_DISABLE_WATCHDOG"] = "true"
+from pathlib import Path
 from config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, models
 from qdrant_client.http import models
-from typing import List, Dict, Optional, Union
+from typing import Tuple, List, Dict, Optional, Union
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
 from sentence_transformers import SentenceTransformer
 from fastembed import SparseTextEmbedding
 import numpy as np
+
+
+
+
+
+
 
 logger = logging.getLogger(__name__)
 
