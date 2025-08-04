@@ -403,15 +403,37 @@ with st.sidebar:
 
     # Гибридные результаты (упрощенный вариант)
     hybrid_results = st.session_state.get('hybrid_results', [])
-    st.subheader("🔍 Результаты векторного поиска")
+    st.subheader("🔍 Результаты гибридного поиска")
+
     if hybrid_results:
-        for i, res in enumerate(hybrid_results[:5]):
-            vector_type = "Плотный" if 'dense' in res.get('vector_name', '') else "Разреженный"
-            with st.expander(f"{vector_type} результат {i+1} (score: {res['score']:.2f})", expanded=False):
-                st.write(f"**Содержание:** {res.get('content', '')[:300]}...")
-                st.write(f"**ID:** {res['id']} | **Тип:** {vector_type}")
+        # Разделение по типам векторов
+        dense_results = [r for r in hybrid_results if r.get('vector_type') == 'dense']
+        sparse_results = [r for r in hybrid_results if r.get('vector_type') == 'sparse']
+    
+        # Вкладки для разных типов
+        tab1, tab2 = st.tabs(["Плотные векторы", "Разреженные векторы"])
+    
+        with tab1:
+            if dense_results:
+                for i, res in enumerate(dense_results[:5]):
+                    with st.expander(f"Плотный #{i+1} (score: {res['score']:.2f})", expanded=False):
+                        st.write(f"**Запрос:** `{res.get('query', '')}`")
+                        st.write(f"**Текст:** {res.get('content', '')[:300]}...")
+                        st.write(f"**ID:** `{res['id']}`")
+            else:
+                st.info("Нет результатов по плотным векторам")
+    
+        with tab2:
+            if sparse_results:
+                for i, res in enumerate(sparse_results[:5]):
+                    with st.expander(f"Разреженный #{i+1} (score: {res['score']:.2f})", expanded=False):
+                        st.write(f"**Запрос:** `{res.get('query', '')}`")
+                        st.write(f"**Текст:** {res.get('content', '')[:300]}...")
+                        st.write(f"**ID:** `{res['id']}`")
+            else:
+                st.info("Нет результатов по разреженным векторам")
     else:
-        st.info("Нет результатов векторного поиска")
+        st.info("Гибридный поиск не дал результатов")
 
     # Сгенерированные запросы (единый блок)
     generated_queries = st.session_state.get('generated_queries', [])
