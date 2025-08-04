@@ -223,8 +223,8 @@ class IndexBuilder:
                     if len(unique_results) >= top_k:
                         break
 
-            return unique_results
+            return unique_results, None  # Явно возвращаем кортеж из 2 элементов
 
         except Exception as e:
             logger.error(f"Критическая ошибка гибридного поиска: {str(e)}", exc_info=True)
-            return []
+            return [], str(e)  # Всегда возвращаем кортеж (results, error)
