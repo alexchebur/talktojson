@@ -298,6 +298,11 @@ if st.button("Отправить", key="send_btn"):
         # Сохраняем результаты
         st.session_state.web_search_results = web_results
         st.session_state.hybrid_results = qdrant_results
+        st.session_state.search_stats = {
+            'total': len(qdrant_results),
+            'dense': len([r for r in qdrant_results if r.get('vector_type') == 'dense']),
+            'sparse': len([r for r in qdrant_results if r.get('vector_type') == 'sparse'])
+        }
 
         # Этап 3: Формирование контекста
         status_text.text("Формирование ответа...")
