@@ -441,12 +441,58 @@ with st.sidebar:
             help="0 - только семантика, 1 - только текст",
             key="search_balance"
         )
+# В обработчике кнопки "Техническая информация":
 with st.sidebar:
     if st.button("Техническая информация"):
-        st.write("**Состояние системы:**")
-        st.json({
-            "dense_model": st.session_state.index_builder.dense_model is not None,
-            "sparse_model": st.session_state.index_builder.sparse_model is not None,
-            "last_error": st.session_state.get('qdrant_error', 'Нет ошибок'),
-            "results_count": len(st.session_state.get('hybrid_results', []))
-        })
+        try:
+            # Принудительная проверка загрузки моделей
+            if not st.session_state.model_loaded:
+                with st.spinner("Проверка загрузки моделей..."):
+                    try:
+                        st.session_state.index_builder._load_models()
+                        st.session_state.model_loaded = True
+                        st.success("Модели успешно загружены!")
+                    except Exception as e:
+                        st.error(f"Ошибка загрузки моделей: {str(e)}")
+            
+            # Полная диагностика
+            tech_info = {
+                "dense_model": st.session_state.index_builder.dense_model is not None,
+                "sparse_model": st.session_state.index_builder.sparse_model is not None,
+                "qdrant_connection": self._check_qdrant_connection(),
+                "last_error": st.session_state.get('search_error', 'Нет ошибок'),
+                "web_results": len(st.session_state.get('web_search_results', [])),
+                "qdrant_results": len(st.session_state.get('hybrid_results', []))
+            }
+            
+            st.json(tech_info)
+            
+            # Дополнительные тесты
+            with st.expander("Тест моделей"):
+                test_text = st.text_input("Тестовый текст", "правовой вопрос")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Тест dense-модели"):
+                        if st.session_state.index_builder.dense_model:
+                            embedding = st.session_state.index_builder.dense_model.encode(test_text)
+                            st.success(f"Размерность: {len(embedding)}")
+                        else:
+                            st.error("Dense-модель не загружена")
+                
+                with col2:
+                    if st.button("Тест sparse-модели"):
+                        if st.session_state.index_builder.sparse_model:
+                            try:
+                                vector = st.session_state.index_builder._generate_sparse_vector(test_text)
+                                if vector:
+                                    st.success(f"Индексов: {len(vector.indices)}")
+                                else:
+                                    st.error("Ошибка генерации sparse-вектора")
+                            except Exception as e:
+                                st.error(f"Ошибка: {str(e)}")
+                        else:
+                            st.error("Sparse-модель не загружена")
+
+        except Exception as e:
+            st.error(f"Ошибка диагностики: {str(e)}")
