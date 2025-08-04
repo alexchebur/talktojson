@@ -72,8 +72,7 @@ class IndexBuilder:
     
         except Exception as e:
             logger.error(f"Критическая ошибка загрузки моделей: {str(e)}")
-            return False, f"Критическая ошибка: {str(e)}"зки sparse модели: {str(e)}")
-                    self.sparse_model = None
+            return False, f"Критическая ошибка: {str(e)}"
 
     def _generate_sparse_vector(self, text: str) -> Optional[models.SparseVector]:
         """Генерация разреженного вектора для Qdrant 1.15+"""
