@@ -1,4 +1,4 @@
-import sys
+Ареimport sys
 import os
 os.environ["STREAMLIT_SERVER_ENABLE_STATIC_FILE_WATCHING"] = "false"
 os.environ["STREAMLIT_DISABLE_WATCHDOG"] = "true"
@@ -399,7 +399,7 @@ with st.sidebar:
                     with st.expander(f"Плотный #{i+1} (score: {res['score']:.2f})", expanded=False):
                         st.write(f"**Запрос:** `{res.get('query', '')}`")
                         # Показываем оригинальный контент, а не расширенный
-                        st.write(f"**Текст:** {res.get('content', '')[:300]}...")
+                        st.write(f"**Текст:** {res.get('content', '')[:10000]}...")
                         st.write(f"**ID:** `{res['id']}`")
                         # Добавляем информацию о расширенном контексте
                         st.caption(f"Контекст: {len(res.get('expanded_context', ''))} символов")
@@ -411,7 +411,7 @@ with st.sidebar:
                 for i, res in enumerate(sparse_results[:5]):
                     with st.expander(f"Разреженный #{i+1} (score: {res['score']:.2f})", expanded=False):
                         st.write(f"**Запрос:** `{res.get('query', '')}`")
-                        st.write(f"**Текст:** {res.get('content', '')[:300]}...")
+                        st.write(f"**Текст:** {res.get('content', '')[:10000]}...")
                         st.write(f"**ID:** `{res['id']}`")
                         st.caption(f"Контекст: {len(res.get('expanded_context', ''))} символов")
             else:
