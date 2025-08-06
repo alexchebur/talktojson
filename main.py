@@ -443,7 +443,7 @@ with st.sidebar:
         with st.expander("Показать текст документа", expanded=False):
             st.text_area(
                 "Содержание документа",
-                value=st.session_state.document_text[:5000],
+                value=st.session_state.document_text[:10000],
                 height=300,
                 key="uploaded_doc_preview"
             )
