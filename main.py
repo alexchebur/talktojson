@@ -206,6 +206,7 @@ st.session_state.user_input = st.text_area(
 
 # ... (предыдущий код)
 
+# В обработке кнопки "Отправить" изменяем часть получения результатов:
 if st.button("Отправить", key="send_btn"):
     user_input = st.session_state.user_input.strip()
     
@@ -246,10 +247,10 @@ if st.button("Отправить", key="send_btn"):
                 lambda: [res for q in [user_input] + valid_queries for res in web_searcher.perform_search(q, 2)]
             )
     
-            # Гибридный поиск в Qdrant (ИСПРАВЛЕНО - добавляем user_input)
+            # Гибридный поиск в Qdrant
             qdrant_future = executor.submit(
                 lambda: index_builder.hybrid_search(
-                    queries=[user_input] + valid_queries,  # <- Главное исправление
+                    queries=[user_input] + valid_queries,
                     top_k=3
                 )
             )
@@ -258,40 +259,7 @@ if st.button("Отправить", key="send_btn"):
             qdrant_results, search_error = qdrant_future.result()
             if search_error:
                 st.warning(search_error)
-            st.session_state.search_error = search_error    
-            # Где-то в основном интерфейсе (не в сайдбаре!)
-            if st.session_state.get('hybrid_results'):
-                st.subheader("🔍 Результаты гибридного поиска")
-    
-                # Разделяем dense и sparse результаты
-                dense_results = [r for r in st.session_state.hybrid_results if r.get('vector_name') == 'dense']
-                sparse_results = [r for r in st.session_state.hybrid_results if r.get('vector_name') == 'sparse']
-    
-                # Вкладки для удобного просмотра
-                tab_dense, tab_sparse = st.tabs(["Плотные векторы", "Разреженные векторы"])
-    
-                with tab_dense:
-                    if dense_results:
-                        for i, res in enumerate(dense_results[:5]):  # Показываем топ-5
-                            with st.expander(f"#{i+1} (Score: {res['score']:.2f})", expanded=False):
-                                st.write(f"**Запрос:** `{res.get('query', '')}`")
-                                st.write(f"**Текст:** {res.get('content', '')[:500]}...")
-                                st.write(f"**ID:** `{res['id']}`")
-                    else:
-                        st.warning("Нет результатов по плотным векторам")
-    
-                with tab_sparse:
-                    if sparse_results:
-                        for i, res in enumerate(sparse_results[:5]):
-                            with st.expander(f"#{i+1} (Score: {res['score']:.2f})", expanded=False):
-                                st.write(f"**Запрос:** `{res.get('query', '')}`")
-                                st.write(f"**Текст:** {res.get('content', '')[:500]}...")
-                                st.write(f"**ID:** `{res['id']}`")
-                    else:
-                        st.warning("Нет результатов по разреженным векторам")
-            else:
-                st.info("Гибридный поиск не выполнен")
-
+            st.session_state.search_error = search_error
 
         progress_bar.progress(80)
         
@@ -315,9 +283,12 @@ if st.button("Отправить", key="send_btn"):
             context_parts.append(f"{i+1}. [{res['title']}]({res['url']}): {res['snippet']}")
         
         context_parts.append("Базовые знания:")
-        for i, res in enumerate(qdrant_results[:10]):
-            content = res.get('content') or res.get('text', '')
-            context_parts.append(f"{i+1}. {content[:500]}...")
+        
+        # Используем расширенный контекст вместо обычного контента
+        for i, res in enumerate(qdrant_results[:5]):  # Ограничиваем количеством
+            # Используем расширенный контекст если он есть, иначе обычный контент
+            content = res.get('expanded_context', res.get('content', ''))
+            context_parts.append(f"{i+1}. {content}")
         
         full_context = "\n\n".join(context_parts)[:30000]
         
@@ -406,16 +377,20 @@ with st.sidebar:
     else:
         st.info("Нет веб-результатов")
 
-    # Гибридные результаты (упрощенный вариант)
+with st.sidebar:
+    st.subheader("Результаты поиска")
+    
+    # Веб-результаты
+    # ... (без изменений)
+    
+    # Гибридные результаты
     hybrid_results = st.session_state.get('hybrid_results', [])
     st.subheader("🔍 Результаты гибридного поиска")
 
     if hybrid_results:
-        # Разделение по типам векторов
         dense_results = [r for r in hybrid_results if r.get('vector_type') == 'dense']
         sparse_results = [r for r in hybrid_results if r.get('vector_type') == 'sparse']
     
-        # Вкладки для разных типов
         tab1, tab2 = st.tabs(["Плотные векторы", "Разреженные векторы"])
     
         with tab1:
@@ -423,8 +398,11 @@ with st.sidebar:
                 for i, res in enumerate(dense_results[:5]):
                     with st.expander(f"Плотный #{i+1} (score: {res['score']:.2f})", expanded=False):
                         st.write(f"**Запрос:** `{res.get('query', '')}`")
+                        # Показываем оригинальный контент, а не расширенный
                         st.write(f"**Текст:** {res.get('content', '')[:300]}...")
                         st.write(f"**ID:** `{res['id']}`")
+                        # Добавляем информацию о расширенном контексте
+                        st.caption(f"Контекст: {len(res.get('expanded_context', ''))} символов")
             else:
                 st.info("Нет результатов по плотным векторам")
     
@@ -435,6 +413,7 @@ with st.sidebar:
                         st.write(f"**Запрос:** `{res.get('query', '')}`")
                         st.write(f"**Текст:** {res.get('content', '')[:300]}...")
                         st.write(f"**ID:** `{res['id']}`")
+                        st.caption(f"Контекст: {len(res.get('expanded_context', ''))} символов")
             else:
                 st.info("Нет результатов по разреженным векторам")
     else:
