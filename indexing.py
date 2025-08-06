@@ -115,7 +115,7 @@ class IndexBuilder:
             logger.error(f"Ошибка проверки sparse-вектора: {str(e)}")
             return False
 
-    def _get_context_around_chunk(self, result: dict, max_chars: int = 5000) -> str:
+    def _get_context_around_chunk(self, result: dict, max_chars: int = 10000) -> str:
         """
         Возвращает сбалансированный контекст вокруг найденного чанка, 
         включая соседние чанки из того же документа
@@ -298,7 +298,7 @@ class IndexBuilder:
 
             # Добавляем расширенный контекст для каждого результата
             for res in unique_results:
-                expanded_context = self._get_context_around_chunk(res, max_chars=5000)
+                expanded_context = self._get_context_around_chunk(res, max_chars=10000)
                 res['expanded_context'] = expanded_context
 
             return unique_results, None
