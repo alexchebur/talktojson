@@ -12,13 +12,7 @@ from sentence_transformers import SentenceTransformer
 from fastembed import SparseTextEmbedding
 import numpy as np
 
-
 Path("models").mkdir(exist_ok=True)
-
-
-
-
-
 logger = logging.getLogger(__name__)
 
 class IndexBuilder:
@@ -36,7 +30,6 @@ class IndexBuilder:
                 prefer_grpc=True,
                 timeout=30
             )
-            # Проверка подключения через легкий метод
             client.get_collections()
             logger.info("Успешное подключение к Qdrant 1.15+")
             return client
@@ -101,55 +94,127 @@ class IndexBuilder:
         except Exception as e:
             logger.error(f"Ошибка генерации sparse вектора: {str(e)}")
             return None
+            
     def _is_valid_sparse_vector(self, sparse_vector: models.SparseVector) -> bool:
         """Проверка корректности формата sparse-вектора"""
         try:
-            # Проверка наличия обязательных атрибутов
             if not hasattr(sparse_vector, 'indices') or not hasattr(sparse_vector, 'values'):
-                logger.error("Sparse-вектор не содержит indices или values")
                 return False
-            
-            # Проверка типов
             if not isinstance(sparse_vector.indices, list) or not isinstance(sparse_vector.values, list):
-                logger.error("Sparse-вектор содержит неверные типы данных")
                 return False
-            
-            # Проверка длины массивов
             if len(sparse_vector.indices) != len(sparse_vector.values):
-                logger.error("Длина indices и values не совпадает")
                 return False
-            
-            # Проверка на пустые данные
             if len(sparse_vector.indices) == 0:
-                logger.warning("Пустой sparse-вектор")
                 return False
-            
-            # Проверка на допустимость значений индексов
             if any(i < 0 for i in sparse_vector.indices):
-                logger.error("Отрицательные индексы в sparse-векторе")
                 return False
-            
-            # Проверка на допустимость значений
             if any(not isinstance(v, float) for v in sparse_vector.values):
-                logger.error("Некорректные типы значений в sparse-векторе")
                 return False
-            
             return True
-        
         except Exception as e:
             logger.error(f"Ошибка проверки sparse-вектора: {str(e)}")
             return False
 
+    def _get_context_around_chunk(self, result: dict, max_chars: int = 5000) -> str:
+        """
+        Возвращает сбалансированный контекст вокруг найденного чанка, 
+        включая соседние чанки из того же документа
+        """
+        payload = result.get('payload', {})
+        file_path = payload.get('file_path')
+        current_chunk_id = payload.get('chunk_id')
+        
+        if not file_path or current_chunk_id is None:
+            return result.get('content', '')[:max_chars]
+            
+        try:
+            # Получаем все чанки этого документа
+            file_filter = models.Filter(
+                must=[models.FieldCondition(key="file_path", match=models.MatchValue(value=file_path))]
+            )
+            all_chunks = self.qdrant_client.scroll(
+                collection_name=QDRANT_COLLECTION,
+                scroll_filter=file_filter,
+                limit=100,  # Максимальное количество чанков для документа
+                with_payload=True,
+                with_vectors=False
+            )[0]
+            
+            # Сортируем чанки по chunk_id
+            all_chunks_sorted = sorted(all_chunks, key=lambda x: x.payload.get('chunk_id', 0))
+            
+            # Находим текущий чанк
+            current_index = None
+            for idx, chunk in enumerate(all_chunks_sorted):
+                if chunk.payload.get('chunk_id') == current_chunk_id:
+                    current_index = idx
+                    break
+                    
+            if current_index is None:
+                return result.get('content', '')[:max_chars]
+                
+            # Собираем контекст
+            context = ""
+            current_length = 0
+            
+            # Начинаем с текущего чанка
+            current_chunk_content = all_chunks_sorted[current_index].payload.get('content', '')
+            context = current_chunk_content
+            current_length = len(context)
+            
+            # Индексы для движения влево и вправо
+            left_index = current_index - 1
+            right_index = current_index + 1
+            has_left = left_index >= 0
+            has_right = right_index < len(all_chunks_sorted)
+            
+            # Пока не достигнем лимита и есть чанки
+            while current_length < max_chars and (has_left or has_right):
+                # Сначала идем влево
+                if has_left and current_length < max_chars:
+                    left_chunk = all_chunks_sorted[left_index]
+                    left_content = left_chunk.payload.get('content', '')
+                    if current_length + len(left_content) <= max_chars:
+                        context = left_content + context
+                        current_length += len(left_content)
+                    else:
+                        # Добавляем только часть
+                        remaining_chars = max_chars - current_length
+                        context = left_content[-remaining_chars:] + context
+                        current_length = max_chars
+                        break
+                    left_index -= 1
+                    has_left = left_index >= 0
+                    
+                # Затем вправо
+                if has_right and current_length < max_chars:
+                    right_chunk = all_chunks_sorted[right_index]
+                    right_content = right_chunk.payload.get('content', '')
+                    if current_length + len(right_content) <= max_chars:
+                        context += right_content
+                        current_length += len(right_content)
+                    else:
+                        remaining_chars = max_chars - current_length
+                        context += right_content[:remaining_chars]
+                        current_length = max_chars
+                        break
+                    right_index += 1
+                    has_right = right_index < len(all_chunks_sorted)
+                    
+            return context
+        except Exception as e:
+            logger.error(f"Ошибка получения контекста: {str(e)}")
+            return result.get('content', '')[:max_chars]
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def hybrid_search(self, queries: Union[str, List[str]], top_k: int = 5) -> List[dict]:
-        """Гибридный поиск с плотными и разреженными векторами"""
+        """Гибридный поиск с плотными и разреженными векторами и расширением контекста"""
         try:
             self._load_models()
         
             # Проверка существования коллекции
             try:
                 collection_info = self.qdrant_client.get_collection(QDRANT_COLLECTION)
-                logger.info(f"Коллекция {QDRANT_COLLECTION} найдена")
             except Exception as e:
                 logger.error(f"Коллекция {QDRANT_COLLECTION} не найдена: {str(e)}")
                 return [], str(e) 
@@ -206,22 +271,19 @@ class IndexBuilder:
                     logger.error(f"Ошибка поиска для запроса '{query}': {str(e)}")
                     continue
 
-
-
-            # Обработка результатов с явным указанием типа вектора
-            for req_idx, result_set in enumerate(batch_results):
-                vector_type = "dense" if req_idx % 2 == 0 else "sparse"  # Чётные - dense, нечётные - sparse
-            
-                for res in result_set:
-                    all_results.append({
-                        "id": res.id,
-                        "score": res.score,
-                        "content": res.payload.get("content", ""),
-                        "query": query,
-                        "vector_type": vector_type,  # Явное указание типа
-                        "payload": res.payload
-                    })
-
+                # Обработка результатов
+                for req_idx, result_set in enumerate(batch_results):
+                    vector_type = "dense" if req_idx % 2 == 0 else "sparse"
+                
+                    for res in result_set:
+                        all_results.append({
+                            "id": res.id,
+                            "score": res.score,
+                            "content": res.payload.get("content", ""),
+                            "query": query,
+                            "vector_type": vector_type,
+                            "payload": res.payload
+                        })
 
             # Дедупликация и сортировка
             seen_ids = set()
@@ -234,8 +296,13 @@ class IndexBuilder:
                     if len(unique_results) >= top_k:
                         break
 
-            return unique_results, None  # Явно возвращаем кортеж из 2 элементов
+            # Добавляем расширенный контекст для каждого результата
+            for res in unique_results:
+                expanded_context = self._get_context_around_chunk(res, max_chars=5000)
+                res['expanded_context'] = expanded_context
+
+            return unique_results, None
 
         except Exception as e:
             logger.error(f"Критическая ошибка гибридного поиска: {str(e)}", exc_info=True)
-            return [], str(e)  # Всегда возвращаем кортеж (results, error)
+            return [], str(e)
