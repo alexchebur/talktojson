@@ -14,7 +14,7 @@ API_TIMEOUT = 60
 QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.I-mmwPtCFKzP-TEDblr6m4TpXKpZMLiF22ohcmZKYZI"
 QDRANT_CLUSTER_ID = "08c8d63b-d40d-4f11-9e44-496551240e66"
 QDRANT_URL = "https://08c8d63b-d40d-4f11-9e44-496551240e66.europe-west3-0.gcp.cloud.qdrant.io"
-QDRANT_COLLECTION = "legal_fasttext_search"
+QDRANT_COLLECTION = "legal_hybrid_search"
 
 # Настройки веб-поиска
 USER_AGENTS = [
