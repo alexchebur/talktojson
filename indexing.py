@@ -122,16 +122,17 @@ class IndexBuilder:
         включая соседние чанки из того же документа
         """
         payload = result.get('payload', {})
-        file_path = payload.get('file_path')
+        #file_path = payload.get('file_path')
+        document_id = payload.get('document_id')
         current_chunk_id = payload.get('chunk_id')
         
-        if not file_path or current_chunk_id is None:
+        if not document_id or current_chunk_id is None:
             return result.get('content', '')[:max_chars]
             
         try:
             # Получаем все чанки этого документа
             file_filter = models.Filter(
-                must=[models.FieldCondition(key="file_path", match=models.MatchValue(value=file_path))]
+                must=[models.FieldCondition(key="document_id", match=models.MatchValue(value=document_id))]
             )
             all_chunks = self.qdrant_client.scroll(
                 collection_name=QDRANT_COLLECTION,
