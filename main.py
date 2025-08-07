@@ -281,7 +281,9 @@ if st.button("Отправить", key="send_btn"):
         ]
         
         for i, res in enumerate(web_results[:5]):
-            context_parts.append(f"{i+1}. [{res['title']}]({res['url']}): {res['snippet']}")
+            # Используем полный контент вместо сниппета (ограничиваем 8000 символов)
+            content = res.get('full_content', '')[:8000]
+            context_parts.append(f"{i+1}. [{res['title']}]({res['url']}): {content}")
         
         context_parts.append("Базовые знания:")
         
