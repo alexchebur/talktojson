@@ -157,8 +157,6 @@ STAGE3_PROMPT = """
 # Обновляем функцию get_prompt
 def get_prompt(prompt_name: str, variables: dict) -> str:
     templates = {
-        "system": SYSTEM_PROMPT,
-        "query_generation": QUERY_GENERATION_PROMPT,
         "stage1": STAGE1_PROMPT,
         "stage2": STAGE2_PROMPT,
         "stage3": STAGE3_PROMPT
