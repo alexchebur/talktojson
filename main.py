@@ -371,7 +371,7 @@ if st.button("Отправить", key="send_btn"):
         for i, res in enumerate(qdrant_results[:7]):  # Ограничиваем количеством
             # Используем расширенный контекст если он есть, иначе обычный контент
             content = res.get('expanded_context', res.get('content', ''))
-            context_parts.append(f"{i+1}. {content}")
+            context_parts.append(f"{i+1}. Реквизиты источника: {res['id']}\n{content}")
         
         full_context = "\n\n".join(context_parts)[:200000]
         
