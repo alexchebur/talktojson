@@ -98,6 +98,9 @@ def parse_stage1_response(response: str) -> dict:
         "expanded_keywords": []
     }
     
+    # Заменяем все варианты разделителей на единый формат
+    response = response.replace('\r\n', '\n').replace('\r', '\n')
+    
     # Разделяем ответ на секции
     sections = {}
     current_section = None
@@ -547,6 +550,47 @@ with st.sidebar:
             help="0 - только семантика, 1 - только текст",
             key="search_balance"
         )
+
+    st.subheader("🧠 Когнитивные рассуждения")
+    
+    # Добавляем блок с рассуждениями Stage 1
+    if st.session_state.get('stage1_reasoning'):
+        with st.expander("Показать рассуждения", expanded=True):
+            st.markdown("""
+            <style>
+                .reasoning-box {
+                    background-color: #f0f2f6;
+                    border-radius: 10px;
+                    padding: 15px;
+                    margin-bottom: 10px;
+                }
+                .reasoning-stage {
+                    font-weight: bold;
+                    color: #1E88E5;
+                    margin-top: 10px;
+                }
+            </style>
+            """, unsafe_allow_html=True)
+            
+            # Форматируем рассуждения для лучшего отображения
+            reasoning = st.session_state.stage1_reasoning
+            
+            # Добавляем стилизованные заголовки этапов
+            reasoning = reasoning.replace("## Этап 1:", "<div class='reasoning-box'><div class='reasoning-stage'>Этап 1: Декомпозиция и Понимание</div>")
+            reasoning = reasoning.replace("## Этап 2:", "</div><div class='reasoning-box'><div class='reasoning-stage'>Этап 2: Планирование и Поиск Знаний</div>")
+            reasoning = reasoning.replace("## Этап 3:", "</div><div class='reasoning-box'><div class='reasoning-stage'>Этап 3: Критическая Оценка и Синтез</div>")
+            reasoning = reasoning.replace("## Этап 4:", "</div><div class='reasoning-box'><div class='reasoning-stage'>Этап 4: Рефлексия и Проверка</div>")
+            reasoning = reasoning + "</div>" * 3  # Закрываем все div
+            
+            # Добавляем маркированные списки
+            reasoning = re.sub(r'\*   ', '- ', reasoning)
+            
+            st.markdown(reasoning, unsafe_allow_html=True)
+    else:
+        st.info("Предварительные рассуждения не сгенерированы")
+
+
+
 with st.sidebar:
     if st.button("🛠️ Техническая информация"):
         try:
