@@ -307,7 +307,7 @@ if st.button("Отправить", key="send_btn"):
         # Фильтруем и ограничиваем запросы
         valid_queries = [
             q for q in search_data['expanded_queries'] 
-            if q and len(q.split()) <= 10
+            if q and len(q.split()) <= 20
         ][:3]
         
         st.session_state.search_data = search_data
