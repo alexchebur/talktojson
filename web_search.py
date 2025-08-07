@@ -69,34 +69,51 @@ class WebSearcher:
 
     @staticmethod
     def get_full_page_content(url: str) -> str:
-        """Получение полного текста страницы"""
+        """Получение полного текста страницы с улучшенным парсингом (5000-10000 символов)"""
         try:
             headers = {'User-Agent': random.choice(USER_AGENTS)}
             response = requests.get(url, headers=headers, timeout=20)
             response.raise_for_status()
-
+        
             # Определение кодировки
             if response.encoding == 'ISO-8859-1':
-                raw_data = response.content[:50000]
+                raw_data = response.content[:10000]
                 encoding = chardet.detect(raw_data)['encoding']
                 response.encoding = encoding if encoding else 'utf-8'
-
+        
+            # Парсинг HTML
             soup = BeautifulSoup(response.text, 'html.parser')
-
+        
             # Удаляем ненужные элементы
-            for tag in soup(['script', 'style', 'footer', 'nav', 'aside', 'header', 'iframe', 'form', 'button']):
+            for tag in soup(['script', 'style', 'footer', 'nav', 'aside', 'header', 'iframe', 'form', 'button', 'noscript', 'svg']):
                 tag.decompose()
-
-            # Извлекаем контент
-            text_parts = []
-            for tag in soup.find_all(['main', 'article', 'section', 'div', 'p']):
-                text = tag.get_text(' ', strip=True)
-                if len(text) > 100:
-                    text_parts.append(text)
-
-            full_text = ' '.join(text_parts)
-            return re.sub(r'\s+', ' ', full_text)[:50000] if full_text else "Контент не найден"
-            
+        
+            # Удаляем пустые элементы
+            for tag in soup.find_all():
+                if not tag.get_text(strip=True):
+                    tag.decompose()
+        
+            # Извлекаем основной контент с приоритетом на определенные теги
+            main_content = []
+        
+            # Сначала ищем в основных контейнерах
+            priority_containers = soup.find_all(['main', 'article', 'section', 'div[role="main"]', 'div.content', 'div.post'])
+            if priority_containers:
+                for container in priority_containers:
+                    text = container.get_text(separator=' ', strip=True)
+                    if len(text) > 200:  # Минимальная длина для значимого контента
+                        main_content.append(text)
+            else:
+                # Если основных контейнеров нет, берем весь текст
+                main_content.append(' '.join(soup.stripped_strings))
+        
+            # Объединяем и очищаем текст
+            full_text = ' '.join(main_content)
+            cleaned_text = re.sub(r'\s+', ' ', full_text).strip()
+        
+            # Возвращаем ограниченное количество символов (5000-10000)
+            return cleaned_text[:10000] if cleaned_text else "Контент не найден"
+        
         except Exception as e:
-            logger.error(f"Ошибка получения контента: {str(e)}")
+            logger.error(f"Ошибка получения контента для {url}: {str(e)}")
             return ""
