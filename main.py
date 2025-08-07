@@ -299,7 +299,7 @@ if st.button("Отправить", key="send_btn"):
         progress_bar.progress(20)
         
         stage1_prompt = get_prompt("stage1", {"user_query": user_input})
-        stage1_response = call_gemini_api(stage1_prompt, temperature=0.5)
+        stage1_response = call_gemini_api(stage1_prompt, temperature=0.3)
         search_data = parse_stage1_response(stage1_response)
         # Сохраняем рассуждения Stage 1 в session_state
         st.session_state.stage1_reasoning = search_data.get("reasoning", "")
