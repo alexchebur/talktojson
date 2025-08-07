@@ -360,16 +360,20 @@ if st.button("Отправить", key="send_btn"):
             # Используем полный контент вместо сниппета (ограничиваем 8000 символов)
             content = res.get('full_content', '')[:8000]
             context_parts.append(f"{i+1}. [{res['title']}]({res['url']}): {content}")
+        if st.session_state.get('document_text'):
+            context_parts.append("Загруженный документ:")
+            context_parts.append(f"1. {st.session_state.document_text}")
+
         
         context_parts.append("Базовые знания:")
         
         # Используем расширенный контекст вместо обычного контента
-        for i, res in enumerate(qdrant_results[:5]):  # Ограничиваем количеством
+        for i, res in enumerate(qdrant_results[:7]):  # Ограничиваем количеством
             # Используем расширенный контекст если он есть, иначе обычный контент
             content = res.get('expanded_context', res.get('content', ''))
             context_parts.append(f"{i+1}. {content}")
         
-        full_context = "\n\n".join(context_parts)[:100000]
+        full_context = "\n\n".join(context_parts)[:200000]
         
         progress_bar.progress(100)
         status_text.text("Готово!")
