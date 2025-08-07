@@ -386,13 +386,13 @@ if st.button("Отправить", key="send_btn"):
                 "problem_formulation": search_data['problem_formulation'],
                 "context": full_context
             })
-        
+    
             stage2_response = call_gemini_api(stage2_prompt, max_output_tokens=10000)
-        
+    
             try:
                 opinion_data = parse_stage2_response(stage2_response)
                 st.session_state.opinion_data = opinion_data
-            
+        
                 # Для отладки
                 with st.expander("Промежуточные результаты"):
                     st.subheader("Предварительные рассуждения (Stage 1)")
