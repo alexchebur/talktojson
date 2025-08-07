@@ -252,7 +252,7 @@ if st.button("Отправить", key="send_btn"):
             qdrant_future = executor.submit(
                 lambda: index_builder.hybrid_search(
                     queries=[user_input] + valid_queries,
-                    top_k=3
+                    top_k=5
                 )
             )
             
