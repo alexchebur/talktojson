@@ -40,29 +40,28 @@ class WebSearcher:
             'key': self.api_key,
             'cx': self.cse_id,
             'q': query,
-            'num': min(max_results, 1),  # Ограничение API
+            'num': min(max_results, 10),  # Увеличиваем до 10, чтобы было больше вариантов
             'lr': 'lang_ru',
             'hl': 'ru'
         }
-        
         try:
             response = self.session.get(url, params=params, timeout=15)
             response.raise_for_status()
             data = response.json()
-            
             results = []
             for item in data.get('items', [])[:max_results]:
                 full_content = self.get_full_page_content(item.get('link', ''))
+                # Генерируем собственный сниппет из полного контента для лучшей релевантности
+                custom_snippet = full_content[:300] + "..." if len(full_content) > 300 else full_content
+            
                 results.append({
                     'title': item.get('title', 'Без названия')[:150],
                     'url': item.get('link', '#'),
-                    'snippet': item.get('snippet', 'Без описания')[:500],
-                    'full_content': full_content
+                    'snippet': custom_snippet,  # Используем улучшенный сниппет
+                    'full_content': full_content  # Полный контент для дальнейшего использования
                 })
-                
             time.sleep(1.5)
             return results
-            
         except Exception as e:
             logger.error(f"Ошибка выполнения поиска: {str(e)}")
             return []
