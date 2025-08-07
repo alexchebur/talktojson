@@ -291,7 +291,7 @@ if st.button("Отправить", key="send_btn"):
             content = res.get('expanded_context', res.get('content', ''))
             context_parts.append(f"{i+1}. {content}")
         
-        full_context = "\n\n".join(context_parts)[:30000]
+        full_context = "\n\n".join(context_parts)[:100000]
         
         progress_bar.progress(100)
         status_text.text("Готово!")
