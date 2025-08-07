@@ -93,22 +93,93 @@ def parse_stage1_response(response: str) -> dict:
     """Парсинг структурированного текстового ответа"""
     result = {
         "problem_formulation": "",
+        "reasoning": "",  # Добавляем поле для рассуждений
         "expanded_queries": [],
         "expanded_keywords": []
     }
     
+    # Разделяем ответ на секции
+    sections = {}
+    current_section = None
     lines = response.split('\n')
+    
     for line in lines:
         line = line.strip()
-        if line.startswith("Проблема:"):
-            result["problem_formulation"] = line.replace("Проблема:", "").strip()
-        elif line.startswith("Вопросы:"):
+        if not line:
             continue
-        elif re.match(r'^\d+\.', line):
-            result["expanded_queries"].append(re.sub(r'^\d+\.\s*', '', line).strip())
+            
+        # Определяем секции по заголовкам
+        if line.startswith("Проблема:"):
+            current_section = "problem"
+            sections[current_section] = line.replace("Проблема:", "").strip()
+        elif line.startswith("Предварительные рассуждения:"):
+            current_section = "reasoning"
+            sections[current_section] = ""
+        elif line.startswith("Вопросы:"):
+            current_section = "queries"
         elif line.startswith("Ключевые слова:"):
-            keywords = line.replace("Ключевые слова:", "").strip()
-            result["expanded_keywords"] = [k.strip() for k in keywords.split(',')]
+            current_section = "keywords"
+            sections[current_section] = ""
+        else:
+            if current_section == "reasoning":
+                sections[current_section] = sections.get(current_section, "") + line + "\n"
+            elif current_section == "queries" and re.match(r'^\d+\.', line):
+                if "expanded_queries" not in sections:
+                    sections["expanded_queries"] = []
+                sections["expanded_queries"].append(re.sub(r'^\d+\.\s*', '', line).strip())
+            elif current_section == "keywords":
+                # Обрабатываем ключевые слова
+                if line and not line.startswith(("1.", "2.", "3.", "4.", "5.")):
+                    # Если ключевые слова в одной строке через запятую
+                    keywords = [k.strip() for k in line.split(',')]
+                    sections["expanded_keywords"] = keywords
+                else:
+                    # Если ключевые слова по одному на строку
+                    if "expanded_keywords" not in sections:
+                        sections["expanded_keywords"] = []
+                    clean_line = re.sub(r'^\d+\.\s*', '', line).strip()
+                    if clean_line:
+                        sections["expanded_keywords"].append(clean_line)
+    
+    # Заполняем результат
+    result["problem_formulation"] = sections.get("problem", "")
+    result["reasoning"] = sections.get("reasoning", "").strip()
+    
+    # Обрабатываем вопросы
+    if "expanded_queries" in sections:
+        result["expanded_queries"] = sections["expanded_queries"]
+    else:
+        # Попробуем найти вопросы другим способом
+        queries = []
+        in_queries = False
+        for line in lines:
+            line = line.strip()
+            if line.startswith("Вопросы:"):
+                in_queries = True
+                continue
+            if in_queries and re.match(r'^\d+\.', line):
+                queries.append(re.sub(r'^\d+\.\s*', '', line).strip())
+            elif line.startswith(("Ключевые слова:", "###")):
+                in_queries = False
+        result["expanded_queries"] = queries
+    
+    # Обрабатываем ключевые слова
+    if "expanded_keywords" in sections:
+        result["expanded_keywords"] = sections["expanded_keywords"]
+    else:
+        # Попробуем найти ключевые слова другим способом
+        keywords = []
+        in_keywords = False
+        for line in lines:
+            line = line.strip()
+            if line.startswith("Ключевые слова:"):
+                in_keywords = True
+                continue
+            if in_keywords and re.match(r'^\d+\.', line):
+                keywords.append(re.sub(r'^\d+\.\s*', '', line).strip())
+            elif line.startswith(("Вопросы:", "###", "Проблема:")):
+                in_keywords = False
+        result["expanded_keywords"] = keywords
     
     return result
 
@@ -227,6 +298,8 @@ if st.button("Отправить", key="send_btn"):
         stage1_prompt = get_prompt("stage1", {"user_query": user_input})
         stage1_response = call_gemini_api(stage1_prompt, temperature=0.5)
         search_data = parse_stage1_response(stage1_response)
+        # Сохраняем рассуждения Stage 1 в session_state
+        st.session_state.stage1_reasoning = search_data.get("reasoning", "")
         
         # Фильтруем и ограничиваем запросы
         valid_queries = [
@@ -322,6 +395,11 @@ if st.button("Отправить", key="send_btn"):
             
                 # Для отладки
                 with st.expander("Промежуточные результаты"):
+                    st.subheader("Предварительные рассуждения (Stage 1)")
+                    if st.session_state.get('stage1_reasoning'):
+                        st.write(st.session_state.stage1_reasoning)
+                    else:
+                        st.write("Предварительные рассуждения не сгенерированы")
                     st.write("**Анализ:**")
                     st.write(opinion_data["reasoning"])
                     st.write("**Проект заключения (фрагмент):**")
