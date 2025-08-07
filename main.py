@@ -500,7 +500,7 @@ with st.sidebar:
                     with st.expander(f"Разреженный #{i+1} (score: {res['score']:.2f})", expanded=False):
                         st.write(f"**Запрос:** `{res.get('query', '')}`")
                         st.write(f"**Текст:** {res.get('content', '')[:10000]}...")
-                        st.write(f"**ID:** `{res['document_id']}`")
+                        st.write(f"**ID:** `{res['id']}`")
                         st.caption(f"Контекст: {len(res.get('expanded_context', ''))} символов")
             else:
                 st.info("Нет результатов по разреженным векторам")
