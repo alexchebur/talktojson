@@ -7,9 +7,46 @@ import time
 from bs4 import BeautifulSoup
 from typing import List, Dict
 from config import USER_AGENTS, PRIORITY_SITES, API_TIMEOUT
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log
+import threading
 
 logger = logging.getLogger(__name__)
+
+class RateLimiter:
+    """Простой лимитер запросов для DuckDuckGo API"""
+    def __init__(self, calls: int, period: float):
+        self.calls = calls
+        self.period = period
+        self.last_reset = time.time()
+        self.num_calls = 0
+        self.lock = threading.Lock()
+    
+    def acquire(self):
+        """Ждем, пока не сможем сделать запрос"""
+        with self.lock:
+            current = time.time()
+            time_since_reset = current - self.last_reset
+            
+            # Если прошло достаточно времени, сбрасываем счетчик
+            if time_since_reset > self.period:
+                self.num_calls = 0
+                self.last_reset = current
+            
+            # Если достигнут лимит, ждем
+            if self.num_calls >= self.calls:
+                sleep_time = self.period - time_since_reset
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                    # После сна обновляем время сброса
+                    self.last_reset = time.time()
+                    self.num_calls = 0
+                else:
+                    # Если период уже прошел, просто сбрасываем счетчик
+                    self.num_calls = 0
+                    self.last_reset = current
+            
+            # Увеличиваем счетчик запросов
+            self.num_calls += 1
 
 class WebSearcher:
     def __init__(self, delay_range=(1.0, 3.0)):
@@ -22,9 +59,17 @@ class WebSearcher:
         self.cse_id = "a4f17489c6a0a4414"
         self.priority_sites = PRIORITY_SITES  # Используем из конфига
         
-        # Кэширование для DuckDuckGo (5 минут как рекомендовано в документации)
+        # Кэширование для DuckDuckGo
         self.ddg_cache = {}
         self.cache_ttl = 300  # 5 минут в секундах
+        
+        # Лимитер для DuckDuckGo (1 запрос в 2 секунды для большей надежности)
+        self.ddg_limiter = RateLimiter(calls=1, period=2.0)
+        
+        # Отслеживание статуса DuckDuckGo
+        self.ddg_available = True
+        self.last_ddg_error = None
+        self.ddg_error_cooldown = 0
     
     def perform_search(self, query: str, max_results: int = 1, query_type="generated") -> List[Dict]:
         try:
@@ -34,46 +79,91 @@ class WebSearcher:
                 res['query_type'] = query_type  # Тип запроса
             return results
         except Exception as e:
-            logger.error(f"Ошибка поиска: {str(e)}")
+            st.error(f"Ошибка поиска: {str(e)}")
             return []
 
     def _execute_search(self, query: str, max_results: int) -> List[Dict]:
         """Выполняет поиск сначала через DuckDuckGo, при неудаче - через Google CSE"""
         cache_key = f"{query}:{max_results}"
         
-        # Проверяем кэш для DuckDuckGo (рекомендовано в документации)
+        # Проверяем кэш для DuckDuckGo
         if cache_key in self.ddg_cache:
             cached_time, results = self.ddg_cache[cache_key]
             if time.time() - cached_time < self.cache_ttl:
-                logger.info(f"Используем кэшированные результаты DuckDuckGo для запроса: {query}")
+                st.info(f"Используем кэшированные результаты DuckDuckGo для запроса: {query}")
                 return results
         
+        # Проверяем, не в "черном списке" ли DuckDuckGo из-за предыдущих ошибок
+        if not self._is_ddg_available():
+            st.warning("DuckDuckGo временно недоступен из-за предыдущих ошибок, используем Google CSE")
+            return self._google_cse_search(query, max_results)
+        
         # Сначала пробуем DuckDuckGo
-        duckduckgo_results = self._duckduckgo_search(query, max_results)
+        try:
+            duckduckgo_results = self._duckduckgo_search(query, max_results)
+            
+            # Если получили результаты из DuckDuckGo, возвращаем их и кэшируем
+            if duckduckgo_results:
+                st.info(f"Получено {len(duckduckgo_results)} результатов из DuckDuckGo")
+                self.ddg_cache[cache_key] = (time.time(), duckduckgo_results)
+                return duckduckgo_results
+            else:
+                st.warning(f"DuckDuckGo вернул пустые результаты для запроса: {query}")
+        except Exception as e:
+            st.error(f"Ошибка при поиске через DuckDuckGo: {str(e)}")
+            self._handle_ddg_error(e)
         
-        # Если получили результаты из DuckDuckGo, возвращаем их и кэшируем
-        if duckduckgo_results:
-            logger.info(f"Получено {len(duckduckgo_results)} результатов из DuckDuckGo")
-            self.ddg_cache[cache_key] = (time.time(), duckduckgo_results)
-            return duckduckgo_results
-        
-        # Иначе пробуем Google CSE
-        logger.warning("DuckDuckGo не вернул результатов, переключаемся на Google CSE")
-        google_results = self._google_cse_search(query, max_results)
-        return google_results
+        # Если DuckDuckGo не сработал, используем Google CSE
+        st.warning("DuckDuckGo не вернул результатов, переключаемся на Google CSE")
+        return self._google_cse_search(query, max_results)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    def _duckduckgo_search(self, query: str, max_results: int) -> List[Dict]:
-        """Поиск через DuckDuckGo API с экспоненциальной задержкой при ошибках"""
-        # Добавляем небольшую случайную задержку перед запросом (рекомендовано в документации)
-        time.sleep(random.uniform(1.5, 2.5))
+    def _is_ddg_available(self) -> bool:
+        """Проверяет, доступен ли DuckDuckGo после предыдущих ошибок"""
+        if not self.ddg_available:
+            # Если прошло достаточно времени с последней ошибки, пробуем снова
+            if time.time() > self.ddg_error_cooldown:
+                st.info("Сброс состояния недоступности DuckDuckGo, пробуем снова")
+                self.ddg_available = True
+                return True
+            return False
+        return True
+
+    def _handle_ddg_error(self, error):
+        """Обрабатывает ошибки DuckDuckGo и устанавливает временный запрет на использование"""
+        self.last_ddg_error = str(error)
+        self.ddg_available = False
         
-        # Формируем URL для DuckDuckGo Instant Answer API
+        # Устанавливаем разное время простоя в зависимости от типа ошибки
+        if "limit" in str(error).lower() or "429" in str(error):
+            # При ошибках лимита ждем дольше - 5-10 минут
+            cooldown = random.uniform(300, 600)
+            st.warning(f"Обнаружен лимит запросов DuckDuckGo. Приостанавливаем использование на {cooldown:.0f} секунд")
+        else:
+            # Для других ошибок ждем меньше - 2-5 минут
+            cooldown = random.uniform(120, 300)
+            st.warning(f"Ошибка DuckDuckGo: {error}. Приостанавливаем использование на {cooldown:.0f} секунд")
+        
+        self.ddg_error_cooldown = time.time() + cooldown
+
+    @retry(
+        retry=retry_if_exception_type((requests.exceptions.RequestException,)),
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=2, min=2, max=10),
+        before_sleep=before_sleep_log(logger, logging.WARNING)
+    )
+    def _duckduckgo_search(self, query: str, max_results: int) -> List[Dict]:
+        """Поиск через DuckDuckGo API с улучшенной обработкой ошибок и лимитов"""
+        # Используем лимитер для контроля частоты запросов
+        self.ddg_limiter.acquire()
+        
+        # Добавляем небольшую случайную задержку для дополнительной защиты
+        time.sleep(random.uniform(0.8, 1.5))
+        
+        # Формируем URL для DuckDuckGo Instant Answer API (без лишних пробелов!)
         url = "https://api.duckduckgo.com/"
         params = {
             'q': query,
             'format': 'json',
-            'pretty': '1',
             'no_html': '1',
             'skip_disambig': '1',
             't': 'myapp'
@@ -84,9 +174,15 @@ class WebSearcher:
             response.raise_for_status()
             data = response.json()
             
+            # Проверка на наличие ошибки в ответе
+            if 'Error' in data and data['Error']:
+                error_msg = f"DuckDuckGo API вернул ошибку: {data['Error']}"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+            
             results = []
             
-            # Обрабатываем основные результаты
+            # 1. Обрабатываем основные результаты (из Results)
             if 'Results' in data and data['Results']:
                 for item in data['Results'][:max_results]:
                     if 'FirstURL' in item and item['FirstURL']:
@@ -97,10 +193,11 @@ class WebSearcher:
                             'title': item.get('Text', 'Без названия')[:150],
                             'url': item['FirstURL'],
                             'snippet': custom_snippet,
-                            'full_content': full_content
+                            'full_content': full_content,
+                            'source': 'Results'
                         })
             
-            # Если недостаточно результатов, берем из RelatedTopics
+            # 2. Обрабатываем связанные темы (RelatedTopics)
             if len(results) < max_results and 'RelatedTopics' in data:
                 for topic in data['RelatedTopics']:
                     if 'FirstURL' in topic and topic['FirstURL'] and len(results) < max_results:
@@ -111,8 +208,42 @@ class WebSearcher:
                             'title': topic.get('Text', 'Без названия')[:150],
                             'url': topic['FirstURL'],
                             'snippet': custom_snippet,
-                            'full_content': full_content
+                            'full_content': full_content,
+                            'source': 'RelatedTopics'
                         })
+            
+            # 3. Обрабатываем основные результаты (из Heading)
+            if len(results) < max_results and 'Heading' in data and data['Heading']:
+                for item in data.get('RelatedTopics', []):
+                    if 'FirstURL' in item and item['FirstURL'] and len(results) < max_results:
+                        full_content = self.get_full_page_content(item['FirstURL'])
+                        custom_snippet = self._generate_snippet(full_content)
+                        
+                        results.append({
+                            'title': item.get('Text', 'Без названия')[:150],
+                            'url': item['FirstURL'],
+                            'snippet': custom_snippet,
+                            'full_content': full_content,
+                            'source': 'Heading'
+                        })
+            
+            # 4. Обрабатываем основные результаты (из AbstractURL)
+            if len(results) < max_results and 'AbstractURL' in data and data['AbstractURL']:
+                full_content = self.get_full_page_content(data['AbstractURL'])
+                custom_snippet = self._generate_snippet(full_content)
+                
+                results.append({
+                    'title': data.get('Heading', 'Абстракт')[:150],
+                    'url': data['AbstractURL'],
+                    'snippet': custom_snippet,
+                    'full_content': full_content,
+                    'source': 'Abstract'
+                })
+            
+            # Проверяем, есть ли реальные результаты
+            if not results:
+                st.warning(f"DuckDuckGo вернул пустой результат для запроса: {query}")
+                return []
             
             # Применяем фильтрацию по приоритетным сайтам, если есть
             if self.priority_sites:
@@ -129,8 +260,8 @@ class WebSearcher:
         except Exception as e:
             st.error(f"Ошибка при поиске через DuckDuckGo: {str(e)}")
             # Если это ошибка ограничения запросов, делаем дополнительную задержку
-            if "limit" in str(e).lower():
-                time.sleep(5)
+            if "limit" in str(e).lower() or "429" in str(e) or "rate limit" in str(e).lower():
+                time.sleep(random.uniform(8, 12))
             raise  # Для работы с retry
 
     def _google_cse_search(self, query: str, max_results: int) -> List[Dict]:
@@ -157,7 +288,8 @@ class WebSearcher:
                     'title': item.get('title', 'Без названия')[:150],
                     'url': item.get('link', '#'),
                     'snippet': custom_snippet,
-                    'full_content': full_content
+                    'full_content': full_content,
+                    'source': 'Google CSE'
                 })
             time.sleep(1.5)
             return results
@@ -167,6 +299,8 @@ class WebSearcher:
 
     def _generate_snippet(self, full_content: str) -> str:
         """Генерация улучшенного сниппета из полного контента"""
+        if not full_content or full_content == "Контент не найден":
+            return "Контент не найден или недоступен"
         return full_content[:300] + "..." if len(full_content) > 300 else full_content
 
     @staticmethod
