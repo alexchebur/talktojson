@@ -21,6 +21,7 @@ class IndexBuilder:
         self.qdrant_client = self._init_qdrant_client()
         self.dense_model = None
         self.sparse_model = None
+        self._verify_collection_structure()  # Проверка структуры коллекции после инициализации
         
     def _init_qdrant_client(self):
         """Инициализация клиента Qdrant для версии 1.15+"""
@@ -37,6 +38,38 @@ class IndexBuilder:
         except Exception as e:
             logger.error(f"Ошибка подключения к Qdrant: {str(e)}")
             raise
+
+    def _verify_collection_structure(self):
+        """Проверяет и создает необходимые индексы payload"""
+        try:
+            # Проверка существования коллекции
+            collection_info = self.qdrant_client.get_collection(QDRANT_COLLECTION)
+            
+            # Список обязательных индексов
+            required_indexes = {
+                "document_id": models.PayloadSchemaType.KEYWORD,
+                "category": models.PayloadSchemaType.KEYWORD,
+                "chunk_id": models.PayloadSchemaType.INTEGER
+            }
+            
+            # Создание отсутствующих индексов
+            existing_indexes = {idx.field_name for idx in collection_info.payload_schema or []}
+            
+            for field_name, schema_type in required_indexes.items():
+                if field_name not in existing_indexes:
+                    try:
+                        self.qdrant_client.create_payload_index(
+                            collection_name=QDRANT_COLLECTION,
+                            field_name=field_name,
+                            field_schema=schema_type
+                        )
+                        logger.info(f"Создан индекс для поля {field_name} ({schema_type})")
+                    except Exception as e:
+                        if "already exists" not in str(e):
+                            logger.error(f"Ошибка создания индекса для {field_name}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Ошибка проверки структуры коллекции: {str(e)}")
+            raise RuntimeError("Не удалось проверить структуру коллекции Qdrant")
 
     def _load_models(self) -> Tuple[bool, str]:
         """Загрузка моделей с явным указанием возвращаемого типа"""
@@ -74,9 +107,23 @@ class IndexBuilder:
             'dense_loaded': self.dense_model is not None,
             'sparse_loaded': self.sparse_model is not None,
             'dense_dim': self.dense_model.get_sentence_embedding_dimension() 
-                         if self.dense_model else 0
+                         if self.dense_model else 0,
+            'indexes_ready': all(  # Добавляем проверку индексов
+                self._check_payload_index(field)
+                for field in ["document_id", "category", "chunk_id"]
+            )
         }
 
+    def _check_payload_index(self, field_name: str) -> bool:
+        """Проверяет существование индекса для указанного поля"""
+        try:
+            collection_info = self.qdrant_client.get_collection(QDRANT_COLLECTION)
+            return any(
+                idx.field_name == field_name 
+                for idx in collection_info.payload_schema or []
+            )
+        except Exception:
+            return False
     def _generate_sparse_vector(self, text: str) -> Optional[models.SparseVector]:
         """Генерация разреженного вектора для Qdrant 1.15+"""
         try:
