@@ -59,43 +59,46 @@ class IndexBuilder:
             raise
 
     def _load_models(self) -> Tuple[bool, str]:
-        """Загрузка моделей с исправлением проблемы мета-тензоров"""
+        """Загрузка моделей с использованием torch.nn.Module.to_empty()"""
         try:
-            # Dense модель - полностью переработанный подход
+            # Dense модель - решение через to_empty()
             if self.dense_model is None:
                 try:
                     import torch
                     from sentence_transformers import SentenceTransformer
                 
-                    # 1. Устанавливаем правильный тип тензора по умолчанию
-                    torch.set_default_tensor_type(torch.FloatTensor)
-                
-                    # 2. Создаем "пустую" модель
+                    # 1. Загружаем модель на мета-устройстве
                     model = SentenceTransformer(
                         "cointegrated/rubert-tiny2",
-                        device=None,  # Не инициализируем на устройстве
+                        device="meta",  # Специальное мета-устройство
                         cache_folder=os.path.join(os.getcwd(), "models")
                     )
                 
-                    # 3. Явно загружаем веса на CPU
-                    state_dict = model.state_dict()
-                    for key in state_dict:
-                        if state_dict[key].is_meta:
-                            # Создаем реальный тензор с правильной формой
-                            state_dict[key] = torch.empty_like(
-                                state_dict[key], device='cpu'
-                            )
-                    model.load_state_dict(state_dict, strict=False)
+                    # 2. Создаем пустую модель на CPU
+                    model.to_empty(device='cpu')
                 
-                    # 4. Перемещаем всю модель на CPU
-                    model = model.to('cpu')
+                    # 3. Загружаем веса напрямую
+                    from transformers import AutoModel
+                    hf_model = AutoModel.from_pretrained(
+                        "cointegrated/rubert-tiny2",
+                        cache_dir=os.path.join(os.getcwd(), "models")
+                    )
                 
-                    # 5. Принудительно вычисляем параметры
+                    # 4. Копируем веса
                     with torch.no_grad():
-                        model.encode("тестовая строка")
+                        for param, hf_param in zip(model._first_module().auto_model.parameters(), 
+                                                  hf_model.parameters()):
+                            param.copy_(hf_param)
+                
+                    # 5. Переводим модель в режим оценки
+                    model.eval()
+                
+                    # 6. Тестовая проверка
+                    with torch.no_grad():
+                        model.encode("тестовая строка", convert_to_numpy=True)
                 
                     self.dense_model = model
-                    logger.info("Dense модель успешно загружена с исправлением мета-тензоров")
+                    logger.info("Dense модель успешно загружена с использованием to_empty()")
                 
                 except Exception as e:
                     logger.error(f"Критическая ошибка загрузки dense модели: {str(e)}")
