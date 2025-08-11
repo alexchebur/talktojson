@@ -10,7 +10,7 @@ from config import USER_AGENTS, PRIORITY_SITES, API_TIMEOUT
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log
 import threading
 # Импортируем официальную библиотеку DuckDuckGo
-from duckduckgo_search import DDGS, DuckDuckGoSearchException
+from duckduckgo-search import DDGS, DuckDuckGoSearchException
 
 logger = logging.getLogger(__name__)
 
