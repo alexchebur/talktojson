@@ -11,6 +11,18 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 import threading
 # Импортируем официальную библиотеку DuckDuckGo
 from duckduckgo_search import DDGS, DuckDuckGoSearchException
+# Попытка определить правильное исключение
+try:
+    # Попробуем импортировать из новой версии
+    from duckduckgo_search.exceptions import DuckDuckGoSearchException
+except ImportError:
+    try:
+        # Попробуем альтернативное имя
+        from duckduckgo_search.exceptions import DuckDuckGoException as DuckDuckGoSearchException
+    except ImportError:
+        # Если ничего не помогло, создаем заглушку
+        class DuckDuckGoSearchException(Exception):
+            pass
 
 logger = logging.getLogger(__name__)
 
