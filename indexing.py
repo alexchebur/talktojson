@@ -111,6 +111,7 @@ class IndexBuilder:
                     self.sparse_model = SparseTextEmbedding(
                         "Qdrant/bm42-all-minilm-l6-v2-attentions",
                         cache_dir=os.path.join(os.getcwd(), "models")
+                    )
                     logger.info("Sparse модель загружена")
                 except Exception as e:
                     logger.error(f"Ошибка загрузки sparse модели: {str(e)}")
