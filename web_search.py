@@ -127,7 +127,7 @@ class WebSearcher:
             return results[:max_results]
             
         except Exception as e:
-            logger.error(f"Ошибка при поиске через DuckDuckGo: {str(e)}")
+            st.error(f"Ошибка при поиске через DuckDuckGo: {str(e)}")
             # Если это ошибка ограничения запросов, делаем дополнительную задержку
             if "limit" in str(e).lower():
                 time.sleep(5)
