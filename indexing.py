@@ -21,7 +21,6 @@ class IndexBuilder:
         self.qdrant_client = self._init_qdrant_client()
         self.dense_model = None
         self.sparse_model = None
-        self._verify_collection_structure()  # Проверка структуры коллекции после инициализации
         
     def _init_qdrant_client(self):
         """Инициализация клиента Qdrant для версии 1.15+"""
@@ -32,78 +31,24 @@ class IndexBuilder:
                 prefer_grpc=True,
                 timeout=30
             )
-            # Проверяем подключение
-            if not client.collection_exists("test_connection"):
-                client.create_collection("test_connection", vectors_config={})
-                client.delete_collection("test_connection")
+            client.get_collections()
             logger.info("Успешное подключение к Qdrant 1.15+")
             return client
         except Exception as e:
             logger.error(f"Ошибка подключения к Qdrant: {str(e)}")
             raise
 
-    def _verify_collection_structure(self):
-        """Проверяет и создает необходимые индексы payload"""
-        try:
-            # Проверка существования коллекции
-            if not self.qdrant_client.collection_exists(QDRANT_COLLECTION):
-                raise RuntimeError(f"Коллекция {QDRANT_COLLECTION} не существует")
-
-            # Список обязательных индексов
-            required_indexes = {
-                "document_id": "keyword",
-                "category": "keyword",
-                "chunk_id": "integer"
-            }
-
-            # Получаем информацию о существующих индексах
-            collection_info = self.qdrant_client.get_collection(QDRANT_COLLECTION)
-            existing_indexes = set()
-
-            # В Qdrant 1.5+ индексы хранятся в payload_schema
-            if hasattr(collection_info.config, 'payload_schema'):
-                for field_name, schema in collection_info.config.payload_schema.items():
-                    existing_indexes.add(field_name)
-
-            # Создание отсутствующих индексов
-            for field_name, schema_type in required_indexes.items():
-                if field_name not in existing_indexes:
-                    try:
-                        self.qdrant_client.create_payload_index(
-                            collection_name=QDRANT_COLLECTION,
-                            field_name=field_name,
-                            field_schema=schema_type
-                        )
-                        logger.info(f"Создан индекс для поля {field_name} ({schema_type})")
-                    except Exception as e:
-                        if "already exists" not in str(e):
-                            logger.error(f"Ошибка создания индекса для {field_name}: {str(e)}")
-                            raise
-
-        except Exception as e:
-            logger.error(f"Ошибка проверки структуры коллекции: {str(e)}")
-            raise RuntimeError(f"Не удалось проверить структуру коллекции Qdrant: {str(e)}")
-
-    # ... остальные методы класса без изменений ...
-
     def _load_models(self) -> Tuple[bool, str]:
         """Загрузка моделей с явным указанием возвращаемого типа"""
         try:
             # Dense модель
             if self.dense_model is None:
-                try:
-                    # Сначала загружаем модель без указания устройства
-                    self.dense_model = SentenceTransformer(
-                        "cointegrated/rubert-tiny2",
-                        device=None,  # Не указываем устройство при инициализации
-                        cache_folder=os.path.join(os.getcwd(), "models")
-                    )
-                    # Затем явно перемещаем на CPU
-                    self.dense_model.to('cpu')
-                    logger.info("Dense модель успешно загружена на CPU")
-                except Exception as e:
-                    logger.error(f"Ошибка загрузки dense модели: {str(e)}")
-                    return False, f"Ошибка dense модели: {str(e)}"
+                self.dense_model = SentenceTransformer(
+                    "cointegrated/rubert-tiny2",
+                    device="cpu",
+                    cache_folder=os.path.join(os.getcwd(), "models")
+                )
+                logger.info("Dense модель загружена")
 
             # Sparse модель
             if self.sparse_model is None:
@@ -113,11 +58,12 @@ class IndexBuilder:
                         cache_dir=os.path.join(os.getcwd(), "models")
                     )
                     logger.info("Sparse модель загружена")
+                    return True, "Все модели успешно загружены"
                 except Exception as e:
                     logger.error(f"Ошибка загрузки sparse модели: {str(e)}")
                     return False, f"Ошибка sparse модели: {str(e)}"
 
-            return True, "Все модели успешно загружены"
+            return True, "Модели уже были загружены"
     
         except Exception as e:
             logger.error(f"Критическая ошибка загрузки моделей: {str(e)}")
