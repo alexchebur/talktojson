@@ -204,13 +204,18 @@ class WebSearcher:
         
         # Формируем URL для DuckDuckGo Instant Answer API
         url = "https://api.duckduckgo.com/"
+
+
+
         params = {
             'q': query,
             'format': 'json',
             'no_html': '1',
             'skip_disambig': '1',
-            't': 'myapp'
+            't': 'myapp_' + str(int(time.time()))  # Динамический идентификатор
         }
+
+
         
         try:
             response = self.session.get(url, params=params, timeout=15)
