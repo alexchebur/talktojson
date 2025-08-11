@@ -107,7 +107,7 @@ class IndexBuilder:
                     from fastembed.sparse import SparseTextEmbedding
                 
                     self.sparse_model = SparseTextEmbedding(
-                        model_name="Qdrant/bm42-all-minilm-l6-v2-attentions",
+                        model_name="Qdrant/bm25",
                         cache_dir=os.path.join(os.getcwd(), "models")
                     )
                 
