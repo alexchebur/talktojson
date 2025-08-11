@@ -1,4 +1,4 @@
-#main.py 
+#main.py
 import sys
 import os
 os.environ["STREAMLIT_SERVER_ENABLE_STATIC_FILE_WATCHING"] = "false"
