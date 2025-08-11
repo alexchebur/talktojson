@@ -315,14 +315,29 @@ if st.button("Отправить", key="send_btn"):
         st.session_state.generated_keywords = search_data['expanded_keywords'][:5]
 
         # Этап 2: Параллельный поиск
+        # Этап 2: Параллельный поиск
         status_text.text("Поиск информации...")
         progress_bar.progress(40)
-        
+
         with ThreadPoolExecutor(max_workers=3) as executor:
-            # Веб-поиск
-            web_future = executor.submit(
-                lambda: [res for q in [user_input] + valid_queries for res in web_searcher.perform_search(q, 2)]
-            )
+            # Веб-поиск - теперь получаем и результаты, и ошибки
+            def search_with_errors(q):
+                return web_searcher.perform_search(q, 2)
+    
+            # Выполняем поиск для всех запросов
+            search_futures = [
+                executor.submit(search_with_errors, q) 
+                for q in [user_input] + valid_queries
+            ]
+    
+            # Собираем результаты и ошибки
+            web_results = []
+            ddg_errors = []
+    
+            for future in search_futures:
+                results, errors = future.result()
+                web_results.extend(results)
+                ddg_errors.extend(errors)
     
             # Гибридный поиск в Qdrant
             qdrant_future = executor.submit(
@@ -331,12 +346,21 @@ if st.button("Отправить", key="send_btn"):
                     top_k=5
                 )
             )
-            
-            web_results = web_future.result()
+    
             qdrant_results, search_error = qdrant_future.result()
             if search_error:
                 st.warning(search_error)
             st.session_state.search_error = search_error
+
+        # Сохраняем ошибки DuckDuckGo в session_state
+        if ddg_errors:
+            if 'ddg_errors' not in st.session_state:
+                st.session_state.ddg_errors = []
+            st.session_state.ddg_errors.extend(ddg_errors)
+            # Ограничиваем историю ошибок
+            st.session_state.ddg_errors = st.session_state.ddg_errors[-20:]
+
+
 
         progress_bar.progress(80)
         
@@ -454,30 +478,18 @@ with st.sidebar:
     # Добавляем блок для диагностики состояния поиска
     try:
         st.write("**Текущий статус поиска:**")
-        if st.session_state.get('ddg_available', True):
+        if st.session_state.web_searcher._is_ddg_available():
             st.success("✅ DuckDuckGo активен")
         else:
-            cooldown = st.session_state.get('ddg_error_cooldown', 0)
-            if cooldown > time.time():
+            cooldown = st.session_state.web_searcher.ddg_error_cooldown
+            if time.time() < cooldown:
                 remaining = int(cooldown - time.time())
                 st.warning(f"⏳ DuckDuckGo временно недоступен (осталось {remaining} сек)")
             else:
                 st.info("🔄 Попытка восстановления соединения с DuckDuckGo")
         
         # Показываем статистику использования
-        if st.session_state.get('search_stats'):
-            stats = st.session_state.search_stats
-            total = stats.get('ddg_success', 0) + stats.get('ddg_fail', 0) + stats.get('google_used', 0)
-            if total > 0:
-                ddg_success = stats.get('ddg_success', 0)
-                ddg_fail = stats.get('ddg_fail', 0)
-                google_used = stats.get('google_used', 0)
-                
-                st.write("**Статистика поиска:**")
-                st.write(f"- DuckDuckGo успехи: {ddg_success}")
-                st.write(f"- DuckDuckGo сбои: {ddg_fail}")
-                st.write(f"- Google CSE использован: {google_used}")
-                st.progress(min(1.0, ddg_success / total if total > 0 else 0))
+        # ... ваш существующий код для статистики ...
     
         # Добавляем блок для ошибок DuckDuckGo
         if st.session_state.get('ddg_errors'):
@@ -523,6 +535,7 @@ with st.sidebar:
     # Веб-результаты (оставляем существующий код)
     web_results = st.session_state.get('web_search_results', [])
     st.subheader("🌐 Веб-результаты")
+    # ... остальной код для веб-результатов ...
     # ... остальной код для веб-результатов ...
     if web_results:
         queries = {res['query'] for res in web_results}
