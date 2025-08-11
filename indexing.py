@@ -59,50 +59,21 @@ class IndexBuilder:
             raise
 
     def _load_models(self) -> Tuple[bool, str]:
-        """Загрузка моделей с использованием torch.nn.Module.to_empty()"""
         try:
-            # Dense модель - решение через to_empty()
+            # DENSE МОДЕЛЬ - ПРОСТАЯ ЗАГРУЗКА НА CPU
             if self.dense_model is None:
                 try:
-                    import torch
-                    from sentence_transformers import SentenceTransformer
-                
-                    # 1. Загружаем модель на мета-устройстве
-                    model = SentenceTransformer(
+                    self.dense_model = SentenceTransformer(
                         "cointegrated/rubert-tiny2",
-                        device="meta",  # Специальное мета-устройство
-                        cache_folder=os.path.join(os.getcwd(), "models")
+                        device="cpu",  # Явно указываем CPU
+                        cache_folder="models"
                     )
-                
-                    # 2. Создаем пустую модель на CPU
-                    model.to_empty(device='cpu')
-                
-                    # 3. Загружаем веса напрямую
-                    from transformers import AutoModel
-                    hf_model = AutoModel.from_pretrained(
-                        "cointegrated/rubert-tiny2",
-                        cache_dir=os.path.join(os.getcwd(), "models")
-                    )
-                
-                    # 4. Копируем веса
-                    with torch.no_grad():
-                        for param, hf_param in zip(model._first_module().auto_model.parameters(), 
-                                                  hf_model.parameters()):
-                            param.copy_(hf_param)
-                
-                    # 5. Переводим модель в режим оценки
-                    model.eval()
-                
-                    # 6. Тестовая проверка
-                    with torch.no_grad():
-                        model.encode("тестовая строка", convert_to_numpy=True)
-                
-                    self.dense_model = model
-                    logger.info("Dense модель успешно загружена с использованием to_empty()")
-                
+                    # Тестовая проверка
+                    self.dense_model.encode("тест", convert_to_numpy=True)
+                    logger.info("Dense модель загружена на CPU")
                 except Exception as e:
-                    logger.error(f"Критическая ошибка загрузки dense модели: {str(e)}")
-                    return False, f"Ошибка dense модели: {str(e)}"
+                    logger.error(f"Ошибка dense модели: {str(e)}")
+                    return False, f"Dense модель не загружена: {str(e)}"
 
             # Sparse модель - стандартная загрузка
             if self.sparse_model is None:
