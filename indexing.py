@@ -54,7 +54,7 @@ class IndexBuilder:
             if self.sparse_model is None:
                 try:
                     self.sparse_model = SparseTextEmbedding(
-                        "Qdrant/bm25",
+                        "Qdrant/bm42-all-minilm-l6-v2-attentions",
                         cache_dir=os.path.join(os.getcwd(), "models")
                     )
                     logger.info("Sparse модель загружена")
