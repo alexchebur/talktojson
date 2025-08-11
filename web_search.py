@@ -9,6 +9,8 @@ from typing import List, Dict, Tuple
 from config import USER_AGENTS, PRIORITY_SITES, API_TIMEOUT
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log
 import threading
+# Импортируем официальную библиотеку DuckDuckGo
+from duckduckgo_search import DDGS, DuckDuckGoSearchException
 
 logger = logging.getLogger(__name__)
 
@@ -189,112 +191,93 @@ class WebSearcher:
         self.ddg_error_cooldown = time.time() + cooldown
 
     @retry(
-        retry=retry_if_exception_type((requests.exceptions.RequestException,)),
+        retry=retry_if_exception_type((Exception,)),
         stop=stop_after_attempt(4),
         wait=wait_exponential(multiplier=2, min=2, max=10),
         before_sleep=before_sleep_log(logger, logging.WARNING)
     )
     def _duckduckgo_search(self, query: str, max_results: int) -> List[Dict]:
-        """Поиск через DuckDuckGo API с улучшенной обработкой ошибок и лимитов"""
+        """Поиск через DuckDuckGo с использованием официальной библиотеки duckduckgo_search"""
         # Используем лимитер для контроля частоты запросов
         self.ddg_limiter.acquire()
         
         # Добавляем небольшую случайную задержку для дополнительной защиты
         time.sleep(random.uniform(0.8, 1.5))
         
-        # Формируем URL для DuckDuckGo Instant Answer API
-        url = "https://api.duckduckgo.com/"
-
-
-
-        params = {
-            'q': query,
-            'format': 'json',
-            'no_html': '1',
-            'skip_disambig': '1',
-            't': 'myapp_' + str(int(time.time()))  # Динамический идентификатор
-        }
-
-
-        
         try:
-            response = self.session.get(url, params=params, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-            
-            # Проверка на наличие ошибки в ответе
-            if 'Error' in data and data['Error']:
-                error_msg = f"DuckDuckGo API вернул ошибку: {data['Error']}"
-                self._log_ddg_error("Ошибка API", data['Error'], query, 'error')
-                raise Exception(error_msg)
-            
-            results = []
-            
-            # 1. Обрабатываем основные результаты (из Results)
-            if 'Results' in data and data['Results']:
-                for item in data['Results'][:max_results]:
-                    if 'FirstURL' in item and item['FirstURL']:
-                        full_content = self.get_full_page_content(item['FirstURL'])
-                        custom_snippet = self._generate_snippet(full_content)
-                        
-                        results.append({
-                            'title': item.get('Text', 'Без названия')[:150],
-                            'url': item['FirstURL'],
-                            'snippet': custom_snippet,
-                            'full_content': full_content,
-                            'source': 'Results',
-                            'query': query
-                        })
-            
-            # 2. Обрабатываем связанные темы (RelatedTopics)
-            if len(results) < max_results and 'RelatedTopics' in data:
-                for topic in data['RelatedTopics']:
-                    if 'FirstURL' in topic and topic['FirstURL'] and len(results) < max_results:
-                        full_content = self.get_full_page_content(topic['FirstURL'])
-                        custom_snippet = self._generate_snippet(full_content)
-                        
-                        results.append({
-                            'title': topic.get('Text', 'Без названия')[:150],
-                            'url': topic['FirstURL'],
-                            'snippet': custom_snippet,
-                            'full_content': full_content,
-                            'source': 'RelatedTopics',
-                            'query': query
-                        })
-            
-            # 3. Обрабатываем основные результаты (из Heading)
-            if len(results) < max_results and 'Heading' in data and data['Heading'] and 'AbstractURL' in data and data['AbstractURL']:
-                full_content = self.get_full_page_content(data['AbstractURL'])
-                custom_snippet = self._generate_snippet(full_content)
+            # Создаем экземпляр DDGS и выполняем поиск
+            with DDGS() as ddgs:
+                # Выполняем поиск с указанным количеством результатов
+                results_generator = ddgs.text(
+                    query, 
+                    region='ru-ru',  # Для русскоязычных результатов
+                    safesearch='off',
+                    timelimit=None,
+                    max_results=max_results
+                )
                 
-                results.append({
-                    'title': data.get('Heading', 'Абстракт')[:150],
-                    'url': data['AbstractURL'],
-                    'snippet': custom_snippet,
-                    'full_content': full_content,
-                    'source': 'Abstract',
-                    'query': query
-                })
-            
-            # Проверяем, есть ли реальные результаты
-            if not results:
-                self._log_ddg_error("Пустой результат", "DuckDuckGo вернул пустые результаты", query, 'warning')
-                return []
-            
-            # Применяем фильтрацию по приоритетным сайтам, если есть
-            if self.priority_sites:
-                filtered_results = []
-                for site in self.priority_sites:
-                    for res in results:
-                        if site in res['url'] and len(filtered_results) < max_results:
-                            filtered_results.append(res)
-                if filtered_results:
-                    return filtered_results[:max_results]
-            
-            return results[:max_results]
-            
+                # Преобразуем генератор в список
+                search_results = list(results_generator)
+                
+                # Обрабатываем результаты
+                results = []
+                for item in search_results:
+                    # Получаем полный контент страницы
+                    full_content = self.get_full_page_content(item['href'])
+                    custom_snippet = self._generate_snippet(full_content)
+                    
+                    # Используем сниппет из API, если он доступен, иначе генерируем свой
+                    snippet = item.get('body', '')
+                    if not snippet:
+                        snippet = custom_snippet
+                    else:
+                        snippet = snippet[:300] + "..." if len(snippet) > 300 else snippet
+                    
+                    results.append({
+                        'title': item.get('title', 'Без названия')[:150],
+                        'url': item['href'],
+                        'snippet': snippet,
+                        'full_content': full_content,
+                        'source': 'DDGS',
+                        'query': query
+                    })
+                
+                # Проверяем, есть ли реальные результаты
+                if not results:
+                    self._log_ddg_error("Пустой результат", "DuckDuckGo вернул пустые результаты", query, 'warning')
+                    return []
+                
+                # Применяем фильтрацию по приоритетным сайтам, если есть
+                if self.priority_sites:
+                    filtered_results = []
+                    for site in self.priority_sites:
+                        for res in results:
+                            if site in res['url'] and len(filtered_results) < max_results:
+                                filtered_results.append(res)
+                    if filtered_results:
+                        return filtered_results[:max_results]
+                
+                return results[:max_results]
+                
+        except DuckDuckGoSearchException as e:
+            # Обработка специфических ошибок DuckDuckGo
+            error_msg = str(e)
+            if "rate limit" in error_msg.lower() or "429" in error_msg:
+                self._log_ddg_error("Ошибка лимита", error_msg, query, 'error')
+                raise
+            elif "captcha" in error_msg.lower():
+                self._log_ddg_error("Требуется CAPTCHA", error_msg, query, 'error')
+                raise
+            else:
+                self._log_ddg_error("Ошибка поиска", error_msg, query, 'error')
+                raise
         except Exception as e:
-            # Ошибка будет залоггирована в _execute_search
+            # Обработка других ошибок
+            error_msg = str(e)
+            if "timeout" in error_msg.lower():
+                self._log_ddg_error("Таймаут", error_msg, query, 'error')
+            else:
+                self._log_ddg_error("Неизвестная ошибка", error_msg, query, 'error')
             raise
 
     def _google_cse_search(self, query: str, max_results: int) -> List[Dict]:
