@@ -450,36 +450,80 @@ if st.session_state.get('final_opinion'):
 
 with st.sidebar:
     st.subheader("Результаты поиска")
-
     
-    # Добавляем блок для ошибок DuckDuckGo
-    if st.session_state.get('ddg_errors'):
-        error_count = len(st.session_state.ddg_errors)
-        error_types = [err['type'] for err in st.session_state.ddg_errors]
-        error_level = "error" if "error" in error_types else "warning"
-        
-        if error_level == "error":
-            with st.expander(f"⚠️ Ошибки DuckDuckGo ({error_count})", expanded=True):
-                for i, error in enumerate(reversed(st.session_state.ddg_errors[-3:])):  # Показываем последние 3 ошибки
-                    timestamp = time.strftime('%H:%M:%S', time.localtime(error['timestamp']))
-                    if error['type'] == 'error':
-                        st.error(f"**[{timestamp}]** Запрос: *'{error['query']}'*\n\n{error['error']}")
-                    else:
-                        st.warning(f"**[{timestamp}]** Запрос: *'{error['query']}'*\n\n{error['error']}")
-                    
-                    if i < len(st.session_state.ddg_errors[-3:]) - 1:
-                        st.divider()
+    # Добавляем блок для диагностики состояния поиска
+    try:
+        st.write("**Текущий статус поиска:**")
+        if st.session_state.get('ddg_available', True):
+            st.success("✅ DuckDuckGo активен")
         else:
-            with st.expander(f"ℹ️ Предупреждения DuckDuckGo ({error_count})", expanded=False):
-                for i, error in enumerate(reversed(st.session_state.ddg_errors)):
-                    timestamp = time.strftime('%H:%M:%S', time.localtime(error['timestamp']))
-                    st.info(f"**[{timestamp}]** Запрос: *'{error['query']}'*\n\n{error['error']}")
-                    if i < len(st.session_state.ddg_errors) - 1:
-                        st.divider()
+            cooldown = st.session_state.get('ddg_error_cooldown', 0)
+            if cooldown > time.time():
+                remaining = int(cooldown - time.time())
+                st.warning(f"⏳ DuckDuckGo временно недоступен (осталось {remaining} сек)")
+            else:
+                st.info("🔄 Попытка восстановления соединения с DuckDuckGo")
+        
+        # Показываем статистику использования
+        if st.session_state.get('search_stats'):
+            stats = st.session_state.search_stats
+            total = stats.get('ddg_success', 0) + stats.get('ddg_fail', 0) + stats.get('google_used', 0)
+            if total > 0:
+                ddg_success = stats.get('ddg_success', 0)
+                ddg_fail = stats.get('ddg_fail', 0)
+                google_used = stats.get('google_used', 0)
+                
+                st.write("**Статистика поиска:**")
+                st.write(f"- DuckDuckGo успехи: {ddg_success}")
+                st.write(f"- DuckDuckGo сбои: {ddg_fail}")
+                st.write(f"- Google CSE использован: {google_used}")
+                st.progress(min(1.0, ddg_success / total if total > 0 else 0))
     
- 
+        # Добавляем блок для ошибок DuckDuckGo
+        if st.session_state.get('ddg_errors'):
+            error_count = len(st.session_state.ddg_errors)
+            st.subheader(f"⚠️ Ошибки и предупреждения ({error_count})")
+            
+            # Сортируем ошибки по времени (сначала новые)
+            sorted_errors = sorted(
+                st.session_state.ddg_errors, 
+                key=lambda x: x['timestamp'], 
+                reverse=True
+            )
+            
+            # Показываем последние 5 ошибок
+            for i, error in enumerate(sorted_errors[:5]):
+                timestamp = time.strftime('%H:%M:%S', time.localtime(error['timestamp']))
+                
+                if error['type'] == 'error':
+                    with st.expander(f"🔴 Критическая ошибка [{timestamp}]", expanded=(i == 0)):
+                        st.write(f"**Тип:** {error['error_type']}")
+                        st.write(f"**Запрос:** `{error['query']}`")
+                        st.error(f"**Сообщение:**\n\n{error['error']}")
+                elif error['type'] == 'warning':
+                    with st.expander(f"🟠 Предупреждение [{timestamp}]", expanded=(i == 0)):
+                        st.write(f"**Тип:** {error['error_type']}")
+                        st.write(f"**Запрос:** `{error['query']}`")
+                        st.warning(f"**Сообщение:**\n\n{error['error']}")
+                else:
+                    with st.expander(f"🔵 Информация [{timestamp}]", expanded=False):
+                        st.write(f"**Тип:** {error['error_type']}")
+                        st.write(f"**Запрос:** `{error['query']}`")
+                        st.info(f"**Сообщение:**\n\n{error['error']}")
+                
+                if i < min(4, len(sorted_errors) - 1):
+                    st.divider()
+        else:
+            st.info("Нет записей об ошибках DuckDuckGo")
+            
+    except Exception as e:
+        st.error("Ошибка при отображении информации о поиске")
+        logger.error(f"Ошибка в сайдбаре поиска: {str(e)}", exc_info=True)
+    
+    # Веб-результаты (оставляем существующий код)
     web_results = st.session_state.get('web_search_results', [])
     st.subheader("🌐 Веб-результаты")
+    # ... остальной код для веб-результатов ...
     if web_results:
         queries = {res['query'] for res in web_results}
         for query in queries:
