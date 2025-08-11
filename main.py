@@ -450,8 +450,34 @@ if st.session_state.get('final_opinion'):
 
 with st.sidebar:
     st.subheader("Результаты поиска")
+
     
-    # Веб-результаты (единый блок)
+    # Добавляем блок для ошибок DuckDuckGo
+    if st.session_state.get('ddg_errors'):
+        error_count = len(st.session_state.ddg_errors)
+        error_types = [err['type'] for err in st.session_state.ddg_errors]
+        error_level = "error" if "error" in error_types else "warning"
+        
+        if error_level == "error":
+            with st.expander(f"⚠️ Ошибки DuckDuckGo ({error_count})", expanded=True):
+                for i, error in enumerate(reversed(st.session_state.ddg_errors[-3:])):  # Показываем последние 3 ошибки
+                    timestamp = time.strftime('%H:%M:%S', time.localtime(error['timestamp']))
+                    if error['type'] == 'error':
+                        st.error(f"**[{timestamp}]** Запрос: *'{error['query']}'*\n\n{error['error']}")
+                    else:
+                        st.warning(f"**[{timestamp}]** Запрос: *'{error['query']}'*\n\n{error['error']}")
+                    
+                    if i < len(st.session_state.ddg_errors[-3:]) - 1:
+                        st.divider()
+        else:
+            with st.expander(f"ℹ️ Предупреждения DuckDuckGo ({error_count})", expanded=False):
+                for i, error in enumerate(reversed(st.session_state.ddg_errors)):
+                    timestamp = time.strftime('%H:%M:%S', time.localtime(error['timestamp']))
+                    st.info(f"**[{timestamp}]** Запрос: *'{error['query']}'*\n\n{error['error']}")
+                    if i < len(st.session_state.ddg_errors) - 1:
+                        st.divider()
+    
+ 
     web_results = st.session_state.get('web_search_results', [])
     st.subheader("🌐 Веб-результаты")
     if web_results:
@@ -465,8 +491,8 @@ with st.sidebar:
     else:
         st.info("Нет веб-результатов")
 
-with st.sidebar:
-    st.subheader("Результаты поиска")
+#with st.sidebar:
+    #st.subheader("Результаты поиска")
     
     # Веб-результаты
     # ... (без изменений)
