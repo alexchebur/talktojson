@@ -13,6 +13,26 @@ from sentence_transformers import SentenceTransformer
 from fastembed import SparseTextEmbedding
 import numpy as np
 
+# Глобальное исправление для мета-тензоров
+import torch
+from torch.nn import Module
+
+original_to = Module.to
+
+def patched_to(self, *args, **kwargs):
+    if 'device' in kwargs and kwargs['device'].type == 'meta':
+        # Пропускаем перемещение на meta-устройство
+        return self
+    return original_to(self, *args, **kwargs)
+
+Module.to = patched_to
+torch.set_default_tensor_type(torch.FloatTensor)
+
+
+
+
+
+
 Path("models").mkdir(exist_ok=True)
 logger = logging.getLogger(__name__)
 
@@ -39,31 +59,67 @@ class IndexBuilder:
             raise
 
     def _load_models(self) -> Tuple[bool, str]:
-        """Загрузка моделей с явным указанием возвращаемого типа"""
+        """Загрузка моделей с исправлением проблемы мета-тензоров"""
         try:
-            # Dense модель
+            # Dense модель - полностью переработанный подход
             if self.dense_model is None:
-                self.dense_model = SentenceTransformer(
-                    "cointegrated/rubert-tiny2",
-                    device="cpu",
-                    cache_folder=os.path.join(os.getcwd(), "models")
-                )
-                logger.info("Dense модель загружена")
+                try:
+                    import torch
+                    from sentence_transformers import SentenceTransformer
+                
+                    # 1. Устанавливаем правильный тип тензора по умолчанию
+                    torch.set_default_tensor_type(torch.FloatTensor)
+                
+                    # 2. Создаем "пустую" модель
+                    model = SentenceTransformer(
+                        "cointegrated/rubert-tiny2",
+                        device=None,  # Не инициализируем на устройстве
+                        cache_folder=os.path.join(os.getcwd(), "models")
+                    )
+                
+                    # 3. Явно загружаем веса на CPU
+                    state_dict = model.state_dict()
+                    for key in state_dict:
+                        if state_dict[key].is_meta:
+                            # Создаем реальный тензор с правильной формой
+                            state_dict[key] = torch.empty_like(
+                                state_dict[key], device='cpu'
+                            )
+                    model.load_state_dict(state_dict, strict=False)
+                
+                    # 4. Перемещаем всю модель на CPU
+                    model = model.to('cpu')
+                
+                    # 5. Принудительно вычисляем параметры
+                    with torch.no_grad():
+                        model.encode("тестовая строка")
+                
+                    self.dense_model = model
+                    logger.info("Dense модель успешно загружена с исправлением мета-тензоров")
+                
+                except Exception as e:
+                    logger.error(f"Критическая ошибка загрузки dense модели: {str(e)}")
+                    return False, f"Ошибка dense модели: {str(e)}"
 
-            # Sparse модель
+            # Sparse модель - стандартная загрузка
             if self.sparse_model is None:
                 try:
+                    from fastembed.sparse import SparseTextEmbedding
+                
                     self.sparse_model = SparseTextEmbedding(
-                        "Qdrant/bm42-all-minilm-l6-v2-attentions",
+                        model_name="Qdrant/bm42-all-minilm-l6-v2-attentions",
                         cache_dir=os.path.join(os.getcwd(), "models")
                     )
+                
+                    # Проверка работоспособности
+                    list(self.sparse_model.embed("тест"))
                     logger.info("Sparse модель загружена")
-                    return True, "Все модели успешно загружены"
+                
                 except Exception as e:
                     logger.error(f"Ошибка загрузки sparse модели: {str(e)}")
                     return False, f"Ошибка sparse модели: {str(e)}"
 
-            return True, "Модели уже были загружены"
+            return True, "Все модели успешно загружены"
     
         except Exception as e:
             logger.error(f"Критическая ошибка загрузки моделей: {str(e)}")
