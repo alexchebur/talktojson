@@ -19,7 +19,7 @@ onnxruntime>=1.15.0
 nest-asyncio
 fasttext
 fastembed>=0.2.0
-duckduckgo_search
+duckduckgo-search
 
 
 
