@@ -315,29 +315,14 @@ if st.button("Отправить", key="send_btn"):
         st.session_state.generated_keywords = search_data['expanded_keywords'][:5]
 
         # Этап 2: Параллельный поиск
-        # Этап 2: Параллельный поиск
         status_text.text("Поиск информации...")
         progress_bar.progress(40)
-
+        
         with ThreadPoolExecutor(max_workers=3) as executor:
-            # Веб-поиск - теперь получаем и результаты, и ошибки
-            def search_with_errors(q):
-                return web_searcher.perform_search(q, 2)
-    
-            # Выполняем поиск для всех запросов
-            search_futures = [
-                executor.submit(search_with_errors, q) 
-                for q in [user_input] + valid_queries
-            ]
-    
-            # Собираем результаты и ошибки
-            web_results = []
-            ddg_errors = []
-    
-            for future in search_futures:
-                results, errors = future.result()
-                web_results.extend(results)
-                ddg_errors.extend(errors)
+            # Веб-поиск
+            web_future = executor.submit(
+                lambda: [res for q in [user_input] + valid_queries for res in web_searcher.perform_search(q, 2)]
+            )
     
             # Гибридный поиск в Qdrant
             qdrant_future = executor.submit(
@@ -346,21 +331,12 @@ if st.button("Отправить", key="send_btn"):
                     top_k=5
                 )
             )
-    
+            
+            web_results = web_future.result()
             qdrant_results, search_error = qdrant_future.result()
             if search_error:
                 st.warning(search_error)
             st.session_state.search_error = search_error
-
-        # Сохраняем ошибки DuckDuckGo в session_state
-        if ddg_errors:
-            if 'ddg_errors' not in st.session_state:
-                st.session_state.ddg_errors = []
-            st.session_state.ddg_errors.extend(ddg_errors)
-            # Ограничиваем историю ошибок
-            st.session_state.ddg_errors = st.session_state.ddg_errors[-20:]
-
-
 
         progress_bar.progress(80)
         
@@ -475,68 +451,9 @@ if st.session_state.get('final_opinion'):
 with st.sidebar:
     st.subheader("Результаты поиска")
     
-    # Добавляем блок для диагностики состояния поиска
-    try:
-        st.write("**Текущий статус поиска:**")
-        if st.session_state.web_searcher._is_ddg_available():
-            st.success("✅ DuckDuckGo активен")
-        else:
-            cooldown = st.session_state.web_searcher.ddg_error_cooldown
-            if time.time() < cooldown:
-                remaining = int(cooldown - time.time())
-                st.warning(f"⏳ DuckDuckGo временно недоступен (осталось {remaining} сек)")
-            else:
-                st.info("🔄 Попытка восстановления соединения с DuckDuckGo")
-        
-        # Показываем статистику использования
-        # ... ваш существующий код для статистики ...
-    
-        # Добавляем блок для ошибок DuckDuckGo
-        if st.session_state.get('ddg_errors'):
-            error_count = len(st.session_state.ddg_errors)
-            st.subheader(f"⚠️ Ошибки и предупреждения ({error_count})")
-            
-            # Сортируем ошибки по времени (сначала новые)
-            sorted_errors = sorted(
-                st.session_state.ddg_errors, 
-                key=lambda x: x['timestamp'], 
-                reverse=True
-            )
-            
-            # Показываем последние 5 ошибок
-            for i, error in enumerate(sorted_errors[:5]):
-                timestamp = time.strftime('%H:%M:%S', time.localtime(error['timestamp']))
-                
-                if error['type'] == 'error':
-                    with st.expander(f"🔴 Критическая ошибка [{timestamp}]", expanded=(i == 0)):
-                        st.write(f"**Тип:** {error['error_type']}")
-                        st.write(f"**Запрос:** `{error['query']}`")
-                        st.error(f"**Сообщение:**\n\n{error['error']}")
-                elif error['type'] == 'warning':
-                    with st.expander(f"🟠 Предупреждение [{timestamp}]", expanded=(i == 0)):
-                        st.write(f"**Тип:** {error['error_type']}")
-                        st.write(f"**Запрос:** `{error['query']}`")
-                        st.warning(f"**Сообщение:**\n\n{error['error']}")
-                else:
-                    with st.expander(f"🔵 Информация [{timestamp}]", expanded=False):
-                        st.write(f"**Тип:** {error['error_type']}")
-                        st.write(f"**Запрос:** `{error['query']}`")
-                        st.info(f"**Сообщение:**\n\n{error['error']}")
-                
-                if i < min(4, len(sorted_errors) - 1):
-                    st.divider()
-        else:
-            st.info("Нет записей об ошибках DuckDuckGo")
-            
-    except Exception as e:
-        st.error("Ошибка при отображении информации о поиске")
-        logger.error(f"Ошибка в сайдбаре поиска: {str(e)}", exc_info=True)
-    
-    # Веб-результаты (оставляем существующий код)
+    # Веб-результаты (единый блок)
     web_results = st.session_state.get('web_search_results', [])
     st.subheader("🌐 Веб-результаты")
-    # ... остальной код для веб-результатов ...
-    # ... остальной код для веб-результатов ...
     if web_results:
         queries = {res['query'] for res in web_results}
         for query in queries:
@@ -548,8 +465,8 @@ with st.sidebar:
     else:
         st.info("Нет веб-результатов")
 
-#with st.sidebar:
-    #st.subheader("Результаты поиска")
+with st.sidebar:
+    st.subheader("Результаты поиска")
     
     # Веб-результаты
     # ... (без изменений)
