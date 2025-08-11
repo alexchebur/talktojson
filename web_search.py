@@ -9,6 +9,7 @@ from typing import List, Dict
 from config import USER_AGENTS, PRIORITY_SITES, API_TIMEOUT
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, before_sleep_log
 import threading
+import streamlit as st
 
 logger = logging.getLogger(__name__)
 
@@ -63,13 +64,31 @@ class WebSearcher:
         self.ddg_cache = {}
         self.cache_ttl = 300  # 5 минут в секундах
         
-        # Лимитер для DuckDuckGo (1 запрос в 2 секунды для большей надежности)
-        self.ddg_limiter = RateLimiter(calls=1, period=2.0)
+        # Лимитер для DuckDuckGo (1 запрос в 2.5 секунды для большей надежности)
+        self.ddg_limiter = RateLimiter(calls=1, period=2.5)
         
         # Отслеживание статуса DuckDuckGo
         self.ddg_available = True
         self.last_ddg_error = None
         self.ddg_error_cooldown = 0
+        
+        # Инициализация session_state для ошибок, если еще не сделано
+        self._init_session_state()
+    
+    def _init_session_state(self):
+        """Инициализация session_state для ошибок DuckDuckGo"""
+        try:
+            if 'ddg_errors' not in st.session_state:
+                st.session_state.ddg_errors = []
+            if 'ddg_available' not in st.session_state:
+                st.session_state.ddg_available = True
+            if 'ddg_error_cooldown' not in st.session_state:
+                st.session_state.ddg_error_cooldown = 0
+            if 'search_stats' not in st.session_state:
+                st.session_state.search_stats = {'ddg_success': 0, 'ddg_fail': 0, 'google_used': 0}
+        except:
+            # Streamlit может быть не инициализирован при первом импорте
+            pass
     
     def perform_search(self, query: str, max_results: int = 1, query_type="generated") -> List[Dict]:
         try:
@@ -79,7 +98,8 @@ class WebSearcher:
                 res['query_type'] = query_type  # Тип запроса
             return results
         except Exception as e:
-            st.error(f"Ошибка поиска: {str(e)}")
+            logger.error(f"Ошибка поиска: {str(e)}")
+            self._log_ddg_error("Общая ошибка поиска", str(e), query)
             return []
 
     def _execute_search(self, query: str, max_results: int) -> List[Dict]:
@@ -90,12 +110,15 @@ class WebSearcher:
         if cache_key in self.ddg_cache:
             cached_time, results = self.ddg_cache[cache_key]
             if time.time() - cached_time < self.cache_ttl:
-                st.info(f"Используем кэшированные результаты DuckDuckGo для запроса: {query}")
+                logger.info(f"Используем кэшированные результаты DuckDuckGo для запроса: {query}")
+                # Обновляем статистику
+                self._update_search_stats('ddg_success')
                 return results
         
         # Проверяем, не в "черном списке" ли DuckDuckGo из-за предыдущих ошибок
         if not self._is_ddg_available():
-            st.warning("DuckDuckGo временно недоступен из-за предыдущих ошибок, используем Google CSE")
+            logger.warning("DuckDuckGo временно недоступен из-за предыдущих ошибок, используем Google CSE")
+            self._update_search_stats('google_used')
             return self._google_cse_search(query, max_results)
         
         # Сначала пробуем DuckDuckGo
@@ -104,46 +127,105 @@ class WebSearcher:
             
             # Если получили результаты из DuckDuckGo, возвращаем их и кэшируем
             if duckduckgo_results:
-                st.info(f"Получено {len(duckduckgo_results)} результатов из DuckDuckGo")
+                logger.info(f"Получено {len(duckduckgo_results)} результатов из DuckDuckGo")
                 self.ddg_cache[cache_key] = (time.time(), duckduckgo_results)
+                self._update_search_stats('ddg_success')
                 return duckduckgo_results
             else:
-                st.warning(f"DuckDuckGo вернул пустые результаты для запроса: {query}")
+                logger.warning(f"DuckDuckGo вернул пустые результаты для запроса: {query}")
+                self._log_ddg_error("Пустой результат", "DuckDuckGo вернул пустые результаты", query)
+                self._update_search_stats('ddg_fail')
         except Exception as e:
-            st.error(f"Ошибка при поиске через DuckDuckGo: {str(e)}")
-            self._handle_ddg_error(e)
+            logger.error(f"Ошибка при поиске через DuckDuckGo: {str(e)}")
+            self._handle_ddg_error(e, query)
+            self._update_search_stats('ddg_fail')
         
         # Если DuckDuckGo не сработал, используем Google CSE
-        st.warning("DuckDuckGo не вернул результатов, переключаемся на Google CSE")
+        logger.warning("DuckDuckGo не вернул результатов, переключаемся на Google CSE")
+        self._update_search_stats('google_used')
         return self._google_cse_search(query, max_results)
 
     def _is_ddg_available(self) -> bool:
         """Проверяет, доступен ли DuckDuckGo после предыдущих ошибок"""
+        # Сначала обновляем статус из session_state
+        try:
+            self.ddg_available = st.session_state.get('ddg_available', True)
+            self.ddg_error_cooldown = st.session_state.get('ddg_error_cooldown', 0)
+        except:
+            pass
+            
         if not self.ddg_available:
             # Если прошло достаточно времени с последней ошибки, пробуем снова
             if time.time() > self.ddg_error_cooldown:
-                st.info("Сброс состояния недоступности DuckDuckGo, пробуем снова")
+                logger.info("Сброс состояния недоступности DuckDuckGo, пробуем снова")
                 self.ddg_available = True
+                self._update_ddg_status(True, 0)
                 return True
             return False
         return True
 
-    def _handle_ddg_error(self, error):
+    def _handle_ddg_error(self, error, query):
         """Обрабатывает ошибки DuckDuckGo и устанавливает временный запрет на использование"""
         self.last_ddg_error = str(error)
         self.ddg_available = False
         
+        # Сохраняем информацию в session_state
+        self._log_ddg_error("Ошибка API", str(error), query)
+        
         # Устанавливаем разное время простоя в зависимости от типа ошибки
-        if "limit" in str(error).lower() or "429" in str(error):
+        if "limit" in str(error).lower() or "429" in str(error) or "rate limit" in str(error).lower():
             # При ошибках лимита ждем дольше - 5-10 минут
             cooldown = random.uniform(300, 600)
-            st.warning(f"Обнаружен лимит запросов DuckDuckGo. Приостанавливаем использование на {cooldown:.0f} секунд")
+            logger.warning(f"Обнаружен лимит запросов DuckDuckGo. Приостанавливаем использование на {cooldown:.0f} секунд")
+        elif "timeout" in str(error).lower():
+            # Для таймаутов ждем меньше - 1-3 минуты
+            cooldown = random.uniform(60, 180)
+            logger.warning(f"Таймаут DuckDuckGo: {error}. Приостанавливаем использование на {cooldown:.0f} секунд")
         else:
             # Для других ошибок ждем меньше - 2-5 минут
             cooldown = random.uniform(120, 300)
-            st.warning(f"Ошибка DuckDuckGo: {error}. Приостанавливаем использование на {cooldown:.0f} секунд")
+            logger.warning(f"Ошибка DuckDuckGo: {error}. Приостанавливаем использование на {cooldown:.0f} секунд")
         
         self.ddg_error_cooldown = time.time() + cooldown
+        self._update_ddg_status(False, self.ddg_error_cooldown)
+
+    def _update_ddg_status(self, available: bool, cooldown: float):
+        """Обновляет статус DuckDuckGo в session_state"""
+        try:
+            st.session_state.ddg_available = available
+            st.session_state.ddg_error_cooldown = cooldown
+        except:
+            pass
+
+    def _log_ddg_error(self, error_type: str, error_msg: str, query: str):
+        """Логгирует ошибку DuckDuckGo в session_state для отображения в интерфейсе"""
+        try:
+            if 'ddg_errors' not in st.session_state:
+                st.session_state.ddg_errors = []
+                
+            st.session_state.ddg_errors.append({
+                'timestamp': time.time(),
+                'error_type': error_type,
+                'error': error_msg,
+                'query': query,
+                'type': 'error' if "limit" in error_msg.lower() or "429" in error_msg else 'warning'
+            })
+            # Ограничиваем историю ошибок 20 последними записями
+            if len(st.session_state.ddg_errors) > 20:
+                st.session_state.ddg_errors = st.session_state.ddg_errors[-20:]
+        except Exception as e:
+            logger.debug(f"Не удалось записать ошибку в session_state: {str(e)}")
+
+    def _update_search_stats(self, stat_type: str):
+        """Обновляет статистику поиска в session_state"""
+        try:
+            if 'search_stats' not in st.session_state:
+                st.session_state.search_stats = {'ddg_success': 0, 'ddg_fail': 0, 'google_used': 0}
+            
+            if stat_type in st.session_state.search_stats:
+                st.session_state.search_stats[stat_type] += 1
+        except Exception as e:
+            logger.debug(f"Не удалось обновить статистику поиска: {str(e)}")
 
     @retry(
         retry=retry_if_exception_type((requests.exceptions.RequestException,)),
@@ -178,6 +260,7 @@ class WebSearcher:
             if 'Error' in data and data['Error']:
                 error_msg = f"DuckDuckGo API вернул ошибку: {data['Error']}"
                 logger.error(error_msg)
+                self._log_ddg_error("Ошибка API", data['Error'], query)
                 raise Exception(error_msg)
             
             results = []
@@ -194,7 +277,8 @@ class WebSearcher:
                             'url': item['FirstURL'],
                             'snippet': custom_snippet,
                             'full_content': full_content,
-                            'source': 'Results'
+                            'source': 'Results',
+                            'query': query
                         })
             
             # 2. Обрабатываем связанные темы (RelatedTopics)
@@ -209,26 +293,12 @@ class WebSearcher:
                             'url': topic['FirstURL'],
                             'snippet': custom_snippet,
                             'full_content': full_content,
-                            'source': 'RelatedTopics'
+                            'source': 'RelatedTopics',
+                            'query': query
                         })
             
             # 3. Обрабатываем основные результаты (из Heading)
-            if len(results) < max_results and 'Heading' in data and data['Heading']:
-                for item in data.get('RelatedTopics', []):
-                    if 'FirstURL' in item and item['FirstURL'] and len(results) < max_results:
-                        full_content = self.get_full_page_content(item['FirstURL'])
-                        custom_snippet = self._generate_snippet(full_content)
-                        
-                        results.append({
-                            'title': item.get('Text', 'Без названия')[:150],
-                            'url': item['FirstURL'],
-                            'snippet': custom_snippet,
-                            'full_content': full_content,
-                            'source': 'Heading'
-                        })
-            
-            # 4. Обрабатываем основные результаты (из AbstractURL)
-            if len(results) < max_results and 'AbstractURL' in data and data['AbstractURL']:
+            if len(results) < max_results and 'Heading' in data and data['Heading'] and 'AbstractURL' in data and data['AbstractURL']:
                 full_content = self.get_full_page_content(data['AbstractURL'])
                 custom_snippet = self._generate_snippet(full_content)
                 
@@ -237,12 +307,14 @@ class WebSearcher:
                     'url': data['AbstractURL'],
                     'snippet': custom_snippet,
                     'full_content': full_content,
-                    'source': 'Abstract'
+                    'source': 'Abstract',
+                    'query': query
                 })
             
             # Проверяем, есть ли реальные результаты
             if not results:
-                st.warning(f"DuckDuckGo вернул пустой результат для запроса: {query}")
+                logger.warning(f"DuckDuckGo вернул пустой результат для запроса: {query}")
+                self._log_ddg_error("Пустой результат", "DuckDuckGo вернул пустые результаты", query)
                 return []
             
             # Применяем фильтрацию по приоритетным сайтам, если есть
@@ -258,7 +330,7 @@ class WebSearcher:
             return results[:max_results]
             
         except Exception as e:
-            st.error(f"Ошибка при поиске через DuckDuckGo: {str(e)}")
+            logger.error(f"Ошибка при поиске через DuckDuckGo: {str(e)}")
             # Если это ошибка ограничения запросов, делаем дополнительную задержку
             if "limit" in str(e).lower() or "429" in str(e) or "rate limit" in str(e).lower():
                 time.sleep(random.uniform(8, 12))
@@ -289,17 +361,31 @@ class WebSearcher:
                     'url': item.get('link', '#'),
                     'snippet': custom_snippet,
                     'full_content': full_content,
-                    'source': 'Google CSE'
+                    'source': 'Google CSE',
+                    'query': query
                 })
             time.sleep(1.5)
             return results
         except Exception as e:
             logger.error(f"Ошибка выполнения поиска через Google CSE: {str(e)}")
+            # Логгируем ошибку Google CSE
+            try:
+                if 'ddg_errors' not in st.session_state:
+                    st.session_state.ddg_errors = []
+                st.session_state.ddg_errors.append({
+                    'timestamp': time.time(),
+                    'error_type': 'Google CSE Ошибка',
+                    'error': str(e),
+                    'query': query,
+                    'type': 'warning'
+                })
+            except:
+                pass
             return []
 
     def _generate_snippet(self, full_content: str) -> str:
         """Генерация улучшенного сниппета из полного контента"""
-        if not full_content or full_content == "Контент не найден":
+        if not full_content or full_content == "Контент не найден" or len(full_content.strip()) == 0:
             return "Контент не найден или недоступен"
         return full_content[:300] + "..." if len(full_content) > 300 else full_content
 
