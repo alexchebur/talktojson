@@ -683,9 +683,9 @@ with st.sidebar:
                 for i, res in enumerate(sparse_results[:5]):
                     with st.expander(f"Разреженный #{i+1} (score: {res['score']:.4f})", expanded=False):
                         st.write(f"**Запрос:** `{res.get('query', 'не указан')}`")
-                        st.write(f"**ID документа:** `{res['id']}`")
+                        st.write(f"**ID документа:** `{res['document_id']}`")
                         st.write(f"**Источник:** `{res.get('source', 'неизвестен')}`")
-                        st.write(f"**Дата:** `{res.get('date', 'не указана')}`")
+                        st.write(f"**Дата:** `{res.get('document_date', 'не указана')}`")
                 
                         # Отображаем контент с ограничением
                         content = res.get('content', '')
