@@ -439,6 +439,9 @@ if st.button("Отправить", key="send_btn"):
                     qdrant_results_refined, _ = qdrant_future_refined.result()
                     st.session_state.refined_web_results = web_results_refined
                     st.session_state.refined_hybrid_results = qdrant_results_refined
+                    # После получения refined_queries, web_results_refined и qdrant_results_refined
+                    st.session_state.refined_queries = refined_queries
+
                 
 
                 
@@ -599,7 +602,93 @@ with st.sidebar:
         st.write(", ".join(keywords))
     else:
         st.info("Нет ключевых слов")
-  
+    # === УТОЧНЯЮЩИЕ РЕЗУЛЬТАТЫ ===
+    refined_web = st.session_state.get('refined_web_results', [])
+    if refined_web:
+       st.subheader("🔍 Уточняющие веб-результаты")
+        queries = {res['query'] for res in refined_web}
+        for query in queries:
+            query_results = [res for res in refined_web if res['query'] == query]
+            with st.expander(f"Уточняющий запрос: '{query}' ({len(query_results)} результатов)", expanded=False):
+                for i, res in enumerate(query_results):
+                    st.markdown(f"**{i+1}. [{res['title']}]({res['url']})**")
+                    st.caption(f"Домен: {res.get('domain', 'неизвестен')}")
+                    st.caption(f"Сниппет: {res['snippet'][:200]}{'...' if len(res['snippet']) > 200 else ''}")
+                    with st.expander("Показать полный контент", expanded=False):
+                        st.write(res.get('full_content', '')[:1000] + "...")
+    else:
+        st.info("Нет уточняющих веб-результатов")
+
+    refined_hybrid = st.session_state.get('refined_hybrid_results', [])
+    if refined_hybrid:
+        st.subheader("🔍 Уточняющий гибридный поиск")
+    
+        dense_results = [r for r in refined_hybrid if r.get('vector_type') == 'dense']
+        sparse_results = [r for r in refined_hybrid if r.get('vector_type') == 'sparse']
+    
+        tab1, tab2 = st.tabs(["Плотные векторы", "Разреженные векторы"])
+    
+        with tab1:
+            if dense_results:
+                for i, res in enumerate(dense_results[:5]):
+                    with st.expander(f"Плотный #{i+1} (score: {res['score']:.4f})", expanded=False):
+                        st.write(f"**Запрос:** `{res.get('query', 'не указан')}`")
+                        st.write(f"**ID документа:** `{res['id']}`")
+                        st.write(f"**Источник:** `{res.get('source', 'неизвестен')}`")
+                        st.write(f"**Дата:** `{res.get('date', 'не указана')}`")
+                    
+                        # Отображаем контент с ограничением
+                        content = res.get('content', '')
+                        if len(content) > 500:
+                            with st.expander("Показать полный текст", expanded=False):
+                                st.write(content)
+                            st.caption(f"Кратко: {content[:500]}...")
+                        else:
+                            st.write(f"**Текст:** {content}")
+                    
+                        # Информация о контексте
+                        if 'expanded_context' in res and res['expanded_context']:
+                            st.caption(f"Расширенный контекст: {len(res['expanded_context'])} символов")
+            else:
+                st.info("Нет результатов по плотным векторам")
+    
+        with tab2:
+            if sparse_results:
+                for i, res in enumerate(sparse_results[:5]):
+                    with st.expander(f"Разреженный #{i+1} (score: {res['score']:.4f})", expanded=False):
+                        st.write(f"**Запрос:** `{res.get('query', 'не указан')}`")
+                        st.write(f"**ID документа:** `{res['id']}`")
+                        st.write(f"**Источник:** `{res.get('source', 'неизвестен')}`")
+                        st.write(f"**Дата:** `{res.get('date', 'не указана')}`")
+                    
+                        # Отображаем контент с ограничением
+                        content = res.get('content', '')
+                        if len(content) > 500:
+                            with st.expander("Показать полный текст", expanded=False):
+                                st.write(content)
+                            st.caption(f"Кратко: {content[:500]}...")
+                        else:
+                            st.write(f"**Текст:** {content}")
+                    
+                        # Информация о sparse-векторе
+                        if 'sparse_vector' in res:
+                            st.caption(f"Размерность sparse: {res['sparse_vector'].get('dim', 'N/A')}")
+                            st.caption(f"Ненулевых элементов: {res['sparse_vector'].get('nnz', 'N/A')}")
+            else:
+                st.info("Нет результатов по разреженным векторам")
+    else:
+        st.info("Уточняющий гибридный поиск не дал результатов")
+
+    # === УТОЧНЯЮЩИЕ ЗАПРОСЫ (РАБОТАЕТ ТЕПЕРЬ!) ===
+    if st.session_state.get('refined_queries'):
+        st.subheader("🔍 Сгенерированные уточняющие запросы")
+        for i, query in enumerate(st.session_state.refined_queries):
+            st.code(f"{i+1}. {query}")
+    
+        # Добавляем статистику по уточняющим запросам
+        st.caption(f"Всего сгенерировано: {len(st.session_state.refined_queries)}")
+    else:
+        st.info("Нет сгенерированных уточняющих запросов") 
     
     # Блок уточняющих запросов
     if st.session_state.get('refined_queries'):
