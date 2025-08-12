@@ -594,7 +594,7 @@ with st.sidebar:
                                     st.write(content)
                                 else:
                                     st.caption(f"Кратко: {content[:500]}...")
-                           else:
+                            else:
                                 st.write(f"**Текст:** {content}")
             
                             # Информация о sparse-векторе
