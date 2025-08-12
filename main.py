@@ -521,40 +521,41 @@ with st.sidebar:
     
     # Гибридные результаты
 
-    primary_hybrid = st.session_state.get('primary_hybrid_results', [])
-    if primary_hybrid:
-        st.subheader("🔍 Первичный гибридный поиск")
+    with st.sidebar:
+        st.subheader("🔍 Результаты гибридного поиска")
+
+        # Get hybrid_results from session state
+        hybrid_results = st.session_state.get('hybrid_results', [])
     
-        dense_results = [r for r in hybrid_results if r.get('vector_type') == 'dense']
-        sparse_results = [r for r in hybrid_results if r.get('vector_type') == 'sparse']
+        if hybrid_results:
+            dense_results = [r for r in hybrid_results if r.get('vector_type') == 'dense']
+            sparse_results = [r for r in hybrid_results if r.get('vector_type') == 'sparse']
     
-        tab1, tab2 = st.tabs(["Плотные векторы", "Разреженные векторы"])
+            tab1, tab2 = st.tabs(["Плотные векторы", "Разреженные векторы"])
     
-        with tab1:
-            if dense_results:
-                for i, res in enumerate(dense_results[:5]):
-                    with st.expander(f"Плотный #{i+1} (score: {res['score']:.2f})", expanded=False):
-                        st.write(f"**Запрос:** `{res.get('query', '')}`")
-                        # Показываем оригинальный контент, а не расширенный
-                        st.write(f"**Текст:** {res.get('content', '')[:10000]}...")
-                        st.write(f"**ID:** `{res['id']}`")
-                        # Добавляем информацию о расширенном контексте
-                        st.caption(f"Контекст: {len(res.get('expanded_context', ''))} символов")
-            else:
-                st.info("Нет результатов по плотным векторам")
+            with tab1:
+                if dense_results:
+                    for i, res in enumerate(dense_results[:5]):
+                        with st.expander(f"Плотный #{i+1} (score: {res['score']:.2f})", expanded=False):
+                            st.write(f"**Запрос:** `{res.get('query', '')}`")
+                            st.write(f"**Текст:** {res.get('content', '')[:10000]}...")
+                            st.write(f"**ID:** `{res['id']}`")
+                            st.caption(f"Контекст: {len(res.get('expanded_context', ''))} символов")
+                else:
+                    st.info("Нет результатов по плотным векторам")
     
-        with tab2:
-            if sparse_results:
-                for i, res in enumerate(sparse_results[:5]):
-                    with st.expander(f"Разреженный #{i+1} (score: {res['score']:.2f})", expanded=False):
-                        st.write(f"**Запрос:** `{res.get('query', '')}`")
-                        st.write(f"**Текст:** {res.get('content', '')[:10000]}...")
-                        st.write(f"**ID:** `{res['id']}`")
-                        st.caption(f"Контекст: {len(res.get('expanded_context', ''))} символов")
-            else:
-                st.info("Нет результатов по разреженным векторам")
-    else:
-        st.info("Гибридный поиск не дал результатов")
+            with tab2:
+                if sparse_results:
+                    for i, res in enumerate(sparse_results[:5]):
+                        with st.expander(f"Разреженный #{i+1} (score: {res['score']:.2f})", expanded=False):
+                            st.write(f"**Запрос:** `{res.get('query', '')}`")
+                            st.write(f"**Текст:** {res.get('content', '')[:10000]}...")
+                            st.write(f"**ID:** `{res['id']}`")
+                            st.caption(f"Контекст: {len(res.get('expanded_context', ''))} символов")
+                else:
+                    st.info("Нет результатов по разреженным векторам")
+        else:
+            st.info("Гибридный поиск не дал результатов")
 
     # Сгенерированные запросы (единый блок)
     generated_queries = st.session_state.get('generated_queries', [])
