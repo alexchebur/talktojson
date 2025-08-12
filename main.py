@@ -503,13 +503,16 @@ with st.sidebar:
     st.subheader("Результаты поиска")
     
     # === ПЕРВИЧНЫЕ РЕЗУЛЬТАТЫ ===
+    # === ПЕРВИЧНЫЕ РЕЗУЛЬТАТЫ ===
     primary_web = st.session_state.get('primary_web_results', [])
     if primary_web:
         st.subheader("🌐 Первичные веб-результаты")
 
-        queries = {res['query'] for res in web_results}
+        # ОШИБКА БЫЛА ЗДЕСЬ: использовалась несуществующая переменная web_results
+        # Исправляем: заменяем web_results на primary_web
+        queries = {res['query'] for res in primary_web}
         for query in queries:
-            query_results = [res for res in web_results if res['query'] == query]
+            query_results = [res for res in primary_web if res['query'] == query]
             with st.expander(f"Запрос: '{query}' ({len(query_results)} результатов)", expanded=False):
                 for i, res in enumerate(query_results):
                     st.markdown(f"**{i+1}. [{res['title']}]({res['url']})**")
