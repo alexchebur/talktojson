@@ -179,8 +179,8 @@ STAGE3_PROMPT = """
 
 """
 
-# Добавляем новый промпт для STAGE3
-STAGE3_PROMPT = """
+# Добавляем новый промежуточный промпт (новый STAGE3)
+STAGE3_INTERMEDIATE_PROMPT = """
 ### РОЛЬ
 Ты - юрист-аналитик, проводящий углубленный анализ на основе первичных данных.
 
@@ -212,17 +212,17 @@ STAGE3_PROMPT = """
 {context}
 """
 
-# Переименовываем существующие промпты
-STAGE4_PROMPT = STAGE3_PROMPT  # Бывший STAGE3
-STAGE5_PROMPT = STAGE3_PROMPT  # Бывший STAGE3 (финальная проверка)
+# Переименовываем существующие промпты (сдвигаем нумерацию)
+STAGE4_PROMPT = STAGE2_PROMPT  # Бывший stage2 (генерация проекта)
+STAGE5_PROMPT = STAGE3_PROMPT  # Бывший stage3 (финальная проверка)
 
 # Обновляем функцию get_prompt
 def get_prompt(prompt_name: str, variables: dict) -> str:
     templates = {
         "stage1": STAGE1_PROMPT,
         "stage2": STAGE2_PROMPT,
-        "stage3": STAGE3_PROMPT,  # Новый промежуточный шаг
-        "stage4": STAGE4_PROMPT,  # Бывший stage2
-        "stage5": STAGE5_PROMPT   # Бывший stage3
+        "stage3": STAGE3_INTERMEDIATE_PROMPT,  # Новый промежуточный шаг
+        "stage4": STAGE4_PROMPT,  # Бывший stage2 (генерация проекта)
+        "stage5": STAGE5_PROMPT   # Бывший stage3 (финальная проверка)
     }
     return templates[prompt_name].format(**variables)
