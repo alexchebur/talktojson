@@ -1,4 +1,5 @@
 #main.py
+import hashlib
 import sys
 import os
 os.environ["STREAMLIT_SERVER_ENABLE_STATIC_FILE_WATCHING"] = "false"
@@ -636,6 +637,9 @@ with st.sidebar:
     else:
         st.info("Нет уточняющих веб-результатов")
 
+
+
+
     refined_hybrid = st.session_state.get('refined_hybrid_results', [])
     if refined_hybrid:
         st.subheader("🔍 Уточняющий гибридный поиск")
@@ -657,8 +661,10 @@ with st.sidebar:
                         # Отображаем контент с ограничением
                         content = res.get('content', '')
                         if len(content) > 500:
-                            # ЗАМЕНЯЕМ ВЛОЖЕННЫЙ EXPANDER НА CHECKBOX
-                            show_full = st.checkbox("Показать полный текст", key=f"show_full_dense_{i}_{res['id']}")
+                            # ГАРАНТИРУЕМ УНИКАЛЬНОСТЬ КЛЮЧА С ПОМОЩЬЮ ХЭША
+                            unique_id = hashlib.md5(res['id'].encode()).hexdigest()[:8]
+                            key = f"show_full_dense_{i}_{unique_id}"
+                            show_full = st.checkbox("Показать полный текст", key=key)
                             if show_full:
                                 st.write(content)
                             else:
@@ -684,8 +690,10 @@ with st.sidebar:
                         # Отображаем контент с ограничением
                         content = res.get('content', '')
                         if len(content) > 500:
-                            # ЗАМЕНЯЕМ ВЛОЖЕННЫЙ EXPANDER НА CHECKBOX
-                            show_full = st.checkbox("Показать полный текст", key=f"show_full_sparse_{i}_{res['id']}")
+                            # ГАРАНТИРУЕМ УНИКАЛЬНОСТЬ КЛЮЧА С ПОМОЩЬЮ ХЭША
+                            unique_id = hashlib.md5(res['id'].encode()).hexdigest()[:8]
+                            key = f"show_full_sparse_{i}_{unique_id}"
+                            show_full = st.checkbox("Показать полный текст", key=key)
                             if show_full:
                                 st.write(content)
                             else:
@@ -700,6 +708,10 @@ with st.sidebar:
             else:
                 st.info("Нет результатов по разреженным векторам")
 
+
+
+
+    
     # === УТОЧНЯЮЩИЕ ЗАПРОСЫ (РАБОТАЕТ ТЕПЕРЬ!) ===
     if st.session_state.get('refined_queries'):
         st.subheader("🔍 Сгенерированные уточняющие запросы")
