@@ -605,7 +605,7 @@ with st.sidebar:
     # === УТОЧНЯЮЩИЕ РЕЗУЛЬТАТЫ ===
     refined_web = st.session_state.get('refined_web_results', [])
     if refined_web:
-       st.subheader("🔍 Уточняющие веб-результаты")
+        st.subheader("🔍 Уточняющие веб-результаты")
         queries = {res['query'] for res in refined_web}
         for query in queries:
             query_results = [res for res in refined_web if res['query'] == query]
