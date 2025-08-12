@@ -444,7 +444,7 @@ if st.button("Отправить", key="send_btn"):
 
                 
 
-                
+        
             # Обновляем контекст с новыми результатами
             context_parts.append("\n\nУточняющие результаты:")
             for i, res in enumerate(web_results_refined[:3]):
