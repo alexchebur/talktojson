@@ -235,7 +235,7 @@ if uploaded_file:
             st.stop()
         
         # Сохраняем текст документа для контекста
-        st.session_state.document_text = clean_text(file_text)[:10000]  # Первые 10k символов
+        st.session_state.document_text = clean_text(file_text)[:70000]  # Первые 70k символов
 
 
 
