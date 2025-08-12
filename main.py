@@ -281,7 +281,6 @@ st.session_state.user_input = st.text_area(
 
 # ... (предыдущий код)
 
-# В обработке кнопки "Отправить" изменяем часть получения результатов:
 if st.button("Отправить", key="send_btn"):
     user_input = st.session_state.user_input.strip()
     
@@ -317,10 +316,12 @@ if st.button("Отправить", key="send_btn"):
         progress_bar.progress(40)
         
         with ThreadPoolExecutor(max_workers=3) as executor:
+            # Веб-поиск
             web_future = executor.submit(
                 lambda: [res for q in [user_input] + valid_queries for res in web_searcher.perform_search(q, 2)]
             )
     
+            # Гибридный поиск в Qdrant
             qdrant_future = executor.submit(
                 lambda: index_builder.hybrid_search(
                     queries=[user_input] + valid_queries,
@@ -336,6 +337,7 @@ if st.button("Отправить", key="send_btn"):
 
         progress_bar.progress(80)
         
+        # Сохраняем результаты
         st.session_state.web_search_results = web_results
         st.session_state.hybrid_results = qdrant_results
         st.session_state.search_stats = {
@@ -350,7 +352,7 @@ if st.button("Отправить", key="send_btn"):
         status_text.text("Формирование ответа...")
         context_parts = [
             f"Проблема: {search_data['problem_formulation']}",
-            "Веб-результаты:"
+            "Первичные веб-результаты:"
         ]
         
         for i, res in enumerate(web_results[:5]):
