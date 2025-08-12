@@ -575,18 +575,16 @@ with st.sidebar:
         st.info("Нет ключевых слов")
     # === УТОЧНЯЮЩИЕ РЕЗУЛЬТАТЫ ===
     refined_web = st.session_state.get('refined_web_results', [])
-    if refined_web:
-        st.subheader("🔍 Уточняющие веб-результаты")
-        queries = {res['query'] for res in refined_web}
-        for query in queries:
-            query_results = [res for res in refined_web if res['query'] == query]
-            with st.expander(f"Уточняющий запрос: '{query}' ({len(query_results)} результатов)", expanded=False):
-                for i, res in enumerate(query_results):
-                    st.markdown(f"**{i+1}. [{res['title']}]({res['url']})**")
-                    st.caption(f"Домен: {res.get('domain', 'неизвестен')}")
-                    st.caption(f"Сниппет: {res['snippet'][:200]}{'...' if len(res['snippet']) > 200 else ''}")
-                    with st.expander("Показать полный контент", expanded=False):
-                        st.write(res.get('full_content', '')[:1000] + "...")
+    if st.session_state.get('refined_web_results'):
+        st.subheader("🌐 Уточняющие веб-результаты")
+        for i, res in enumerate(st.session_state.refined_web_results[:5]):
+            st.markdown(f"**{i+1}. [{res['title']}]({res['url']})**")
+            st.caption(f"Домен: {res.get('domain', 'неизвестен')}")
+            st.caption(f"Сниппет: {res['snippet'][:200]}{'...' if len(res['snippet']) > 200 else ''}")
+        
+            # Replace nested expander with a button to show full content
+            if st.button(f"Показать полный контент {i+1}", key=f"full_content_{i}"):
+                st.write(res.get('full_content', '')[:1000] + "...")
     else:
         st.info("Нет уточняющих веб-результатов")
 
