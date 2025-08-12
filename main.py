@@ -536,14 +536,32 @@ with st.sidebar:
     
             tab1, tab2 = st.tabs(["Плотные векторы", "Разреженные векторы"])
     
+
+
             with tab1:
                 if dense_results:
                     for i, res in enumerate(dense_results[:5]):
-                        with st.expander(f"Плотный #{i+1} (score: {res['score']:.2f})", expanded=False):
-                            st.write(f"**Запрос:** `{res.get('query', '')}`")
-                            st.write(f"**Текст:** {res.get('content', '')[:10000]}...")
-                            st.write(f"**ID:** `{res['id']}`")
-                            st.caption(f"Контекст: {len(res.get('expanded_context', ''))} символов")
+                        with st.expander(f"Плотный #{i+1} (score: {res['score']:.4f})", expanded=False):
+                            st.write(f"**Запрос:** `{res.get('query', 'не указан')}`")
+                            st.write(f"**ID документа:** `{res['id']}`")
+                            st.write(f"**Источник:** `{res.get('source', 'неизвестен')}`")
+                            st.write(f"**Дата:** `{res.get('date', 'не указана')}`")
+            
+                            # Отображаем контент с ограничением
+                            content = res.get('content', '')
+                            if len(content) > 500:
+                                # ЗАМЕНЯЕМ ВЛОЖЕННЫЙ EXPANDER НА CHECKBOX
+                                show_full = st.checkbox("Показать полный текст", key=f"show_full_dense_{i}_{res['id']}")
+                                if show_full:
+                                    st.write(content)
+                                else:
+                                    st.caption(f"Кратко: {content[:500]}...")
+                            else:
+                                st.write(f"**Текст:** {content}")
+            
+                            # Информация о контексте
+                            if 'expanded_context' in res and res['expanded_context']:
+                                st.caption(f"Расширенный контекст: {len(res['expanded_context'])} символов")
                 else:
                     st.info("Нет результатов по плотным векторам")
     
@@ -557,6 +575,35 @@ with st.sidebar:
                             st.caption(f"Контекст: {len(res.get('expanded_context', ''))} символов")
                 else:
                     st.info("Нет результатов по разреженным векторам")
+
+            with tab2:
+                if sparse_results:
+                    for i, res in enumerate(sparse_results[:5]):
+                        with st.expander(f"Разреженный #{i+1} (score: {res['score']:.4f})", expanded=False):
+                            st.write(f"**Запрос:** `{res.get('query', 'не указан')}`")
+                            st.write(f"**ID документа:** `{res['id']}`")
+                            st.write(f"**Источник:** `{res.get('source', 'неизвестен')}`")
+                            st.write(f"**Дата:** `{res.get('date', 'не указана')}`")
+            
+                            # Отображаем контент с ограничением
+                            content = res.get('content', '')
+                            if len(content) > 500:
+                                # ЗАМЕНЯЕМ ВЛОЖЕННЫЙ EXPANDER НА CHECKBOX
+                                show_full = st.checkbox("Показать полный текст", key=f"show_full_sparse_{i}_{res['id']}")
+                                if show_full:
+                                    st.write(content)
+                                else:
+                                    st.caption(f"Кратко: {content[:500]}...")
+                           else:
+                                st.write(f"**Текст:** {content}")
+            
+                            # Информация о sparse-векторе
+                            if 'sparse_vector' in res:
+                                st.caption(f"Размерность sparse: {res['sparse_vector'].get('dim', 'N/A')}")
+                                st.caption(f"Ненулевых элементов: {res['sparse_vector'].get('nnz', 'N/A')}")
+                else:
+                    st.info("Нет результатов по разреженным векторам")
+        
         else:
             st.info("Гибридный поиск не дал результатов")
 
