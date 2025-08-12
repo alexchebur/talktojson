@@ -341,6 +341,7 @@ if st.button("Отправить", key="send_btn"):
         progress_bar.progress(80)
         
         # Сохраняем результаты
+
         st.session_state.web_search_results = web_results
         st.session_state.hybrid_results = qdrant_results
         st.session_state.search_stats = {
@@ -348,7 +349,8 @@ if st.button("Отправить", key="send_btn"):
             'dense': len([r for r in qdrant_results if r.get('vector_type') == 'dense']),
             'sparse': len([r for r in qdrant_results if r.get('vector_type') == 'sparse'])
         }
-
+        st.session_state.primary_web_results = web_results.copy()
+        st.session_state.primary_hybrid_results = qdrant_results.copy()
         # Этап 3: Формирование контекста
         status_text.text("Формирование ответа...")
         context_parts = [
@@ -412,11 +414,11 @@ if st.button("Отправить", key="send_btn"):
                     for line in queries_section.split('\n') 
                     if re.match(r'^\d+\.', line)
                 ][:5]
-        
+                st.session_state.refined_queries = refined_queries  # <-- ЭТО БЫЛО ПРОПУЩЕНО
+
             # Сохраняем предварительный проект
             if "Предварительный проект:" in stage3_response:
                 st.session_state.preliminary_draft = stage3_response.split("Предварительный проект:")[1].strip()
-        
             # Выполняем новый поиск по уточняющим запросам
             if refined_queries:
                 with ThreadPoolExecutor(max_workers=3) as executor:
@@ -435,10 +437,10 @@ if st.button("Отправить", key="send_btn"):
                 
                     web_results_refined = web_future_refined.result()
                     qdrant_results_refined, _ = qdrant_future_refined.result()
+                    st.session_state.refined_web_results = web_results_refined
+                    st.session_state.refined_hybrid_results = qdrant_results_refined
                 
-                    # Объединяем с первичными результатами
-                    st.session_state.web_search_results += web_results_refined
-                    st.session_state.hybrid_results += qdrant_results_refined
+
                 
             # Обновляем контекст с новыми результатами
             context_parts.append("\n\nУточняющие результаты:")
@@ -527,10 +529,11 @@ if st.session_state.get('final_opinion'):
 with st.sidebar:
     st.subheader("Результаты поиска")
     
-    # Веб-результаты (единый блок)
-    web_results = st.session_state.get('web_search_results', [])
-    st.subheader("🌐 Веб-результаты")
-    if web_results:
+    # === ПЕРВИЧНЫЕ РЕЗУЛЬТАТЫ ===
+    primary_web = st.session_state.get('primary_web_results', [])
+    if primary_web:
+        st.subheader("🌐 Первичные веб-результаты")
+
         queries = {res['query'] for res in web_results}
         for query in queries:
             query_results = [res for res in web_results if res['query'] == query]
@@ -541,17 +544,14 @@ with st.sidebar:
     else:
         st.info("Нет веб-результатов")
 
-with st.sidebar:
-    st.subheader("Результаты поиска")
-    
-    # Веб-результаты
-    # ... (без изменений)
+
     
     # Гибридные результаты
-    hybrid_results = st.session_state.get('hybrid_results', [])
-    st.subheader("🔍 Результаты гибридного поиска")
 
-    if hybrid_results:
+    primary_hybrid = st.session_state.get('primary_hybrid_results', [])
+    if primary_hybrid:
+        st.subheader("🔍 Первичный гибридный поиск")
+    
         dense_results = [r for r in hybrid_results if r.get('vector_type') == 'dense']
         sparse_results = [r for r in hybrid_results if r.get('vector_type') == 'sparse']
     
@@ -683,117 +683,4 @@ with st.sidebar:
 
 
 
-with st.sidebar:
-    if st.button("🛠️ Техническая информация"):
-        try:
-            # Создаем контейнер для диагностики
-            with st.container():
-                st.subheader("Диагностика системы")
-                
-                # Проверка моделей
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write("**Dense-модель:**")
-                    if st.session_state.index_builder.dense_model:
-                        st.success("Загружена")
-                    else:
-                        st.error("Не загружена")
-                
-                with col2:
-                    st.write("**Sparse-модель:**")
-                    if st.session_state.index_builder.sparse_model:
-                        st.success("Загружена")
-                    else:
-                        st.error("Не загружена")
-                
-                # Проверка Qdrant
-                st.write("**Соединение с Qdrant:**")
-                try:
-                    collections = st.session_state.index_builder.qdrant_client.get_collections()
-                    st.success(f"Активно (коллекций: {len(collections.collections)})")
-                except Exception as e:
-                    st.error(f"Ошибка: {str(e)}")
-                
-                # Последние ошибки
-                if st.session_state.get('search_error'):
-                    st.write("**Последняя ошибка:**")
-                    st.error(st.session_state.search_error)
-                else:
-                    st.write("**Ошибки:**")
-                    st.info("Нет зарегистрированных ошибок")
-                
 
-
-                # Тест моделей
-                with st.expander("🧪 Тестирование моделей", expanded=False):
-                    test_text = st.text_input(
-                        "Введите текст для теста", 
-                        "пример правового запроса",
-                        key="test_input_text"
-                    )
-                    
-                    # Кнопки тестирования с callback
-                    if st.button("Тест dense-кодирования", 
-                                key="test_dense_btn",
-                                help="Проверка работы dense-модели"):
-                        try:
-                            if st.session_state.index_builder.dense_model:
-                                embedding = st.session_state.index_builder.dense_model.encode(test_text)
-                                st.session_state.test_results['dense'] = {
-                                    'dim': len(embedding),
-                                    'sample': embedding[:3].tolist()  # Первые 3 значения для примера
-                                }
-                                st.session_state.test_results['last_test'] = 'dense'
-                                st.rerun()  # Обновляем интерфейс
-                            else:
-                                st.session_state.test_results['last_test'] = 'dense_error'
-                                st.rerun()
-                        except Exception as e:
-                            st.session_state.test_results['last_test'] = f"dense_error: {str(e)}"
-                            st.rerun()
-                    
-                    if st.button("Тест sparse-кодирования",
-                                key="test_sparse_btn",
-                                help="Проверка работы sparse-модели"):
-                        try:
-                            if st.session_state.index_builder.sparse_model:
-                                vector = st.session_state.index_builder._generate_sparse_vector(test_text)
-                                if vector:
-                                    st.session_state.test_results['sparse'] = {
-                                        'indices': len(vector.indices),
-                                        'sample_indices': vector.indices[:3].tolist(),
-                                        'sample_values': vector.values[:3].tolist()
-                                    }
-                                    st.session_state.test_results['last_test'] = 'sparse'
-                                    st.rerun()
-                                else:
-                                    st.session_state.test_results['last_test'] = 'sparse_error'
-                                    st.rerun()
-                            else:
-                                st.session_state.test_results['last_test'] = 'sparse_error'
-                                st.rerun()
-                        except Exception as e:
-                            st.session_state.test_results['last_test'] = f"sparse_error: {str(e)}"
-                            st.rerun()
-                    
-                    # Отображение результатов тестов
-                    if st.session_state.test_results['last_test']:
-                        st.write("**Последний тест:**")
-                        
-                        if st.session_state.test_results['last_test'] == 'dense':
-                            res = st.session_state.test_results['dense']
-                            st.success(f"Dense-модель: размерность {res['dim']}")
-                            st.code(f"Пример вектора: {res['sample']}...")
-                        
-                        elif st.session_state.test_results['last_test'] == 'sparse':
-                            res = st.session_state.test_results['sparse']
-                            st.success(f"Sparse-модель: {res['indices']} индексов")
-                            st.code(f"Пример индексов: {res['sample_indices']}\n"
-                                   f"Пример значений: {res['sample_values']}")
-                        
-                        elif 'error' in st.session_state.test_results['last_test']:
-                            st.error("Ошибка тестирования:")
-                            st.code(st.session_state.test_results['last_test'])
-        
-        except Exception as e:
-            st.error(f"Ошибка диагностики: {str(e)}")
