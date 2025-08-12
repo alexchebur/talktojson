@@ -653,16 +653,19 @@ with st.sidebar:
                         st.write(f"**ID документа:** `{res['id']}`")
                         st.write(f"**Источник:** `{res.get('source', 'неизвестен')}`")
                         st.write(f"**Дата:** `{res.get('date', 'не указана')}`")
-                    
+                
                         # Отображаем контент с ограничением
                         content = res.get('content', '')
                         if len(content) > 500:
-                            with st.expander("Показать полный текст", expanded=False):
+                            # ЗАМЕНЯЕМ ВЛОЖЕННЫЙ EXPANDER НА CHECKBOX
+                            show_full = st.checkbox("Показать полный текст", key=f"show_full_dense_{i}_{res['id']}")
+                            if show_full:
                                 st.write(content)
-                            st.caption(f"Кратко: {content[:500]}...")
+                            else:
+                                st.caption(f"Кратко: {content[:500]}...")
                         else:
                             st.write(f"**Текст:** {content}")
-                    
+                
                         # Информация о контексте
                         if 'expanded_context' in res and res['expanded_context']:
                             st.caption(f"Расширенный контекст: {len(res['expanded_context'])} символов")
@@ -677,24 +680,25 @@ with st.sidebar:
                         st.write(f"**ID документа:** `{res['id']}`")
                         st.write(f"**Источник:** `{res.get('source', 'неизвестен')}`")
                         st.write(f"**Дата:** `{res.get('date', 'не указана')}`")
-                    
+                
                         # Отображаем контент с ограничением
                         content = res.get('content', '')
                         if len(content) > 500:
-                            with st.expander("Показать полный текст", expanded=False):
+                            # ЗАМЕНЯЕМ ВЛОЖЕННЫЙ EXPANDER НА CHECKBOX
+                            show_full = st.checkbox("Показать полный текст", key=f"show_full_sparse_{i}_{res['id']}")
+                            if show_full:
                                 st.write(content)
-                            st.caption(f"Кратко: {content[:500]}...")
+                            else:
+                                st.caption(f"Кратко: {content[:500]}...")
                         else:
                             st.write(f"**Текст:** {content}")
-                    
+                
                         # Информация о sparse-векторе
                         if 'sparse_vector' in res:
                             st.caption(f"Размерность sparse: {res['sparse_vector'].get('dim', 'N/A')}")
                             st.caption(f"Ненулевых элементов: {res['sparse_vector'].get('nnz', 'N/A')}")
             else:
                 st.info("Нет результатов по разреженным векторам")
-    else:
-        st.info("Уточняющий гибридный поиск не дал результатов")
 
     # === УТОЧНЯЮЩИЕ ЗАПРОСЫ (РАБОТАЕТ ТЕПЕРЬ!) ===
     if st.session_state.get('refined_queries'):
