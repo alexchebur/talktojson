@@ -301,10 +301,8 @@ if st.button("Отправить", key="send_btn"):
         stage1_prompt = get_prompt("stage1", {"user_query": user_input})
         stage1_response = call_gemini_api(stage1_prompt, temperature=0.3)
         search_data = parse_stage1_response(stage1_response)
-        # Сохраняем рассуждения Stage 1 в session_state
         st.session_state.stage1_reasoning = search_data.get("reasoning", "")
         
-        # Фильтруем и ограничиваем запросы
         valid_queries = [
             q for q in search_data['expanded_queries'] 
             if q and len(q.split()) <= 20
@@ -319,12 +317,10 @@ if st.button("Отправить", key="send_btn"):
         progress_bar.progress(40)
         
         with ThreadPoolExecutor(max_workers=3) as executor:
-            # Веб-поиск
             web_future = executor.submit(
                 lambda: [res for q in [user_input] + valid_queries for res in web_searcher.perform_search(q, 2)]
             )
     
-            # Гибридный поиск в Qdrant
             qdrant_future = executor.submit(
                 lambda: index_builder.hybrid_search(
                     queries=[user_input] + valid_queries,
@@ -340,8 +336,6 @@ if st.button("Отправить", key="send_btn"):
 
         progress_bar.progress(80)
         
-        # Сохраняем результаты
-
         st.session_state.web_search_results = web_results
         st.session_state.hybrid_results = qdrant_results
         st.session_state.search_stats = {
@@ -351,7 +345,8 @@ if st.button("Отправить", key="send_btn"):
         }
         st.session_state.primary_web_results = web_results.copy()
         st.session_state.primary_hybrid_results = qdrant_results.copy()
-        # Этап 3: Формирование контекста
+
+        # Формирование контекста
         status_text.text("Формирование ответа...")
         context_parts = [
             f"Проблема: {search_data['problem_formulation']}",
@@ -359,19 +354,16 @@ if st.button("Отправить", key="send_btn"):
         ]
         
         for i, res in enumerate(web_results[:5]):
-            # Используем полный контент вместо сниппета (ограничиваем 8000 символов)
             content = res.get('full_content', '')[:8000]
             context_parts.append(f"{i+1}. [{res['title']}]({res['url']}): {content}")
+        
         if st.session_state.get('document_text'):
             context_parts.append("Загруженный документ:")
             context_parts.append(f"1. {st.session_state.document_text}")
 
-        
         context_parts.append("Базовые знания:")
         
-        # Используем расширенный контекст вместо обычного контента
-        for i, res in enumerate(qdrant_results[:7]):  # Ограничиваем количеством
-            # Используем расширенный контекст если он есть, иначе обычный контент
+        for i, res in enumerate(qdrant_results[:7]):
             content = res.get('expanded_context', res.get('content', ''))
             context_parts.append(f"{i+1}. Реквизиты источника: {res['id']}\n{content}")
         
@@ -388,14 +380,9 @@ if st.button("Отправить", key="send_btn"):
         status_text.error(f"Ошибка обработки запроса: {str(e)}")
         st.stop()
 
-    # В обработке кнопки "Отправить", после первичного поиска:
-
-    # ... [существующий код до формирования full_context] ...
-
-    # Этап 3: Генерация уточняющих запросов и предварительного проекта
+    # Этап 3: Генерация уточняющих запросов
     with st.spinner("Углубленный анализ..."):
         try:
-            # Формируем промпт для генерации уточняющих запросов
             stage3_prompt = get_prompt("stage3", {
                 "problem_formulation": search_data['problem_formulation'],
                 "context": full_context
@@ -403,7 +390,6 @@ if st.button("Отправить", key="send_btn"):
         
             stage3_response = call_gemini_api(stage3_prompt, max_output_tokens=4000)
         
-            # Парсим сгенерированные вопросы
             refined_queries = []
             if "Уточняющие вопросы:" in stage3_response:
                 queries_section = stage3_response.split("Уточняющие вопросы:")[1]
@@ -414,20 +400,17 @@ if st.button("Отправить", key="send_btn"):
                     for line in queries_section.split('\n') 
                     if re.match(r'^\d+\.', line)
                 ][:5]
-                st.session_state.refined_queries = refined_queries  # <-- ЭТО БЫЛО ПРОПУЩЕНО
+                st.session_state.refined_queries = refined_queries
 
-            # Сохраняем предварительный проект
             if "Предварительный проект:" in stage3_response:
                 st.session_state.preliminary_draft = stage3_response.split("Предварительный проект:")[1].strip()
-            # Выполняем новый поиск по уточняющим запросам
+
             if refined_queries:
                 with ThreadPoolExecutor(max_workers=3) as executor:
-                    # Веб-поиск по новым запросам
                     web_future_refined = executor.submit(
                         lambda: [res for q in refined_queries for res in web_searcher.perform_search(q, 2)]
                     )
                 
-                    # Гибридный поиск в Qdrant
                     qdrant_future_refined = executor.submit(
                         lambda: index_builder.hybrid_search(
                             queries=refined_queries,
@@ -439,46 +422,34 @@ if st.button("Отправить", key="send_btn"):
                     qdrant_results_refined, _ = qdrant_future_refined.result()
                     st.session_state.refined_web_results = web_results_refined
                     st.session_state.refined_hybrid_results = qdrant_results_refined
-                    # После получения refined_queries, web_results_refined и qdrant_results_refined
-                    st.session_state.refined_queries = refined_queries
 
-                
-
-        
-            # Обновляем контекст с новыми результатами
-            context_parts.append("\n\nУточняющие результаты:")
-            for i, res in enumerate(web_results_refined[:3]):
-                context_parts.append(f"W{i+1}. [{res['title']}]({res['url']}): {res.get('full_content', '')[:2000]}")
-            for i, res in enumerate(qdrant_results_refined[:2]):
-                context_parts.append(f"Q{i+1}. {res.get('content', '')[:2000]}")
-        
-            full_context = "\n\n".join(context_parts)[:200000]
+                context_parts.append("\n\nУточняющие результаты:")
+                for i, res in enumerate(web_results_refined[:3]):
+                    context_parts.append(f"W{i+1}. [{res['title']}]({res['url']}): {res.get('full_content', '')[:2000]}")
+                for i, res in enumerate(qdrant_results_refined[:2]):
+                    context_parts.append(f"Q{i+1}. {res.get('content', '')[:2000]}")
+            
+                full_context = "\n\n".join(context_parts)[:200000]
 
         except Exception as e:
             st.error(f"Ошибка углубленного анализа: {str(e)}")
             st.stop()
     
- 
-    
-
-
-    # Этап 4: Генерация проекта заключения (бывший stage2)
+    # Этап 4: Генерация проекта заключения
     with st.spinner("Подготовка проекта заключения..."):
         try:
-            stage4_prompt = get_prompt("stage4", {  # Бывший stage2
+            stage4_prompt = get_prompt("stage4", {
                 "user_query": user_input,
                 "problem_formulation": search_data['problem_formulation'],
                 "context": full_context
             })
-            # ... [остальной код без изменений] ...
     
-            stage2_response = call_gemini_api(stage2_prompt, max_output_tokens=10000)
+            stage4_response = call_gemini_api(stage4_prompt, max_output_tokens=10000)
     
             try:
-                opinion_data = parse_stage2_response(stage2_response)
+                opinion_data = parse_stage2_response(stage4_response)
                 st.session_state.opinion_data = opinion_data
         
-                # Для отладки
                 with st.expander("Промежуточные результаты"):
                     st.subheader("Предварительные рассуждения (Stage 1)")
                     if st.session_state.get('stage1_reasoning'):
@@ -491,25 +462,23 @@ if st.button("Отправить", key="send_btn"):
                     st.write(opinion_data["opinion_draft"][:1000] + "...")
             except Exception as e:
                 st.error(f"Ошибка разбора ответа: {str(e)}")
-                st.text_area("Полный ответ модели:", value=stage2_response, height=300)
+                st.text_area("Полный ответ модели:", value=stage4_response, height=300)
                 st.stop()
         except Exception as e:
             st.error(f"Ошибка при генерации заключения: {str(e)}")
             st.stop()
     
-
-    # Этап 5: Финальная проверка (бывший stage3)
+    # Этап 5: Финальная проверка
     with st.spinner("Финальная проверка..."):
         try:
-            stage5_prompt = get_prompt("stage5", {  # Бывший stage3
+            stage5_prompt = get_prompt("stage5", {
                 "opinion_draft": opinion_data['opinion_draft']
             })
 
-            final_opinion = call_gemini_api(stage3_prompt, max_output_tokens=10000)
+            final_opinion = call_gemini_api(stage5_prompt, max_output_tokens=10000)
             
             st.session_state.final_opinion = final_opinion
             
-            # Отображение поисковых данных после успешной генерации
             if st.session_state.get('search_data'):
                 st.subheader("Поисковые данные")
                 with st.expander("Показать детали поиска", expanded=False):
@@ -522,7 +491,6 @@ if st.button("Отправить", key="send_btn"):
         except Exception as e:
             st.error(f"Ошибка при финальной проверке: {str(e)}")
             st.stop()
-
 
 # Вывод результата
 if st.session_state.get('final_opinion'):
