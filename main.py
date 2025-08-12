@@ -575,7 +575,7 @@ with st.sidebar:
         st.info("Нет ключевых слов")
     # === УТОЧНЯЮЩИЕ РЕЗУЛЬТАТЫ ===
     if st.session_state.get('refined_web_results'):
-       st.subheader("🌐 Уточняющие веб-результаты")
+        st.subheader("🌐 Уточняющие веб-результаты")
         for i, res in enumerate(st.session_state.refined_web_results[:5]):
             with st.container():
                 st.markdown(f"**{i+1}. [{res['title']}]({res['url']})**")
