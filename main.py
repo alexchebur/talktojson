@@ -574,17 +574,15 @@ with st.sidebar:
     else:
         st.info("Нет ключевых слов")
     # === УТОЧНЯЮЩИЕ РЕЗУЛЬТАТЫ ===
-    refined_web = st.session_state.get('refined_web_results', [])
     if st.session_state.get('refined_web_results'):
-        st.subheader("🌐 Уточняющие веб-результаты")
+       st.subheader("🌐 Уточняющие веб-результаты")
         for i, res in enumerate(st.session_state.refined_web_results[:5]):
-            st.markdown(f"**{i+1}. [{res['title']}]({res['url']})**")
-            st.caption(f"Домен: {res.get('domain', 'неизвестен')}")
-            st.caption(f"Сниппет: {res['snippet'][:200]}{'...' if len(res['snippet']) > 200 else ''}")
-        
-            # Replace nested expander with a button to show full content
-            if st.button(f"Показать полный контент {i+1}", key=f"full_content_{i}"):
-                st.write(res.get('full_content', '')[:1000] + "...")
+            with st.container():
+                st.markdown(f"**{i+1}. [{res['title']}]({res['url']})**")
+                st.caption(f"Домен: {res.get('domain', 'неизвестен')}")
+                st.caption(f"Сниппет: {res['snippet'][:200]}{'...' if len(res['snippet']) > 200 else ''}")
+                if st.checkbox(f"Показать полный контент {i+1}", key=f"show_full_{i}"):
+                    st.write(res.get('full_content', '')[:1000] + "...")
     else:
         st.info("Нет уточняющих веб-результатов")
 
